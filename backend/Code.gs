@@ -16,7 +16,7 @@
  */
 
 // ==================== KONFIGURASI DEFAULT ====================
-const DRIVE_FOLDER_ID = 'GANTI_DENGAN_ID_FOLDER_GOOGLE_DRIVE_ANDA';
+const DRIVE_FOLDER_ID = '1KqfNK8yLOpb-7Ew6KXkfJoNU6XKmzK73';
 
 const NAMA_LEMBAGA = "DAIKITA — Kafalah Da'i";
 const TAGLINE_LEMBAGA = 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
@@ -181,11 +181,20 @@ function setupDatabase() {
     writeSettingsMap_(pengaturanSheet, defaults);
   }
 
+  // Picu permintaan izin Google Drive & verifikasi akses folder saat setupDatabase() dijalankan
+  let driveStatus = '';
+  try {
+    const targetFolder = getDriveTargetFolder_();
+    driveStatus = ' Folder Drive aktif: ' + targetFolder.getName() + '.';
+  } catch (driveErr) {
+    driveStatus = ' Peringatan Drive: ' + (driveErr && driveErr.message ? driveErr.message : String(driveErr));
+  }
+
   SpreadsheetApp.flush();
-  Logger.log('setupDatabase() selesai. Seluruh sheet DAIKITA siap digunakan.');
+  Logger.log('setupDatabase() selesai.' + driveStatus);
   return {
     status: 'success',
-    message: 'Struktur data DAIKITA berhasil disiapkan tanpa menghapus data lama.'
+    message: 'Struktur data DAIKITA berhasil disiapkan tanpa menghapus data lama.' + driveStatus
   };
 }
 
@@ -1087,14 +1096,41 @@ function handleDeletePanitia_(payload) {
 }
 
 // ==================== UPLOAD GOOGLE DRIVE (BUKTI & ASET LEMBAGA) ====================
+function extractDriveFolderId_(rawValue) {
+  const str = String(rawValue || '').trim();
+  if (!str) return '';
+  const folderMatch = str.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch && folderMatch[1]) return folderMatch[1];
+  const idMatch = str.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (idMatch && idMatch[1]) return idMatch[1];
+  return str.split('?')[0].trim();
+}
+
 function getDriveTargetFolder_() {
-  if (!DRIVE_FOLDER_ID || DRIVE_FOLDER_ID === 'GANTI_DENGAN_ID_FOLDER_GOOGLE_DRIVE_ANDA') {
+  const folderId = extractDriveFolderId_(DRIVE_FOLDER_ID);
+  if (!folderId || folderId === 'GANTI_DENGAN_ID_FOLDER_GOOGLE_DRIVE_ANDA') {
     throw new Error('ID folder penyimpanan belum diisi di konfigurasi server.');
   }
   try {
-    return DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    const folder = DriveApp.getFolderById(folderId);
+    folder.getName();
+    return folder;
   } catch (err) {
-    throw new Error('Folder penyimpanan tidak ditemukan atau tidak memiliki izin akses.');
+    const detail = err && err.message ? String(err.message) : '';
+    if (/permission|izin|auth|scope|access/i.test(detail)) {
+      throw new Error(
+        'Izin akses Google Drive belum aktif atau akun deployment bukan Editor folder (' +
+          folderId +
+          '). Jalankan setupDatabase() di Apps Script dan pastikan deployment disetel Execute as: Me. Detail: ' +
+          detail
+      );
+    }
+    throw new Error(
+      'Folder penyimpanan (' +
+        folderId +
+        ') tidak ditemukan atau akun Google Anda belum diberi akses Editor ke folder tersebut. Detail: ' +
+        (detail || 'Akses ditolak')
+    );
   }
 }
 

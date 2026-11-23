@@ -23,7 +23,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
         reject(new Error('Gagal membaca berkas.'));
       }
     };
-    reader.onerror = () => reject(new Error('Gagal membaca berkas bukti transfer.'));
+    reader.onerror = () => reject(new Error('Gagal membaca berkas gambar.'));
     reader.readAsDataURL(file);
   });
 }
@@ -35,8 +35,7 @@ function estimateBase64Bytes(dataUrl: string): number {
 }
 
 /**
- * Kompres gambar bukti transfer otomatis di browser menggunakan Canvas
- * agar ukuran Base64 ringan saat dikirim ke Google Apps Script.
+ * Kompres gambar bukti transfer otomatis di browser menggunakan Canvas.
  * Untuk file PDF, langsung diubah menjadi Base64 dengan batas ukuran 4 MB.
  */
 export async function compressTransferProof(file: File): Promise<ProcessedUploadFile> {
@@ -45,7 +44,7 @@ export async function compressTransferProof(file: File): Promise<ProcessedUpload
 
   if (isPdf) {
     if (file.size > MAX_PDF_BYTES) {
-      throw new Error('Ukuran file PDF maksimal 4 MB agar pengiriman ke Google Drive stabil.');
+      throw new Error('Ukuran file PDF maksimal 4 MB agar pengiriman tetap stabil.');
     }
     const dataUrl = await readFileAsDataUrl(file);
     return {
@@ -88,7 +87,6 @@ export async function compressTransferProof(file: File): Promise<ProcessedUpload
     throw new Error('Browser tidak mendukung kompresi gambar Canvas.');
   }
 
-  // Isi latar putih agar PNG transparan rapi saat dikonversi ke JPEG
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, width, height);
   ctx.drawImage(img, 0, 0, width, height);
@@ -103,6 +101,81 @@ export async function compressTransferProof(file: File): Promise<ProcessedUpload
     originalSizeBytes: file.size,
     compressedSizeBytes: compressedBytes,
     previewUrl: compressedDataUrl,
+    isPdf: false,
+    originalName: file.name,
+  };
+}
+
+/**
+ * Proses gambar Logo atau QRIS dengan menjaga transparansi (PNG) dan ketajaman.
+ */
+export async function processBrandingImage(
+  file: File,
+  maxDimension = 800
+): Promise<ProcessedUploadFile> {
+  const mime = (file.type || '').toLowerCase();
+  if (!mime.startsWith('image/')) {
+    throw new Error('Berkas harus berupa gambar (PNG, JPG, WEBP, atau SVG).');
+  }
+
+  const rawDataUrl = await readFileAsDataUrl(file);
+
+  if (mime === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')) {
+    if (file.size > 512 * 1024) {
+      throw new Error('Ukuran file SVG maksimal 512 KB.');
+    }
+    return {
+      base64: rawDataUrl,
+      mimeType: 'image/svg+xml',
+      extension: 'svg',
+      originalSizeBytes: file.size,
+      compressedSizeBytes: file.size,
+      previewUrl: rawDataUrl,
+      isPdf: false,
+      originalName: file.name,
+    };
+  }
+
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Gambar tidak dapat dibaca.'));
+    image.src = rawDataUrl;
+  });
+
+  let { width, height } = img;
+  if (width > maxDimension || height > maxDimension) {
+    const ratio = Math.min(maxDimension / width, maxDimension / height);
+    width = Math.round(width * ratio);
+    height = Math.round(height * ratio);
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Browser tidak mendukung pemrosesan gambar.');
+  }
+
+  // Jaga transparansi PNG/WEBP agar logo terlihat bersih
+  ctx.clearRect(0, 0, width, height);
+  ctx.drawImage(img, 0, 0, width, height);
+
+  const outMime = mime === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+  const outExt = outMime === 'image/jpeg' ? 'jpg' : 'png';
+  const dataUrl =
+    outMime === 'image/jpeg'
+      ? canvas.toDataURL('image/jpeg', 0.88)
+      : canvas.toDataURL('image/png');
+
+  return {
+    base64: dataUrl,
+    mimeType: outMime,
+    extension: outExt,
+    originalSizeBytes: file.size,
+    compressedSizeBytes: estimateBase64Bytes(dataUrl),
+    previewUrl: dataUrl,
     isPdf: false,
     originalName: file.name,
   };

@@ -3,8 +3,9 @@ import {
   Check,
   CheckCircle2,
   Copy,
+  Download,
   FileText,
-  Search,
+  QrCode,
   Upload,
   X,
 } from 'lucide-react';
@@ -21,6 +22,9 @@ import {
   formatRupiahInput,
   formatWADisplay,
   getCurrentYearMonth,
+  getDriveThumbnailFallback,
+  normalizeDriveImageUrl,
+  normalizeRoleLabel,
   parseRupiahInput,
   previewAutoRenameFile,
   validateAndNormalizeWA,
@@ -30,6 +34,7 @@ import {
   formatFileSize,
   ProcessedUploadFile,
 } from '../utils/imageCompressor';
+import { SearchableOption, SearchableSelect } from './SearchableSelect';
 
 interface TabKonfirmasiProps {
   config: LembagaConfig;
@@ -57,9 +62,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
   onSubmitPembayaran,
   onNotify,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
-
+  const [selectedDonaturId, setSelectedDonaturId] = useState('');
   const [idDonatur, setIdDonatur] = useState('');
   const [namaDonatur, setNamaDonatur] = useState('');
   const [noWaInput, setNoWaInput] = useState('');
@@ -81,58 +84,107 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     savedFileName?: string;
   } | null>(null);
   const [copiedRek, setCopiedRek] = useState<string | null>(null);
+  const [showQrisZoom, setShowQrisZoom] = useState(false);
+  const [qrisImgSrc, setQrisImgSrc] = useState(() => normalizeDriveImageUrl(config.qrisUrl));
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (preselectedDonatur) {
-      selectDonatur(preselectedDonatur);
-      onClearPreselected();
+    setQrisImgSrc(normalizeDriveImageUrl(config.qrisUrl));
+  }, [config.qrisUrl]);
+
+  const bankOptions = useMemo<SearchableOption[]>(() => {
+    const list: SearchableOption[] = config.infoRekening.map((r) => {
+      const val = `${r.bank} - ${r.nomor}`;
+      return {
+        value: val,
+        label: val,
+        sublabel: `a.n. ${r.atasNama}`,
+        keywords: `${r.bank} ${r.nomor} ${r.atasNama}`,
+      };
+    });
+    if (config.showQris && config.qrisUrl) {
+      const qrisLabel = config.qrisMerchantName
+        ? `QRIS (${config.qrisMerchantName})`
+        : `QRIS (${config.namaLembaga})`;
+      list.push({
+        value: qrisLabel,
+        label: qrisLabel,
+        sublabel: 'Pembayaran Pindai QRIS',
+        keywords: 'qris scan qr',
+      });
     }
-  }, [preselectedDonatur, onClearPreselected]);
+    return list;
+  }, [config]);
 
   useEffect(() => {
-    if (config.infoRekening.length > 0) {
-      const options = config.infoRekening.map((r) => `${r.bank} - ${r.nomor}`);
-      if (!options.includes(bankTujuan)) {
-        setBankTujuan(options[0]);
-      }
+    if (bankOptions.length > 0 && !bankOptions.some((b) => b.value === bankTujuan)) {
+      setBankTujuan(bankOptions[0].value);
     }
-  }, [config.infoRekening, bankTujuan]);
+  }, [bankOptions, bankTujuan]);
 
-  const filteredDonatur = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return donaturList.slice(0, 6);
-    const digitsQ = q.replace(/\D/g, '');
-    return donaturList
-      .filter((d) => {
-        const nameMatch = d.namaLengkap.toLowerCase().includes(q);
-        const idMatch = d.idDonatur.toLowerCase().includes(q);
-        const emailMatch = (d.email || '').toLowerCase().includes(q);
-        const waMatch = digitsQ
-          ? d.noWa.includes(digitsQ) || d.noWa.replace(/^62/, '0').includes(digitsQ)
-          : false;
-        return nameMatch || idMatch || emailMatch || waMatch;
-      })
-      .slice(0, 8);
-  }, [donaturList, searchQuery]);
+  const donaturOptions = useMemo<SearchableOption[]>(
+    () =>
+      donaturList.map((d) => ({
+        value: d.idDonatur,
+        label: d.namaLengkap,
+        sublabel: `${d.idDonatur} · ${formatWADisplay(d.noWa)}${d.domisili ? ` · ${d.domisili}` : ''}`,
+        metaRight: formatRupiah(d.nominalKomitmen),
+        keywords: `${d.namaLengkap} ${d.idDonatur} ${d.noWa} ${d.noWa.replace(/^62/, '0')} ${d.email || ''} ${d.domisili || ''}`,
+      })),
+    [donaturList]
+  );
 
-  const selectDonatur = (d: Donatur) => {
+  const penginputOptions = useMemo<SearchableOption[]>(() => {
+    const list: SearchableOption[] = [
+      {
+        value: 'Donatur (Mandiri)',
+        label: 'Donatur (Mandiri)',
+        sublabel: 'Konfirmasi langsung oleh donatur',
+        keywords: 'donatur mandiri langsung',
+      },
+    ];
+    panitia.forEach((p) => {
+      const val = `${p.namaPanitia} (${p.kodePanitia})`;
+      list.push({
+        value: val,
+        label: val,
+        sublabel: `Peran: ${normalizeRoleLabel(p.role)}`,
+        keywords: `${p.namaPanitia} ${p.kodePanitia} ${p.role}`,
+      });
+    });
+    return list;
+  }, [panitia]);
+
+  const applySelectedDonatur = (d: Donatur) => {
+    setSelectedDonaturId(d.idDonatur);
     setIdDonatur(d.idDonatur);
     setNamaDonatur(d.namaLengkap);
     setNoWaInput(d.noWa);
     setNominalInput(d.nominalKomitmen > 0 ? d.nominalKomitmen.toLocaleString('id-ID') : '');
-    setSearchQuery(`${d.namaLengkap} (${d.idDonatur})`);
-    setShowDropdown(false);
     setErrorMsg(null);
   };
 
-  const clearSelectedDonor = () => {
-    setIdDonatur('');
-    setNamaDonatur('');
-    setNoWaInput('');
-    setNominalInput('');
-    setSearchQuery('');
+  useEffect(() => {
+    if (preselectedDonatur) {
+      applySelectedDonatur(preselectedDonatur);
+      onClearPreselected();
+    }
+  }, [preselectedDonatur, onClearPreselected]);
+
+  const handleDonaturDropdownChange = (val: string) => {
+    if (!val) {
+      setSelectedDonaturId('');
+      setIdDonatur('');
+      setNamaDonatur('');
+      setNoWaInput('');
+      setNominalInput('');
+      return;
+    }
+    const found = donaturList.find((d) => d.idDonatur === val);
+    if (found) {
+      applySelectedDonatur(found);
+    }
   };
 
   const parsedNominal = useMemo(() => parseRupiahInput(nominalInput), [nominalInput]);
@@ -186,7 +238,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     setSuccessInfo(null);
 
     if (!namaDonatur.trim()) {
-      setErrorMsg('Pilih donatur dari pencarian atau isi nama lengkap donatur.');
+      setErrorMsg('Pilih donatur dari daftar atau isi nama lengkap donatur.');
       return;
     }
 
@@ -242,14 +294,14 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
       <section className="lg:col-span-8 glass-surface rounded-3xl p-5 sm:p-8 min-w-0">
         <div className="mb-6">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Konfirmasi Pembayaran Manual
+            Konfirmasi Pembayaran Kafalah Da&apos;i
           </h1>
           <p className="mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-            Cari nama atau nomor WA donatur untuk mengisi data otomatis. Gambar bukti transfer otomatis dikompresi di browser dan dinamai ulang saat tersimpan ke Google Drive.
+            Cari dan pilih donatur untuk mengisi data otomatis, atau isi langsung bila belum
+            terdaftar. Bukti gambar otomatis dikompresi agar unggahan cepat dan ringan.
           </p>
         </div>
 
-        {/* Success Notice */}
         {successInfo && (
           <div className="mb-6 rounded-2xl border border-emerald-200 dark:border-emerald-800/80 bg-gradient-to-br from-emerald-50/90 to-teal-50/70 dark:from-emerald-950/60 dark:to-teal-950/40 p-5">
             <div className="flex items-start gap-3">
@@ -259,14 +311,19 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                   Konfirmasi Pembayaran Terkirim
                 </p>
                 <p className="mt-1 text-xs text-emerald-900/85 dark:text-emerald-200/90 leading-relaxed safe-wrap">
-                  ID Transaksi <span className="font-mono font-semibold">{successInfo.transaksi.idTransaksi}</span> atas nama{' '}
-                  <strong>{successInfo.transaksi.namaDonatur}</strong> sebesar{' '}
-                  <strong className="tabular-nums">{formatRupiah(successInfo.transaksi.nominalTransfer)}</strong> untuk periode{' '}
-                  <strong>{formatBulanLabel(successInfo.transaksi.bulanTagihan)}</strong> kini berstatus <strong>Menunggu Verifikasi</strong>.
+                  ID Transaksi{' '}
+                  <span className="font-mono font-semibold">{successInfo.transaksi.idTransaksi}</span>{' '}
+                  atas nama <strong>{successInfo.transaksi.namaDonatur}</strong> sebesar{' '}
+                  <strong className="tabular-nums">
+                    {formatRupiah(successInfo.transaksi.nominalTransfer)}
+                  </strong>{' '}
+                  untuk periode{' '}
+                  <strong>{formatBulanLabel(successInfo.transaksi.bulanTagihan)}</strong> kini
+                  berstatus <strong>Menunggu Verifikasi</strong>.
                 </p>
                 {successInfo.savedFileName && (
                   <p className="mt-2 text-[11px] font-mono text-teal-800 dark:text-teal-300 safe-wrap">
-                    Arsip Drive: {successInfo.savedFileName}
+                    Arsip Tersimpan: {successInfo.savedFileName}
                   </p>
                 )}
               </div>
@@ -274,7 +331,6 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
           </div>
         )}
 
-        {/* Error Notice */}
         {errorMsg && (
           <div className="mb-6 rounded-2xl border border-rose-200 dark:border-rose-800/80 bg-rose-50/90 dark:bg-rose-950/50 p-4 text-xs font-medium text-rose-800 dark:text-rose-200 leading-relaxed safe-wrap">
             {errorMsg}
@@ -282,77 +338,26 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Quick Donor Autocomplete Search */}
-          <div className="relative">
+          <div>
             <label
               htmlFor="konf-search"
               className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
             >
-              Pencarian Cepat Donatur (Nama / No. WA / ID)
+              Pilih Donatur Terdaftar (Nama / No. WA / ID / Domisili)
             </label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <input
-                id="konf-search"
-                type="text"
-                value={searchQuery}
-                onFocus={() => setShowDropdown(true)}
-                onBlur={() => setTimeout(() => setShowDropdown(false), 180)}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setShowDropdown(true);
-                }}
-                placeholder="Ketik nama donatur atau nomor WA (contoh: Ahmad / 0812)..."
-                className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/95 dark:bg-slate-900/85 pl-11 pr-10 py-3 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={clearSelectedDonor}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
-                  aria-label="Hapus pencarian"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-
-            {showDropdown && (
-              <div className="absolute z-20 mt-1.5 w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
-                {filteredDonatur.length === 0 ? (
-                  <div className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
-                    Donatur belum ditemukan di Master_Donatur. Anda tetap bisa mengisi data secara manual di bawah.
-                  </div>
-                ) : (
-                  <ul className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 clean-scroll">
-                    {filteredDonatur.map((d) => (
-                      <li key={d.idDonatur}>
-                        <button
-                          type="button"
-                          onMouseDown={() => selectDonatur(d)}
-                          className="w-full px-4 py-3 text-left hover:bg-emerald-50/70 dark:hover:bg-emerald-950/50 transition-colors flex items-center justify-between gap-3 cursor-pointer"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
-                              {d.namaLengkap}
-                            </p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                              {d.idDonatur} · {formatWADisplay(d.noWa)} · {d.programDonasi}
-                            </p>
-                          </div>
-                          <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 tabular-nums whitespace-nowrap shrink-0">
-                            {formatRupiah(d.nominalKomitmen)}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
+            <SearchableSelect
+              id="konf-search"
+              ariaLabel="Pilih donatur terdaftar"
+              options={donaturOptions}
+              value={selectedDonaturId}
+              onChange={handleDonaturDropdownChange}
+              allowClear
+              placeholder="Ketik atau pilih donatur dari daftar..."
+              searchPlaceholder="Ketik nama, nomor WA, atau ID donatur..."
+              emptyText="Donatur belum ditemukan dalam daftar. Silakan isi data manual di bawah."
+            />
           </div>
 
-          {/* Auto-filled Donor Details */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="min-w-0">
               <label
@@ -366,7 +371,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                 type="text"
                 value={idDonatur}
                 onChange={(e) => setIdDonatur(e.target.value)}
-                placeholder="Otomatis dari pencarian"
+                placeholder="Otomatis dari pilihan"
                 className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/70 px-3.5 py-2.5 text-sm font-mono text-slate-800 dark:text-slate-200 focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
@@ -376,7 +381,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                 htmlFor="konf-nama"
                 className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
               >
-                Nama Donatur
+                Nama Donatur <span className="text-rose-600 dark:text-rose-400">*</span>
               </label>
               <input
                 id="konf-nama"
@@ -394,7 +399,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                 htmlFor="konf-wa"
                 className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
               >
-                No. WhatsApp
+                No. WhatsApp <span className="text-rose-600 dark:text-rose-400">*</span>
               </label>
               <input
                 id="konf-wa"
@@ -457,23 +462,17 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                 htmlFor="konf-bank"
                 className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
               >
-                Bank Tujuan Transfer
+                Tujuan Transfer / Metode
               </label>
-              <select
+              <SearchableSelect
                 id="konf-bank"
+                ariaLabel="Pilih rekening tujuan atau QRIS"
+                options={bankOptions}
                 value={bankTujuan}
-                onChange={(e) => setBankTujuan(e.target.value)}
-                className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              >
-                {config.infoRekening.map((r) => {
-                  const val = `${r.bank} - ${r.nomor}`;
-                  return (
-                    <option key={val} value={val}>
-                      {val}
-                    </option>
-                  );
-                })}
-              </select>
+                onChange={(val) => setBankTujuan(val)}
+                placeholder="Pilih rekening atau QRIS..."
+                searchPlaceholder="Ketik nama bank, nomor, atau QRIS..."
+              />
             </div>
 
             <div className="min-w-0">
@@ -483,23 +482,18 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
               >
                 Diinput Oleh
               </label>
-              <select
+              <SearchableSelect
                 id="konf-penginput"
+                ariaLabel="Pilih penginput konfirmasi"
+                options={penginputOptions}
                 value={diinputOleh}
-                onChange={(e) => setDiinputOleh(e.target.value)}
-                className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              >
-                <option value="Donatur (Mandiri)">Donatur (Mandiri)</option>
-                {panitia.map((p) => (
-                  <option key={p.kodePanitia} value={`${p.namaPanitia} (${p.kodePanitia})`}>
-                    {p.namaPanitia} ({p.kodePanitia})
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setDiinputOleh(val || 'Donatur (Mandiri)')}
+                placeholder="Pilih penginput..."
+                searchPlaceholder="Ketik nama pengurus atau Donatur..."
+              />
             </div>
           </div>
 
-          {/* Transfer Proof Upload & Client-Side Compression */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
               Unggah Bukti Transfer (JPG, PNG, WEBP, atau PDF)
@@ -519,7 +513,8 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                     : 'Pilih atau ketuk untuk unggah bukti transfer'}
                 </p>
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-md">
-                  Gambar otomatis dikompresi ke resolusi optimal (maks. 1280px) sebelum dikirim ke Google Drive.
+                  Gambar otomatis dikompresi ke resolusi optimal (maks. 1280px) agar pengiriman
+                  ringan dan cepat.
                 </p>
                 <input
                   ref={fileInputRef}
@@ -555,7 +550,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                     </strong>
                   </p>
                   <p className="mt-1 text-[11px] font-mono text-teal-700 dark:text-teal-300 safe-wrap">
-                    Auto-rename Drive: {autoRenamePreview}
+                    Nama File Tersimpan: {autoRenamePreview}
                   </p>
                 </div>
                 <button
@@ -589,14 +584,14 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
         </form>
       </section>
 
-      {/* Rekening Copy Helper Sidebar */}
       <aside className="lg:col-span-4 glass-surface rounded-3xl p-6 space-y-5 min-w-0">
         <div>
           <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
             Salin Nomor Rekening
           </h2>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            Pastikan transfer ditujukan ke rekening resmi {config.namaLembaga} berikut.
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed safe-wrap">
+            {config.catatanPembayaran ||
+              `Pastikan transfer ditujukan ke rekening resmi ${config.namaLembaga} berikut.`}
           </p>
         </div>
 
@@ -640,7 +635,93 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
             );
           })}
         </div>
+
+        {config.showQris && config.qrisUrl && (
+          <div className="pt-5 border-t border-slate-200/70 dark:border-slate-700/70 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                  <QrCode className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                  <span>QRIS Pembayaran</span>
+                </h3>
+                {config.qrisMerchantName && (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
+                    {config.qrisMerchantName}
+                  </p>
+                )}
+              </div>
+              <a
+                href={qrisImgSrc}
+                download="QRIS-DAIKITA.png"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-300 whitespace-nowrap shrink-0"
+              >
+                <Download className="h-3 w-3 shrink-0" />
+                <span>Unduh</span>
+              </a>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowQrisZoom(true)}
+              className="w-full rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white p-3 flex items-center justify-center hover:border-emerald-400 transition-colors cursor-pointer"
+              title="Klik untuk memperbesar QRIS"
+            >
+              <img
+                src={qrisImgSrc}
+                alt="QRIS Pembayaran Resmi"
+                referrerPolicy="no-referrer"
+                onError={() => {
+                  const fb = getDriveThumbnailFallback(config.qrisUrl);
+                  if (fb && qrisImgSrc !== fb) setQrisImgSrc(fb);
+                }}
+                className="max-h-56 w-auto rounded-xl object-contain"
+              />
+            </button>
+          </div>
+        )}
       </aside>
+
+      {showQrisZoom && config.qrisUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setShowQrisZoom(false)}
+        >
+          <div
+            className="glass-surface w-full max-w-md rounded-3xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-200/70 dark:border-slate-700/70">
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                  QRIS {config.qrisMerchantName || config.namaLembaga}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Pindai melalui aplikasi perbankan atau dompet digital Anda
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQrisZoom(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                aria-label="Tutup QRIS"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-6 bg-white flex items-center justify-center">
+              <img
+                src={qrisImgSrc}
+                alt="QRIS Pembayaran"
+                referrerPolicy="no-referrer"
+                className="max-h-[65vh] w-auto object-contain rounded-xl"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -15,6 +15,7 @@ import {
   UserPlus,
   Users,
 } from 'lucide-react';
+import { WILAYAH_KABUPATEN } from '../data/wilayah';
 import {
   Donatur,
   LembagaConfig,
@@ -31,8 +32,10 @@ import {
   formatRupiah,
   formatWADisplay,
   getCurrentYearMonth,
+  normalizeRoleLabel,
   normalizeWA,
 } from '../utils/formatters';
+import { SearchableOption, SearchableSelect } from './SearchableSelect';
 
 interface TabDashboardProps {
   config: LembagaConfig;
@@ -55,11 +58,36 @@ interface DonorWithMonthlyStatus {
   totalValidBulanIni: number;
   totalPendingBulanIni: number;
   validTransaksiBulanIni: TransaksiDonasi[];
-  statusPenyaluranBulan: 'Sudah Disalurkan' | 'Sebagian Disalurkan' | 'Belum Disalurkan' | 'Belum Ada Donasi';
+  statusPenyaluranBulan:
+    | 'Sudah Disalurkan'
+    | 'Sebagian Disalurkan'
+    | 'Belum Disalurkan'
+    | 'Belum Ada Donasi';
 }
 
 type SortField = 'nama' | 'nominal' | 'tanggal' | 'statusBayar' | 'statusSalur' | 'terdaftar';
-type CategoryTab = 'program' | 'panitia' | 'domisili' | 'metode';
+type SummaryTab = 'pulau' | 'provinsi' | 'kabupaten' | 'panitia' | 'metode';
+
+const PENYALURAN_OPTIONS: SearchableOption[] = [
+  { value: 'Semua', label: 'Penyaluran: Semua', keywords: 'semua' },
+  { value: 'Sudah Disalurkan', label: 'Sudah Disalurkan', keywords: 'sudah' },
+  { value: 'Belum Disalurkan', label: 'Belum Disalurkan', keywords: 'belum' },
+];
+
+const AKTIF_OPTIONS: SearchableOption[] = [
+  { value: 'Semua', label: 'Keaktifan: Semua', keywords: 'semua' },
+  { value: 'Aktif', label: 'Status Aktif', keywords: 'aktif' },
+  { value: 'Cuti', label: 'Status Cuti', keywords: 'cuti' },
+];
+
+const SORT_OPTIONS: SearchableOption[] = [
+  { value: 'nama', label: 'Urut: Nama Donatur', keywords: 'nama' },
+  { value: 'nominal', label: 'Urut: Nominal Komitmen', keywords: 'nominal komitmen' },
+  { value: 'tanggal', label: 'Urut: Tgl Pengingat', keywords: 'tanggal pengingat' },
+  { value: 'statusBayar', label: 'Urut: Status Pembayaran', keywords: 'status bayar valid' },
+  { value: 'statusSalur', label: 'Urut: Status Penyaluran', keywords: 'status salur' },
+  { value: 'terdaftar', label: 'Urut: Tgl Pendaftaran', keywords: 'terdaftar daftar' },
+];
 
 export const TabDashboard: React.FC<TabDashboardProps> = ({
   config,
@@ -77,7 +105,9 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
   const [penyaluranFilter, setPenyaluranFilter] = useState<
     'Semua' | 'Sudah Disalurkan' | 'Belum Disalurkan'
   >('Semua');
-  const [programFilter, setProgramFilter] = useState<string>('Semua');
+  const [pulauFilter, setPulauFilter] = useState<string>('');
+  const [provinsiFilter, setProvinsiFilter] = useState<string>('');
+  const [kabupatenFilter, setKabupatenFilter] = useState<string>('');
   const [perantaraFilter, setPerantaraFilter] = useState<string>('Semua');
   const [aktifFilter, setAktifFilter] = useState<'Semua' | StatusAktif>('Semua');
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,7 +115,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
   const [sortField, setSortField] = useState<SortField>('nama');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
-  const [categoryTab, setCategoryTab] = useState<CategoryTab>('program');
+  const [summaryTab, setSummaryTab] = useState<SummaryTab>('pulau');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [updatingSalurDonorId, setUpdatingSalurDonorId] = useState<string | null>(null);
   const [copiedKode, setCopiedKode] = useState<string | null>(null);
@@ -95,7 +125,93 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     [transaksiList, selectedMonth]
   );
 
-  // Hitung status pembayaran & status penyaluran per donatur pada bulan terpilih
+  // Peta lookup wilayah dari kode/nama kabupaten untuk fallback data lama
+  const wilayahByKabName = useMemo(() => {
+    const map = new Map<string, (typeof WILAYAH_KABUPATEN)[number]>();
+    WILAYAH_KABUPATEN.forEach((w) => {
+      map.set(w.kab.toLowerCase(), w);
+      map.set(w.kabId, w);
+    });
+    return map;
+  }, []);
+
+  const resolveDonorWilayah = (d: Donatur) => {
+    const matched =
+      (d.kabId ? wilayahByKabName.get(d.kabId) : undefined) ||
+      (d.domisili ? wilayahByKabName.get(d.domisili.toLowerCase()) : undefined);
+    return {
+      kabId: d.kabId || matched?.kabId || '',
+      kab: d.domisili || matched?.kab || '',
+      provinsi: d.provinsi || matched?.prov || '',
+      pulau: d.pulau || matched?.pulau || '',
+    };
+  };
+
+  // Opsi filter Pulau, Provinsi, dan Kabupaten/Kota (bertingkat)
+  const pulauOptions = useMemo<SearchableOption[]>(() => {
+    const map = new Map<string, string>();
+    WILAYAH_KABUPATEN.forEach((w) => {
+      if (!map.has(w.pulau)) map.set(w.pulau, w.pulauId);
+    });
+    return Array.from(map.entries()).map(([pulau, pulauId]) => ({
+      value: pulau,
+      label: pulau,
+      metaRight: pulauId,
+      keywords: `${pulau} ${pulauId}`,
+    }));
+  }, []);
+
+  const provinsiOptions = useMemo<SearchableOption[]>(() => {
+    const map = new Map<string, { provId: string; pulau: string }>();
+    WILAYAH_KABUPATEN.forEach((w) => {
+      if (pulauFilter && w.pulau !== pulauFilter) return;
+      if (!map.has(w.prov)) map.set(w.prov, { provId: w.provId, pulau: w.pulau });
+    });
+    return Array.from(map.entries()).map(([prov, meta]) => ({
+      value: prov,
+      label: prov,
+      sublabel: meta.pulau,
+      metaRight: meta.provId,
+      keywords: `${prov} ${meta.pulau} ${meta.provId}`,
+    }));
+  }, [pulauFilter]);
+
+  const kabupatenOptions = useMemo<SearchableOption[]>(() => {
+    return WILAYAH_KABUPATEN.filter((w) => {
+      if (pulauFilter && w.pulau !== pulauFilter) return false;
+      if (provinsiFilter && w.prov !== provinsiFilter) return false;
+      return true;
+    }).map((w) => ({
+      value: w.kab,
+      label: w.kab,
+      sublabel: `${w.prov} · ${w.pulau}`,
+      metaRight: w.kabId,
+      keywords: `${w.kab} ${w.prov} ${w.pulau} ${w.kabId}`,
+    }));
+  }, [pulauFilter, provinsiFilter]);
+
+  const perantaraOptions = useMemo<SearchableOption[]>(() => {
+    const set = new Set<string>();
+    panitiaList.forEach((p) => set.add(p.namaPanitia));
+    donaturList.forEach((d) => {
+      if (d.namaPerantara) set.add(d.namaPerantara);
+    });
+    return [
+      { value: 'Semua', label: 'Perantara: Semua', keywords: 'semua' },
+      ...Array.from(set).map((name) => {
+        const matched = panitiaList.find((p) => p.namaPanitia === name);
+        return {
+          value: name,
+          label: name,
+          sublabel: matched
+            ? `Kode ${matched.kodePanitia} · ${normalizeRoleLabel(matched.role)}`
+            : undefined,
+          keywords: `${name} ${matched?.kodePanitia || ''}`,
+        };
+      }),
+    ];
+  }, [panitiaList, donaturList]);
+
   const donorRows: DonorWithMonthlyStatus[] = useMemo(() => {
     return donaturList.map((donatur) => {
       const donorWa = normalizeWA(donatur.noWa) || donatur.noWa;
@@ -122,9 +238,12 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         statusBulan = 'Menunggu Verifikasi';
       }
 
-      let statusPenyaluranBulan: DonorWithMonthlyStatus['statusPenyaluranBulan'] = 'Belum Ada Donasi';
+      let statusPenyaluranBulan: DonorWithMonthlyStatus['statusPenyaluranBulan'] =
+        'Belum Ada Donasi';
       if (validTrx.length > 0) {
-        const salurCount = validTrx.filter((t) => t.statusPenyaluran === 'Sudah Disalurkan').length;
+        const salurCount = validTrx.filter(
+          (t) => t.statusPenyaluran === 'Sudah Disalurkan'
+        ).length;
         if (salurCount === validTrx.length) {
           statusPenyaluranBulan = 'Sudah Disalurkan';
         } else if (salurCount > 0) {
@@ -145,7 +264,6 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     });
   }, [donaturList, monthTransaksi]);
 
-  // Rekap Secara Keseluruhan (Seluruh Periode)
   const overallMetrics = useMemo(() => {
     const allValid = transaksiList.filter((t) => t.statusVerifikasi === 'Valid');
     const allPending = transaksiList.filter((t) => t.statusVerifikasi === 'Pending');
@@ -172,7 +290,6 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     };
   }, [transaksiList, donaturList]);
 
-  // Metrik KPI Bulan Terpilih
   const monthlyMetrics = useMemo(() => {
     const validMonthTrx = monthTransaksi.filter((t) => t.statusVerifikasi === 'Valid');
     const pendingMonthTrx = monthTransaksi.filter((t) => t.statusVerifikasi === 'Pending');
@@ -187,7 +304,9 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     const activeDonors = donorRows.filter((r) => r.donatur.statusAktif === 'Aktif');
     const lunasActiveCount = activeDonors.filter((r) => r.statusBulan === 'Lunas').length;
     const compliancePct =
-      activeDonors.length > 0 ? Math.round((lunasActiveCount / activeDonors.length) * 1000) / 10 : 0;
+      activeDonors.length > 0
+        ? Math.round((lunasActiveCount / activeDonors.length) * 1000) / 10
+        : 0;
 
     return {
       totalValidRp,
@@ -202,23 +321,6 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     };
   }, [monthTransaksi, donorRows]);
 
-  const programOptions = useMemo(() => {
-    const set = new Set<string>(config.daftarProgram);
-    donaturList.forEach((d) => {
-      if (d.programDonasi) set.add(d.programDonasi);
-    });
-    return Array.from(set);
-  }, [config.daftarProgram, donaturList]);
-
-  const perantaraOptions = useMemo(() => {
-    const set = new Set<string>();
-    panitiaList.forEach((p) => set.add(p.namaPanitia));
-    donaturList.forEach((d) => {
-      if (d.namaPerantara) set.add(d.namaPerantara);
-    });
-    return Array.from(set);
-  }, [panitiaList, donaturList]);
-
   const filterCounts = useMemo(() => {
     return {
       Semua: donorRows.length,
@@ -232,9 +334,12 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     const q = searchQuery.trim().toLowerCase();
 
     const filtered = donorRows.filter((row) => {
+      const w = resolveDonorWilayah(row.donatur);
       if (statusFilter !== 'Semua' && row.statusBulan !== statusFilter) return false;
       if (aktifFilter !== 'Semua' && row.donatur.statusAktif !== aktifFilter) return false;
-      if (programFilter !== 'Semua' && row.donatur.programDonasi !== programFilter) return false;
+      if (pulauFilter && w.pulau !== pulauFilter) return false;
+      if (provinsiFilter && w.provinsi !== provinsiFilter) return false;
+      if (kabupatenFilter && w.kab !== kabupatenFilter) return false;
       if (perantaraFilter !== 'Semua' && row.donatur.namaPerantara !== perantaraFilter) return false;
 
       if (penyaluranFilter === 'Sudah Disalurkan') {
@@ -250,8 +355,9 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         d.noWa.toLowerCase().includes(q) ||
         (d.email || '').toLowerCase().includes(q) ||
         d.namaPerantara.toLowerCase().includes(q) ||
-        d.programDonasi.toLowerCase().includes(q) ||
-        (d.domisili || '').toLowerCase().includes(q) ||
+        w.kab.toLowerCase().includes(q) ||
+        w.provinsi.toLowerCase().includes(q) ||
+        w.pulau.toLowerCase().includes(q) ||
         d.idDonatur.toLowerCase().includes(q)
       );
     });
@@ -300,7 +406,9 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     donorRows,
     statusFilter,
     aktifFilter,
-    programFilter,
+    pulauFilter,
+    provinsiFilter,
+    kabupatenFilter,
     perantaraFilter,
     penyaluranFilter,
     searchQuery,
@@ -308,37 +416,36 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     sortDir,
   ]);
 
-  // Helper pembentuk rekap kategori (Program, Panitia, Domisili, Metode)
-  const categorySummaryRows = useMemo(() => {
+  const summaryRows = useMemo(() => {
     const getCategoryKey = (d: Donatur): string => {
-      switch (categoryTab) {
-        case 'program':
-          return d.programDonasi || 'Infaq Umum Rutin';
+      const w = resolveDonorWilayah(d);
+      switch (summaryTab) {
+        case 'pulau':
+          return w.pulau || 'Belum Diisi';
+        case 'provinsi':
+          return w.provinsi || 'Belum Diisi';
+        case 'kabupaten':
+          return w.kab || 'Belum Diisi';
         case 'panitia':
           return d.namaPerantara || 'Langsung (Tanpa Perantara)';
-        case 'domisili':
-          return d.domisili?.trim() || 'Belum Diisi';
         case 'metode':
           return d.metodeDaftar || 'Mandiri';
       }
     };
 
     const keySet = new Set<string>();
-    if (categoryTab === 'panitia') {
+    if (summaryTab === 'panitia') {
       panitiaList.forEach((p) => keySet.add(p.namaPanitia));
-    } else if (categoryTab === 'program') {
-      config.daftarProgram.forEach((prog) => keySet.add(prog));
     }
     donaturList.forEach((d) => keySet.add(getCategoryKey(d)));
 
     const rows = Array.from(keySet).map((label) => {
       const matchedPanitia =
-        categoryTab === 'panitia' ? panitiaList.find((p) => p.namaPanitia === label) : undefined;
+        summaryTab === 'panitia' ? panitiaList.find((p) => p.namaPanitia === label) : undefined;
 
       const groupDonors = donorRows.filter((r) => getCategoryKey(r.donatur) === label);
       const activeGroup = groupDonors.filter((r) => r.donatur.statusAktif === 'Aktif');
       const lunasBulanIni = activeGroup.filter((r) => r.statusBulan === 'Lunas').length;
-      const komitmenBulanan = activeGroup.reduce((s, r) => s + r.donatur.nominalKomitmen, 0);
 
       const donorIdSet = new Set(groupDonors.map((r) => r.donatur.idDonatur));
       const donorWaSet = new Set(
@@ -359,14 +466,24 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         .reduce((s, t) => s + t.nominalTransfer, 0);
       const validSemuaRp = validTrxGroup.reduce((s, t) => s + t.nominalTransfer, 0);
 
+      let subtitle = '';
+      if (matchedPanitia) {
+        subtitle = `Kode ${matchedPanitia.kodePanitia} · ${normalizeRoleLabel(matchedPanitia.role)}`;
+      } else if (summaryTab === 'kabupaten' && groupDonors.length > 0) {
+        const w = resolveDonorWilayah(groupDonors[0].donatur);
+        if (w.provinsi) subtitle = `${w.provinsi}${w.pulau ? ` · ${w.pulau}` : ''}`;
+      } else if (summaryTab === 'provinsi' && groupDonors.length > 0) {
+        const w = resolveDonorWilayah(groupDonors[0].donatur);
+        if (w.pulau) subtitle = `Pulau ${w.pulau}`;
+      }
+
       return {
         label,
-        subtitle: matchedPanitia ? `Kode ${matchedPanitia.kodePanitia} · ${matchedPanitia.role}` : '',
+        subtitle,
         kodePanitia: matchedPanitia?.kodePanitia || '',
         activeCount: activeGroup.length,
         totalDonatur: groupDonors.length,
         lunasBulanIni,
-        komitmenBulanan,
         validBulanRp,
         salurBulanRp,
         validSemuaRp,
@@ -379,7 +496,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         b.validSemuaRp - a.validSemuaRp ||
         b.activeCount - a.activeCount
     );
-  }, [categoryTab, panitiaList, config.daftarProgram, donaturList, donorRows, transaksiList, selectedMonth]);
+  }, [summaryTab, panitiaList, donaturList, donorRows, transaksiList, selectedMonth]);
 
   const handleToggleStatus = async (donatur: Donatur) => {
     const nextStatus: StatusAktif = donatur.statusAktif === 'Aktif' ? 'Cuti' : 'Aktif';
@@ -411,13 +528,40 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     }
   };
 
+  const handlePulauChange = (nextPulau: string) => {
+    setPulauFilter(nextPulau);
+    if (nextPulau) {
+      if (provinsiFilter) {
+        const validProv = WILAYAH_KABUPATEN.some(
+          (w) => w.pulau === nextPulau && w.prov === provinsiFilter
+        );
+        if (!validProv) setProvinsiFilter('');
+      }
+      if (kabupatenFilter) {
+        const validKab = WILAYAH_KABUPATEN.some(
+          (w) => w.pulau === nextPulau && w.kab === kabupatenFilter
+        );
+        if (!validKab) setKabupatenFilter('');
+      }
+    }
+  };
+
+  const handleProvinsiChange = (nextProv: string) => {
+    setProvinsiFilter(nextProv);
+    if (nextProv && kabupatenFilter) {
+      const validKab = WILAYAH_KABUPATEN.some(
+        (w) => w.prov === nextProv && w.kab === kabupatenFilter
+      );
+      if (!validKab) setKabupatenFilter('');
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* Header & Month Selector */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Dashboard &amp; Penagihan WA
+            Dashboard &amp; Pengingat Kafalah Da&apos;i
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300 safe-wrap">
             Pantau status konfirmasi, penyaluran, dan pengingat rutin periode{' '}
@@ -445,15 +589,16 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         </div>
       </div>
 
-      {/* Rekap Keseluruhan (Seluruh Periode) */}
+      {/* Rekap Keseluruhan */}
       <section className="glass-surface rounded-3xl p-5 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-200/70 dark:border-slate-700/70">
           <div>
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
               Rekap Secara Keseluruhan (Seluruh Periode)
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Akumulasi seluruh donasi terverifikasi, penyaluran, dan total donatur terdaftar di {config.namaLembaga}.
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
+              Akumulasi seluruh donasi terverifikasi, penyaluran, dan total donatur terdaftar di{' '}
+              {config.namaLembaga}.
             </p>
           </div>
           <p className="text-xs font-medium text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
@@ -563,7 +708,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         </div>
       </section>
 
-      {/* Donor Monthly Status, Distribution & WhatsApp Reminder Panel */}
+      {/* Donor Table & Multi-Level Wilayah + Status Filters */}
       <section className="glass-surface rounded-3xl overflow-hidden">
         <div className="p-5 sm:p-6 border-b border-slate-200/70 dark:border-slate-700/70 space-y-4">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -572,7 +717,8 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                 Daftar Status Donatur &amp; Penyaluran — {formatBulanLabel(selectedMonth)}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Menampilkan status konfirmasi/valid dan penyaluran per bulan untuk setiap donatur.
+                Filter berdasarkan wilayah (pulau, provinsi, kabupaten), pengurus, status bayar, dan
+                penyaluran.
               </p>
             </div>
 
@@ -582,13 +728,12 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Cari nama, WA, email, program, domisili..."
+                placeholder="Cari nama, WA, kabupaten, provinsi..."
                 className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 pl-10 pr-4 py-2 text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
           </div>
 
-          {/* Interactive Status Filter Controls */}
           <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-slate-100/85 dark:bg-slate-800/80 p-1.5 w-full xl:w-fit">
             {(['Semua', 'Lunas', 'Menunggu Verifikasi', 'Belum Bayar'] as const).map((tab) => {
               const active = statusFilter === tab;
@@ -610,81 +755,95 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
             })}
           </div>
 
-          {/* Additional Filters & Sort Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-            <select
-              aria-label="Filter status penyaluran"
+          {/* Wilayah Filter Row (Pulau, Provinsi, Kabupaten/Kota) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <SearchableSelect
+              ariaLabel="Filter berdasarkan pulau"
+              options={pulauOptions}
+              value={pulauFilter}
+              onChange={handlePulauChange}
+              allowClear
+              compact
+              placeholder="Pulau: Semua"
+              searchPlaceholder="Ketik nama pulau..."
+            />
+
+            <SearchableSelect
+              ariaLabel="Filter berdasarkan provinsi"
+              options={provinsiOptions}
+              value={provinsiFilter}
+              onChange={handleProvinsiChange}
+              allowClear
+              compact
+              placeholder="Provinsi: Semua"
+              searchPlaceholder="Ketik nama provinsi..."
+            />
+
+            <SearchableSelect
+              ariaLabel="Filter berdasarkan kabupaten atau kota"
+              options={kabupatenOptions}
+              value={kabupatenFilter}
+              onChange={(val) => setKabupatenFilter(val)}
+              allowClear
+              compact
+              placeholder="Kabupaten / Kota: Semua"
+              searchPlaceholder="Ketik nama kabupaten atau kota..."
+            />
+          </div>
+
+          {/* Operational Filters & Sort */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <SearchableSelect
+              ariaLabel="Filter status penyaluran"
+              options={PENYALURAN_OPTIONS}
               value={penyaluranFilter}
-              onChange={(e) =>
+              onChange={(val) =>
                 setPenyaluranFilter(
-                  e.target.value as 'Semua' | 'Sudah Disalurkan' | 'Belum Disalurkan'
+                  (val || 'Semua') as 'Semua' | 'Sudah Disalurkan' | 'Belum Disalurkan'
                 )
               }
-              className="rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 focus:border-emerald-500 focus:outline-none"
-            >
-              <option value="Semua">Penyaluran: Semua</option>
-              <option value="Sudah Disalurkan">Sudah Disalurkan</option>
-              <option value="Belum Disalurkan">Belum Disalurkan</option>
-            </select>
+              compact
+              searchPlaceholder="Filter penyaluran..."
+            />
 
-            <select
-              aria-label="Filter program donasi"
-              value={programFilter}
-              onChange={(e) => setProgramFilter(e.target.value)}
-              className="rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 focus:border-emerald-500 focus:outline-none"
-            >
-              <option value="Semua">Program: Semua</option>
-              {programOptions.map((prog) => (
-                <option key={prog} value={prog}>
-                  {prog}
-                </option>
-              ))}
-            </select>
-
-            <select
-              aria-label="Filter perantara"
+            <SearchableSelect
+              ariaLabel="Filter pengurus atau perantara"
+              options={perantaraOptions}
               value={perantaraFilter}
-              onChange={(e) => setPerantaraFilter(e.target.value)}
-              className="rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 focus:border-emerald-500 focus:outline-none"
-            >
-              <option value="Semua">Perantara: Semua</option>
-              {perantaraOptions.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setPerantaraFilter(val || 'Semua')}
+              compact
+              searchPlaceholder="Ketik nama pengurus/perantara..."
+            />
 
-            <select
-              aria-label="Filter keaktifan donatur"
+            <SearchableSelect
+              ariaLabel="Filter status keaktifan donatur"
+              options={AKTIF_OPTIONS}
               value={aktifFilter}
-              onChange={(e) => setAktifFilter(e.target.value as 'Semua' | StatusAktif)}
-              className="rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 focus:border-emerald-500 focus:outline-none"
-            >
-              <option value="Semua">Keaktifan: Semua</option>
-              <option value="Aktif">Status Aktif</option>
-              <option value="Cuti">Status Cuti</option>
-            </select>
+              onChange={(val) => setAktifFilter((val || 'Semua') as 'Semua' | StatusAktif)}
+              compact
+              searchPlaceholder="Filter keaktifan..."
+            />
 
             <div className="flex items-center gap-1.5">
-              <select
-                aria-label="Urutkan data donatur"
-                value={sortField}
-                onChange={(e) => setSortField(e.target.value as SortField)}
-                className="flex-1 min-w-0 rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 focus:border-emerald-500 focus:outline-none"
-              >
-                <option value="nama">Urut: Nama</option>
-                <option value="nominal">Urut: Komitmen</option>
-                <option value="tanggal">Urut: Tgl Pengingat</option>
-                <option value="statusBayar">Urut: Status Valid</option>
-                <option value="statusSalur">Urut: Penyaluran</option>
-                <option value="terdaftar">Urut: Tgl Daftar</option>
-              </select>
+              <div className="flex-1 min-w-0">
+                <SearchableSelect
+                  ariaLabel="Urutkan data donatur"
+                  options={SORT_OPTIONS}
+                  value={sortField}
+                  onChange={(val) => setSortField((val || 'nama') as SortField)}
+                  compact
+                  searchPlaceholder="Urutkan berdasarkan..."
+                />
+              </div>
               <button
                 type="button"
                 onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
                 className="inline-flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
-                title={sortDir === 'asc' ? 'Urutan Naik (A–Z / Kecil–Besar)' : 'Urutan Turun (Z–A / Besar–Kecil)'}
+                title={
+                  sortDir === 'asc'
+                    ? 'Urutan Naik (A–Z / Kecil–Besar)'
+                    : 'Urutan Turun (Z–A / Besar–Kecil)'
+                }
                 aria-label="Ubah arah urutan"
               >
                 {sortDir === 'asc' ? (
@@ -697,7 +856,6 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
           </div>
         </div>
 
-        {/* Table / Empty / Loading States */}
         {isLoading ? (
           <div className="p-6 space-y-3">
             {[1, 2, 3].map((i) => (
@@ -719,8 +877,8 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
             </h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
               {donaturList.length === 0
-                ? 'Mulai daftarkan donatur rutin pertama melalui tab Pendaftaran atau hubungkan URL Web App Google Apps Script Anda.'
-                : 'Coba ubah filter status, penyaluran, kategori, atau kata kunci pencarian.'}
+                ? 'Mulai daftarkan donatur rutin pertama melalui halaman Pendaftaran atau periksa koneksi layanan di menu Pengaturan.'
+                : 'Coba ubah filter wilayah, status, atau kata kunci pencarian.'}
             </p>
             {donaturList.length === 0 && (
               <button
@@ -740,7 +898,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                 <tr className="bg-emerald-800 dark:bg-emerald-950 text-white dark:text-emerald-100 text-[11px] font-semibold">
                   <th className="py-3.5 pl-5 pr-3 w-12 text-center">No</th>
                   <th className="py-3.5 px-4">Donatur &amp; Kontak</th>
-                  <th className="py-3.5 px-4">Program &amp; Perantara</th>
+                  <th className="py-3.5 px-4">Wilayah &amp; Perantara</th>
                   <th className="py-3.5 px-4 text-right">Komitmen</th>
                   <th className="py-3.5 px-4">Konfirmasi / Valid</th>
                   <th className="py-3.5 px-4">Penyaluran</th>
@@ -756,6 +914,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                     statusPenyaluranBulan,
                     validTransaksiBulanIni,
                   } = row;
+                  const wilayah = resolveDonorWilayah(donatur);
                   const isCuti = donatur.statusAktif === 'Cuti';
                   const isUpdating = updatingId === donatur.idDonatur;
                   const isUpdatingSalur = updatingSalurDonorId === donatur.idDonatur;
@@ -776,7 +935,6 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                         </p>
                         <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 tabular-nums safe-wrap">
                           {formatWADisplay(donatur.noWa)}
-                          {donatur.domisili ? ` · ${donatur.domisili}` : ''}
                         </p>
                         {donatur.email && (
                           <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
@@ -788,11 +946,16 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                         </p>
                       </td>
 
-                      <td className="py-4 px-4 min-w-0 max-w-[220px]">
+                      <td className="py-4 px-4 min-w-0 max-w-[230px]">
                         <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 safe-wrap">
-                          {donatur.programDonasi}
+                          {wilayah.kab || 'Domisili belum diisi'}
                         </p>
-                        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 safe-wrap">
+                        {(wilayah.provinsi || wilayah.pulau) && (
+                          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
+                            {[wilayah.provinsi, wilayah.pulau].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
+                        <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 safe-wrap">
                           Perantara: {donatur.namaPerantara}
                         </p>
                         <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
@@ -909,33 +1072,35 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         )}
       </section>
 
-      {/* Rekap Berdasarkan Beberapa Kategori */}
+      {/* Rekap Berdasarkan Wilayah & Pengurus */}
       <section className="glass-surface rounded-3xl overflow-hidden">
-        <div className="p-5 sm:p-6 border-b border-slate-200/70 dark:border-slate-700/70 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="p-5 sm:p-6 border-b border-slate-200/70 dark:border-slate-700/70 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
           <div className="min-w-0">
             <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-              Rekap Berdasarkan Kategori
+              Rekap Wilayah &amp; Pengurus
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Ringkasan perolehan dan penyaluran pada periode {formatBulanLabel(selectedMonth)} serta kumulatif keseluruhan.
+              Ringkasan perolehan dan penyaluran Kafalah Da&apos;i periode{' '}
+              {formatBulanLabel(selectedMonth)} serta kumulatif keseluruhan.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-slate-100/85 dark:bg-slate-800/80 p-1.5 w-full lg:w-fit">
+          <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-slate-100/85 dark:bg-slate-800/80 p-1.5 w-full xl:w-fit">
             {(
               [
-                { key: 'program', label: 'Program Donasi' },
-                { key: 'panitia', label: 'Panitia / Perantara' },
-                { key: 'domisili', label: 'Domisili' },
+                { key: 'pulau', label: 'Pulau' },
+                { key: 'provinsi', label: 'Provinsi' },
+                { key: 'kabupaten', label: 'Kabupaten / Kota' },
+                { key: 'panitia', label: 'Pengurus / Perantara' },
                 { key: 'metode', label: 'Metode Daftar' },
               ] as const
             ).map((item) => {
-              const active = categoryTab === item.key;
+              const active = summaryTab === item.key;
               return (
                 <button
                   key={item.key}
                   type="button"
-                  onClick={() => setCategoryTab(item.key)}
+                  onClick={() => setSummaryTab(item.key)}
                   className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
                     active
                       ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
@@ -954,81 +1119,92 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
             <thead>
               <tr className="bg-teal-800 dark:bg-teal-950 text-white dark:text-teal-100 text-[11px] font-semibold">
                 <th className="py-3.5 pl-5 pr-3 w-12 text-center">No</th>
-                <th className="py-3.5 px-4">Kategori</th>
+                <th className="py-3.5 px-4">Kelompok</th>
                 <th className="py-3.5 px-4 text-right">Donatur Aktif</th>
                 <th className="py-3.5 px-4 text-right">Lunas Bulan Ini</th>
                 <th className="py-3.5 px-4 text-right">Valid Bulan Ini</th>
                 <th className="py-3.5 px-4 text-right">Disalurkan Bulan Ini</th>
                 <th className="py-3.5 px-4 text-right">Total Valid Keseluruhan</th>
-                {categoryTab === 'panitia' && (
+                {summaryTab === 'panitia' && (
                   <th className="py-3.5 pl-4 pr-5 text-right">Link Referral</th>
                 )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200/70 dark:divide-slate-700/70 text-sm">
-              {categorySummaryRows.map((row, index) => (
-                <tr
-                  key={row.label}
-                  className="odd:bg-white/90 even:bg-sky-50/45 dark:odd:bg-slate-900/75 dark:even:bg-slate-800/65 hover:bg-emerald-50/60 dark:hover:bg-teal-950/45 transition-colors"
-                >
-                  <td className="py-3.5 pl-5 pr-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
-                    {index + 1}
+              {summaryRows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={summaryTab === 'panitia' ? 8 : 7}
+                    className="py-8 px-4 text-center text-xs text-slate-500 dark:text-slate-400"
+                  >
+                    Belum ada data untuk ditampilkan pada pengelompokan ini.
                   </td>
-                  <td className="py-3.5 px-4 min-w-0">
-                    <p className="font-semibold text-slate-900 dark:text-slate-100 safe-wrap">
-                      {row.label}
-                    </p>
-                    {row.subtitle && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        {row.subtitle}
+                </tr>
+              ) : (
+                summaryRows.map((row, index) => (
+                  <tr
+                    key={row.label}
+                    className="odd:bg-white/90 even:bg-sky-50/45 dark:odd:bg-slate-900/75 dark:even:bg-slate-800/65 hover:bg-emerald-50/60 dark:hover:bg-teal-950/45 transition-colors"
+                  >
+                    <td className="py-3.5 pl-5 pr-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                      {index + 1}
+                    </td>
+                    <td className="py-3.5 px-4 min-w-0">
+                      <p className="font-semibold text-slate-900 dark:text-slate-100 safe-wrap">
+                        {row.label}
                       </p>
-                    )}
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-semibold text-slate-800 dark:text-slate-200 tabular-nums whitespace-nowrap">
-                    {row.activeCount}{' '}
-                    <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
-                      / {row.totalDonatur}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-semibold text-teal-700 dark:text-teal-300 tabular-nums whitespace-nowrap">
-                    {row.lunasBulanIni} donatur
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-bold text-emerald-800 dark:text-emerald-300 tabular-nums whitespace-nowrap">
-                    {formatRupiah(row.validBulanRp)}
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-semibold text-sky-800 dark:text-sky-300 tabular-nums whitespace-nowrap">
-                    {formatRupiah(row.salurBulanRp)}
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-semibold text-slate-700 dark:text-slate-200 tabular-nums whitespace-nowrap">
-                    {formatRupiah(row.validSemuaRp)}
-                  </td>
-                  {categoryTab === 'panitia' && (
-                    <td className="py-3.5 pl-4 pr-5 text-right whitespace-nowrap">
-                      {row.kodePanitia ? (
-                        <button
-                          type="button"
-                          onClick={() => handleCopyRef(row.kodePanitia)}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-300 dark:hover:border-emerald-600 hover:text-emerald-800 dark:hover:text-emerald-200 transition-colors whitespace-nowrap cursor-pointer"
-                        >
-                          {copiedKode === row.kodePanitia ? (
-                            <>
-                              <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                              <span>Disalin</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="h-3.5 w-3.5 shrink-0" />
-                              <span>Salin Link</span>
-                            </>
-                          )}
-                        </button>
-                      ) : (
-                        <span className="text-xs text-slate-400">—</span>
+                      {row.subtitle && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
+                          {row.subtitle}
+                        </p>
                       )}
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td className="py-3.5 px-4 text-right font-semibold text-slate-800 dark:text-slate-200 tabular-nums whitespace-nowrap">
+                      {row.activeCount}{' '}
+                      <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
+                        / {row.totalDonatur}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-semibold text-teal-700 dark:text-teal-300 tabular-nums whitespace-nowrap">
+                      {row.lunasBulanIni} donatur
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-bold text-emerald-800 dark:text-emerald-300 tabular-nums whitespace-nowrap">
+                      {formatRupiah(row.validBulanRp)}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-semibold text-sky-800 dark:text-sky-300 tabular-nums whitespace-nowrap">
+                      {formatRupiah(row.salurBulanRp)}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-semibold text-slate-700 dark:text-slate-200 tabular-nums whitespace-nowrap">
+                      {formatRupiah(row.validSemuaRp)}
+                    </td>
+                    {summaryTab === 'panitia' && (
+                      <td className="py-3.5 pl-4 pr-5 text-right whitespace-nowrap">
+                        {row.kodePanitia ? (
+                          <button
+                            type="button"
+                            onClick={() => handleCopyRef(row.kodePanitia)}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-300 dark:hover:border-emerald-600 hover:text-emerald-800 dark:hover:text-emerald-200 transition-colors whitespace-nowrap cursor-pointer"
+                          >
+                            {copiedKode === row.kodePanitia ? (
+                              <>
+                                <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                <span>Disalin</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="h-3.5 w-3.5 shrink-0" />
+                                <span>Salin Link</span>
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

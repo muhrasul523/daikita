@@ -2,6 +2,8 @@ export type TabKey = 'pendaftaran' | 'konfirmasi' | 'dashboard' | 'verifikasi';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
+export type RolePengurus = 'Publik' | 'Admin' | 'Super Admin';
+
 export type StatusAktif = 'Aktif' | 'Cuti';
 export type StatusVerifikasi = 'Pending' | 'Valid' | 'Ditolak';
 export type StatusPenyaluran = 'Belum Disalurkan' | 'Sudah Disalurkan';
@@ -15,9 +17,15 @@ export interface RekeningInfo {
 
 export interface LembagaConfig {
   namaLembaga: string;
-  tagline?: string;
+  tagline: string;
+  logoUrl: string;
+  qrisUrl: string;
+  qrisMerchantName: string;
+  showQris: boolean;
+  defaultNominal: number;
+  defaultTglPengingat: number;
+  catatanPembayaran: string;
   infoRekening: RekeningInfo[];
-  daftarProgram: string[];
 }
 
 export interface Donatur {
@@ -26,11 +34,14 @@ export interface Donatur {
   namaLengkap: string;
   noWa: string;
   email?: string;
-  domisili: string;
-  programDonasi: string;
+  kabId: string;
+  domisili: string; // Nama Kabupaten/Kota
+  provinsi: string;
+  pulau: string;
   nominalKomitmen: number;
   tglJatuhTempo: number;
   metodeDaftar: string;
+  kodePerantara?: string;
   namaPerantara: string;
   statusAktif: StatusAktif;
 }
@@ -54,7 +65,7 @@ export interface Panitia {
   kodePanitia: string;
   namaPanitia: string;
   noWaPanitia: string;
-  role: string;
+  role: string; // Siap untuk pembagian role Publik / Admin / Super Admin
 }
 
 export interface AppDataState {
@@ -68,11 +79,14 @@ export interface RegisterDonaturPayload {
   namaLengkap: string;
   noWa: string;
   email?: string;
-  domisili?: string;
-  programDonasi: string;
+  kabId: string;
+  domisili: string;
+  provinsi: string;
+  pulau: string;
   nominalKomitmen: number;
   tglJatuhTempo: number;
   metodeDaftar: string;
+  kodePerantara?: string;
   namaPerantara: string;
 }
 
@@ -87,6 +101,25 @@ export interface SubmitPembayaranPayload {
   fileBase64: string;
   fileMimeType: string;
   fileName: string;
+}
+
+export interface SavePengaturanPayload {
+  namaLembaga: string;
+  tagline: string;
+  logoUrl: string;
+  logoBase64?: string;
+  logoMimeType?: string;
+  logoFileName?: string;
+  qrisUrl: string;
+  qrisBase64?: string;
+  qrisMimeType?: string;
+  qrisFileName?: string;
+  qrisMerchantName: string;
+  showQris: boolean;
+  defaultNominal: number;
+  defaultTglPengingat: number;
+  catatanPembayaran: string;
+  infoRekening: RekeningInfo[];
 }
 
 export interface ApiResult<T = unknown> {

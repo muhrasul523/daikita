@@ -46,7 +46,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
               Terjadi Kendala Tampilan
             </h1>
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
-              Aplikasi DAIKITA mengalami kesalahan saat merender halaman. Data Anda pada Google Sheets tetap aman.
+              Aplikasi DAIKITA mengalami kesalahan saat merender halaman. Data Anda pada sistem penyimpanan tetap aman.
             </p>
             <div className="mt-4 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 p-3 text-left text-xs text-slate-700 dark:text-slate-300 safe-wrap font-mono">
               {this.state.errorMessage}

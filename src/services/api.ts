@@ -3,14 +3,21 @@ import {
   ApiResult,
   AppDataState,
   Donatur,
+  LembagaConfig,
+  Panitia,
   RegisterDonaturPayload,
+  SavePengaturanPayload,
   StatusAktif,
   StatusPenyaluran,
   StatusVerifikasi,
   SubmitPembayaranPayload,
   TransaksiDonasi,
 } from '../types';
-import { previewAutoRenameFile, validateAndNormalizeWA } from '../utils/formatters';
+import {
+  normalizeRoleLabel,
+  previewAutoRenameFile,
+  validateAndNormalizeWA,
+} from '../utils/formatters';
 
 export function getSavedGasUrl(): string {
   try {
@@ -58,34 +65,56 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
       }))
     : [];
 
-  const donatur = Array.isArray(raw?.donatur)
+  const donatur: Donatur[] = Array.isArray(raw?.donatur)
     ? raw!.donatur.map((d) => ({
         ...d,
         email: d.email || '',
+        kabId: d.kabId || '',
         domisili: d.domisili || '',
-        programDonasi: d.programDonasi || 'Infaq Umum Rutin',
+        provinsi: d.provinsi || '',
+        pulau: d.pulau || '',
+        kodePerantara: d.kodePerantara || '',
       }))
     : [];
 
+  const panitia: Panitia[] =
+    Array.isArray(raw?.panitia) && raw!.panitia.length > 0
+      ? raw!.panitia.map((p) => ({
+          ...p,
+          role: normalizeRoleLabel(p.role),
+        }))
+      : DEFAULT_PANITIA;
+
+  const rawCfg = raw?.config;
+  const config: LembagaConfig = rawCfg
+    ? {
+        ...DEFAULT_CONFIG,
+        ...rawCfg,
+        logoUrl: rawCfg.logoUrl || '',
+        qrisUrl: rawCfg.qrisUrl || '',
+        qrisMerchantName: rawCfg.qrisMerchantName || DEFAULT_CONFIG.qrisMerchantName,
+        showQris: typeof rawCfg.showQris === 'boolean' ? rawCfg.showQris : DEFAULT_CONFIG.showQris,
+        defaultNominal:
+          Number(rawCfg.defaultNominal) > 0
+            ? Number(rawCfg.defaultNominal)
+            : DEFAULT_CONFIG.defaultNominal,
+        defaultTglPengingat:
+          Number(rawCfg.defaultTglPengingat) >= 1 && Number(rawCfg.defaultTglPengingat) <= 31
+            ? Number(rawCfg.defaultTglPengingat)
+            : DEFAULT_CONFIG.defaultTglPengingat,
+        catatanPembayaran: rawCfg.catatanPembayaran || DEFAULT_CONFIG.catatanPembayaran,
+        infoRekening:
+          Array.isArray(rawCfg.infoRekening) && rawCfg.infoRekening.length > 0
+            ? rawCfg.infoRekening
+            : DEFAULT_CONFIG.infoRekening,
+      }
+    : DEFAULT_CONFIG;
+
   return {
-    config: raw?.config
-      ? {
-          ...DEFAULT_CONFIG,
-          ...raw.config,
-          infoRekening:
-            Array.isArray(raw.config.infoRekening) && raw.config.infoRekening.length > 0
-              ? raw.config.infoRekening
-              : DEFAULT_CONFIG.infoRekening,
-          daftarProgram:
-            Array.isArray(raw.config.daftarProgram) && raw.config.daftarProgram.length > 0
-              ? raw.config.daftarProgram
-              : DEFAULT_CONFIG.daftarProgram,
-        }
-      : DEFAULT_CONFIG,
+    config,
     donatur,
     transaksi,
-    panitia:
-      Array.isArray(raw?.panitia) && raw!.panitia.length > 0 ? raw!.panitia : DEFAULT_PANITIA,
+    panitia,
   };
 }
 
@@ -143,7 +172,7 @@ async function callGasPost<T>(gasUrl: string, body: Record<string, unknown>): Pr
     parsed = JSON.parse(text) as ApiResult<T>;
   } catch {
     throw new Error(
-      'Respons dari Google Apps Script bukan JSON valid. Pastikan Deployment Web App diset "Yang memiliki akses: Siapa saja (Anyone)" dan URL diakhiri /exec.'
+      'Respons layanan server tidak sesuai format. Periksa izin akses dan URL layanan sinkronisasi.'
     );
   }
   return parsed;
@@ -156,7 +185,7 @@ export async function pingGasConnection(
   if (!isValidGasUrl(url)) {
     return {
       status: 'error',
-      message: 'URL harus berupa tautan https://script.google.com/macros/s/.../exec yang valid.',
+      message: 'URL layanan sinkronisasi harus diawali https://script.google.com/ dan diakhiri /exec.',
     };
   }
   try {
@@ -172,8 +201,8 @@ export async function pingGasConnection(
       status: 'error',
       message:
         err instanceof Error
-          ? `Gagal menghubungi Apps Script: ${err.message}`
-          : 'Gagal menghubungi server Google Apps Script.',
+          ? `Gagal menghubungi server: ${err.message}`
+          : 'Gagal menghubungi server sinkronisasi.',
     };
   }
 }
@@ -183,7 +212,7 @@ export async function fetchInitialData(gasUrl: string): Promise<ApiResult<AppDat
   if (!url) {
     return {
       status: 'success',
-      message: 'Menggunakan penyimpanan lokal browser.',
+      message: 'Menggunakan penyimpanan lokal perangkat.',
       data: getLocalState(),
     };
   }
@@ -199,7 +228,7 @@ export async function fetchInitialData(gasUrl: string): Promise<ApiResult<AppDat
     if (parsed.status === 'success' && parsed.data) {
       return {
         status: 'success',
-        message: parsed.message || 'Data berhasil dimuat.',
+        message: parsed.message || 'Data berhasil disinkronkan.',
         data: normalizeLoadedState(parsed.data),
       };
     }
@@ -209,8 +238,8 @@ export async function fetchInitialData(gasUrl: string): Promise<ApiResult<AppDat
       status: 'error',
       message:
         err instanceof Error
-          ? `Gagal memuat data dari Apps Script: ${err.message}`
-          : 'Gagal memuat data dari Google Apps Script.',
+          ? `Gagal memuat data: ${err.message}`
+          : 'Gagal memuat data dari server.',
     };
   }
 }
@@ -229,12 +258,11 @@ export async function registerDonatur(
     } catch (err) {
       return {
         status: 'error',
-        message: err instanceof Error ? err.message : 'Gagal mendaftarkan donatur ke Apps Script.',
+        message: err instanceof Error ? err.message : 'Gagal mendaftarkan donatur.',
       };
     }
   }
 
-  // Mode Lokal (Browser Storage)
   const state = getLocalState();
   const waCheck = validateAndNormalizeWA(payload.noWa);
   if (!waCheck.valid) {
@@ -263,11 +291,14 @@ export async function registerDonatur(
     namaLengkap: payload.namaLengkap.trim(),
     noWa: normalizedWa,
     email: (payload.email || '').trim(),
+    kabId: (payload.kabId || '').trim(),
     domisili: (payload.domisili || '').trim(),
-    programDonasi: payload.programDonasi.trim() || 'Infaq Umum Rutin',
+    provinsi: (payload.provinsi || '').trim(),
+    pulau: (payload.pulau || '').trim(),
     nominalKomitmen: payload.nominalKomitmen,
     tglJatuhTempo: payload.tglJatuhTempo,
     metodeDaftar: payload.metodeDaftar,
+    kodePerantara: (payload.kodePerantara || '').trim(),
     namaPerantara: payload.namaPerantara,
     statusAktif: 'Aktif',
   };
@@ -296,7 +327,7 @@ export async function submitPembayaran(
     } catch (err) {
       return {
         status: 'error',
-        message: err instanceof Error ? err.message : 'Gagal mengirim konfirmasi pembayaran ke Apps Script.',
+        message: err instanceof Error ? err.message : 'Gagal mengirim konfirmasi pembayaran.',
       };
     }
   }
@@ -339,7 +370,7 @@ export async function submitPembayaran(
 
   return {
     status: 'success',
-    message: 'Konfirmasi pembayaran berhasil dicatat (Mode Lokal) dan menunggu verifikasi admin.',
+    message: 'Konfirmasi pembayaran berhasil dicatat (Mode Lokal) dan menunggu verifikasi.',
     data: { transaksi: newTrx, savedFileName },
   };
 }
@@ -452,5 +483,126 @@ export async function updateStatusDonatur(
     status: 'success',
     message: `Status donatur ${idDonatur} diubah menjadi ${status}.`,
     data: { idDonatur, statusAktif: status },
+  };
+}
+
+export async function savePengaturan(
+  gasUrl: string,
+  payload: SavePengaturanPayload
+): Promise<ApiResult<{ config: LembagaConfig }>> {
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ config: LembagaConfig }>(url, {
+        action: 'savePengaturan',
+        ...payload,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal menyimpan pengaturan ke server.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  const updatedConfig: LembagaConfig = {
+    namaLembaga: payload.namaLembaga.trim() || DEFAULT_CONFIG.namaLembaga,
+    tagline: payload.tagline.trim() || DEFAULT_CONFIG.tagline,
+    logoUrl: payload.logoBase64 || payload.logoUrl || '',
+    qrisUrl: payload.qrisBase64 || payload.qrisUrl || '',
+    qrisMerchantName: payload.qrisMerchantName.trim(),
+    showQris: payload.showQris,
+    defaultNominal: payload.defaultNominal > 0 ? payload.defaultNominal : 50000,
+    defaultTglPengingat:
+      payload.defaultTglPengingat >= 1 && payload.defaultTglPengingat <= 31
+        ? payload.defaultTglPengingat
+        : 5,
+    catatanPembayaran: payload.catatanPembayaran.trim(),
+    infoRekening: payload.infoRekening.length > 0 ? payload.infoRekening : DEFAULT_CONFIG.infoRekening,
+  };
+  state.config = updatedConfig;
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: 'Pengaturan aplikasi berhasil disimpan (Mode Lokal).',
+    data: { config: updatedConfig },
+  };
+}
+
+export async function savePanitia(
+  gasUrl: string,
+  panitia: Panitia
+): Promise<ApiResult<{ panitia: Panitia[] }>> {
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ panitia: Panitia[] }>(url, {
+        action: 'savePanitia',
+        ...panitia,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal menyimpan data pengurus.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  const kode = panitia.kodePanitia.trim().toUpperCase();
+  const waCheck = validateAndNormalizeWA(panitia.noWaPanitia);
+  const normalized: Panitia = {
+    kodePanitia: kode,
+    namaPanitia: panitia.namaPanitia.trim(),
+    noWaPanitia: waCheck.valid ? waCheck.normalized : panitia.noWaPanitia.trim(),
+    role: normalizeRoleLabel(panitia.role),
+  };
+
+  const idx = state.panitia.findIndex((p) => p.kodePanitia.toUpperCase() === kode);
+  if (idx >= 0) {
+    state.panitia[idx] = normalized;
+  } else {
+    state.panitia.push(normalized);
+  }
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: `Pengurus ${normalized.namaPanitia} berhasil disimpan (Mode Lokal).`,
+    data: { panitia: state.panitia },
+  };
+}
+
+export async function deletePanitia(
+  gasUrl: string,
+  kodePanitia: string
+): Promise<ApiResult<{ panitia: Panitia[] }>> {
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ panitia: Panitia[] }>(url, {
+        action: 'deletePanitia',
+        kodePanitia,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal menghapus data pengurus.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  state.panitia = state.panitia.filter(
+    (p) => p.kodePanitia.toUpperCase() !== kodePanitia.trim().toUpperCase()
+  );
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: `Pengurus ${kodePanitia} berhasil dihapus (Mode Lokal).`,
+    data: { panitia: state.panitia },
   };
 }

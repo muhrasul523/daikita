@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import {
   APP_BRAND_NAME,
-  APP_TAGLINE,
+  APP_PROGRAM_FOCUS,
   DEFAULT_CONFIG,
   DEFAULT_PANITIA,
   DEFAULT_SCREEN_WIDTH_PCT,
@@ -23,7 +23,9 @@ import {
 import {
   AppDataState,
   Donatur,
+  Panitia,
   RegisterDonaturPayload,
+  SavePengaturanPayload,
   StatusAktif,
   StatusPenyaluran,
   StatusVerifikasi,
@@ -34,15 +36,19 @@ import {
   TransaksiDonasi,
 } from './types';
 import {
+  deletePanitia,
   fetchInitialData,
   getSavedGasUrl,
   registerDonatur,
   saveGasUrl,
+  savePanitia,
+  savePengaturan,
   submitPembayaran,
   updateStatusDonatur,
   updateStatusPenyaluran,
   verifikasiTransaksi,
 } from './services/api';
+import { getDriveThumbnailFallback, normalizeDriveImageUrl } from './utils/formatters';
 import { ConnectionModal } from './components/ConnectionModal';
 import { TabPendaftaran } from './components/TabPendaftaran';
 import { TabKonfirmasi } from './components/TabKonfirmasi';
@@ -102,7 +108,6 @@ export default function App() {
     readReferralFromUrl() ? 'pendaftaran' : 'dashboard'
   );
 
-  // Theme (system | light | dark) & customizable screen width (default 95%)
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getSavedTheme());
   const [screenWidthPct, setScreenWidthPct] = useState<number>(() => getSavedScreenWidth());
   const [showDisplayControls, setShowDisplayControls] = useState<boolean>(false);
@@ -123,16 +128,41 @@ export default function App() {
     panitia: DEFAULT_PANITIA,
   });
 
+  const [logoImgFailed, setLogoImgFailed] = useState(false);
+  const [logoFallbackTried, setLogoFallbackTried] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  // Sinkronisasi tema gelap / terang mengikuti preferensi perangkat secara real-time
+  const resolvedLogoSrc = useMemo(() => {
+    if (!data.config.logoUrl) return '';
+    if (logoFallbackTried) return getDriveThumbnailFallback(data.config.logoUrl);
+    return normalizeDriveImageUrl(data.config.logoUrl);
+  }, [data.config.logoUrl, logoFallbackTried]);
+
+  useEffect(() => {
+    setLogoImgFailed(false);
+    setLogoFallbackTried(false);
+  }, [data.config.logoUrl]);
+
+  // Sinkronkan title & favicon browser dengan logo lembaga jika sudah diunggah
+  useEffect(() => {
+    document.title = `${data.config.namaLembaga || APP_BRAND_NAME} | Manajemen Donatur Rutin`;
+    if (resolvedLogoSrc) {
+      let iconEl = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+      if (!iconEl) {
+        iconEl = document.createElement('link');
+        iconEl.rel = 'icon';
+        document.head.appendChild(iconEl);
+      }
+      iconEl.href = resolvedLogoSrc;
+    }
+  }, [data.config.namaLembaga, resolvedLogoSrc]);
+
   useEffect(() => {
     const root = document.documentElement;
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
     const applyTheme = () => {
-      const isDark =
-        themeMode === 'dark' || (themeMode === 'system' && mediaQuery.matches);
+      const isDark = themeMode === 'dark' || (themeMode === 'system' && mediaQuery.matches);
       root.classList.toggle('dark', isDark);
     };
 
@@ -151,7 +181,6 @@ export default function App() {
     return () => mediaQuery.removeEventListener('change', handleSystemChange);
   }, [themeMode]);
 
-  // Simpan preferensi lebar layar
   useEffect(() => {
     try {
       window.localStorage.setItem(STORAGE_KEYS.SCREEN_WIDTH, String(screenWidthPct));
@@ -188,7 +217,7 @@ export default function App() {
         if (showSuccessToast) {
           notify(
             'success',
-            targetUrl.trim() ? 'Data disinkronkan dari Google Sheets' : 'Mode Uji Lokal aktif'
+            targetUrl.trim() ? 'Data berhasil disinkronkan' : 'Mode Lokal aktif'
           );
         }
       } else {
@@ -208,6 +237,48 @@ export default function App() {
     saveGasUrl(newUrl);
     setGasUrl(newUrl);
     await loadData(newUrl, true);
+  };
+
+  const handleSavePengaturan = async (payload: SavePengaturanPayload): Promise<boolean> => {
+    const res = await savePengaturan(gasUrl, payload);
+    if (res.status === 'success' && res.data?.config) {
+      setData((prev) => ({
+        ...prev,
+        config: res.data!.config,
+      }));
+      notify('success', 'Pengaturan tersimpan', res.message);
+      return true;
+    }
+    notify('error', 'Gagal menyimpan pengaturan', res.message);
+    return false;
+  };
+
+  const handleSavePanitia = async (p: Panitia): Promise<boolean> => {
+    const res = await savePanitia(gasUrl, p);
+    if (res.status === 'success' && res.data?.panitia) {
+      setData((prev) => ({
+        ...prev,
+        panitia: res.data!.panitia,
+      }));
+      notify('success', 'Data pengurus tersimpan', res.message);
+      return true;
+    }
+    notify('error', 'Gagal menyimpan pengurus', res.message);
+    return false;
+  };
+
+  const handleDeletePanitia = async (kodePanitia: string): Promise<boolean> => {
+    const res = await deletePanitia(gasUrl, kodePanitia);
+    if (res.status === 'success' && res.data?.panitia) {
+      setData((prev) => ({
+        ...prev,
+        panitia: res.data!.panitia,
+      }));
+      notify('success', 'Pengurus dihapus', res.message);
+      return true;
+    }
+    notify('error', 'Gagal menghapus pengurus', res.message);
+    return false;
   };
 
   const handleRegisterDonatur = async (
@@ -337,7 +408,6 @@ export default function App() {
     setPreselectedDonatur(null);
   }, []);
 
-  // Lebar dinamis default 95% dengan proteksi layar sempit mobile minimal 320px / 100%
   const containerWidthStyle = useMemo<React.CSSProperties>(
     () => ({
       width: `min(100%, max(320px, ${screenWidthPct}%))`,
@@ -347,27 +417,49 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col text-slate-900 dark:text-slate-100">
-      {/* 3-Zone Apple-Inspired Frosted Glass Top Bar */}
+      {/* 3-Zone Top Bar */}
       <header className="glass-topbar sticky top-0 z-30">
         <div
           style={containerWidthStyle}
           className="mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-4 md:gap-8 transition-[width] duration-200"
         >
-          {/* Zone 1: Brand Wordmark */}
+          {/* Zone 1: Brand Logo & Wordmark */}
           <button
             type="button"
             onClick={() => setActiveTab('dashboard')}
             className="flex items-center gap-2.5 text-left whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded-xl"
           >
-            <span
-              className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 via-teal-600 to-sky-600 text-white shadow-sm shrink-0"
-              aria-hidden="true"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <path d="M12 3L4 8v8l8 5 8-5V8l-8-5z" strokeLinejoin="round" />
-                <path d="M12 8v8M8 12h8" strokeLinecap="round" />
-              </svg>
-            </span>
+            {resolvedLogoSrc && !logoImgFailed ? (
+              <img
+                src={resolvedLogoSrc}
+                alt={`Logo ${data.config.namaLembaga}`}
+                referrerPolicy="no-referrer"
+                onError={() => {
+                  if (!logoFallbackTried && data.config.logoUrl) {
+                    setLogoFallbackTried(true);
+                  } else {
+                    setLogoImgFailed(true);
+                  }
+                }}
+                className="h-8 w-8 rounded-xl object-contain bg-white/90 p-0.5 shadow-sm shrink-0"
+              />
+            ) : (
+              <span
+                className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 via-teal-600 to-sky-600 text-white shadow-sm shrink-0"
+                aria-hidden="true"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                >
+                  <path d="M12 3L4 8v8l8 5 8-5V8l-8-5z" strokeLinejoin="round" />
+                  <path d="M12 8v8M8 12h8" strokeLinecap="round" />
+                </svg>
+              </span>
+            )}
             <span className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
               {APP_BRAND_NAME}
             </span>
@@ -408,18 +500,17 @@ export default function App() {
               className="inline-flex items-center gap-2 rounded-xl bg-slate-900 dark:bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-emerald-500 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Settings2 className="h-3.5 w-3.5 shrink-0" />
-              <span>Koneksi GAS</span>
+              <span>Pengaturan</span>
             </button>
           </div>
         </div>
       </header>
 
-      {/* Main Content Container (Lebar Default 95%, Dapat Diatur Pengguna) */}
       <main
         style={containerWidthStyle}
         className="flex-1 mx-auto px-3 sm:px-6 py-5 sm:py-7 space-y-5 transition-[width] duration-200 min-w-0"
       >
-        {/* Mobile Tab Switcher */}
+        {/* Mobile Navigation */}
         <div
           className="md:hidden grid grid-cols-2 sm:grid-cols-4 gap-1.5 rounded-2xl glass-surface p-1.5"
           role="tablist"
@@ -447,7 +538,7 @@ export default function App() {
           })}
         </div>
 
-        {/* Workspace Brand Tagline, Connection Status & Display Controls Bar */}
+        {/* Institutional Identity, Sync Status & Display Controls */}
         <div className="glass-surface rounded-2xl px-4 sm:px-5 py-3.5 space-y-3">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div className="flex items-start sm:items-center gap-3 min-w-0">
@@ -460,7 +551,7 @@ export default function App() {
               )}
               <div className="min-w-0">
                 <p className="text-xs font-bold text-slate-900 dark:text-slate-100 safe-wrap">
-                  {APP_BRAND_NAME} — {APP_TAGLINE}
+                  {data.config.namaLembaga} — {data.config.tagline}
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
                   <span
@@ -473,10 +564,10 @@ export default function App() {
                     }
                   >
                     {connectionStatus === 'connected'
-                      ? 'Terhubung Google Sheets & Drive'
+                      ? `Sinkronisasi Aktif · Program ${APP_PROGRAM_FOCUS}`
                       : connectionStatus === 'error'
-                      ? 'Koneksi Google Apps Script Gagal'
-                      : 'Mode Uji Lokal (Belum Terhubung ke GAS)'}
+                      ? 'Koneksi Layanan Gagal'
+                      : `Mode Lokal (Offline) · Program ${APP_PROGRAM_FOCUS}`}
                   </span>
                   {connectionError ? ` · ${connectionError}` : ''}
                 </p>
@@ -484,7 +575,6 @@ export default function App() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {/* Theme Mode Switcher (Sistem / Terang / Gelap) */}
               <div
                 className="inline-flex items-center rounded-xl bg-slate-100/90 dark:bg-slate-800/90 p-1"
                 role="group"
@@ -531,7 +621,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Screen Width Toggle Button */}
               <button
                 type="button"
                 onClick={() => setShowDisplayControls((v) => !v)}
@@ -552,7 +641,7 @@ export default function App() {
                   onClick={() => setIsModalOpen(true)}
                   className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap cursor-pointer"
                 >
-                  Hubungkan GAS
+                  Atur Koneksi
                 </button>
               )}
 
@@ -562,13 +651,14 @@ export default function App() {
                 disabled={isLoading}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-50 transition-colors whitespace-nowrap cursor-pointer"
               >
-                <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${isLoading ? 'animate-spin' : ''}`} />
+                <RefreshCw
+                  className={`h-3.5 w-3.5 shrink-0 ${isLoading ? 'animate-spin' : ''}`}
+                />
                 <span>{isLoading ? 'Memuat...' : 'Sinkronkan'}</span>
               </button>
             </div>
           </div>
 
-          {/* Expandable Screen Width Adjuster (60% - 100%, Default 95%) */}
           {showDisplayControls && (
             <div className="pt-3 border-t border-slate-200/70 dark:border-slate-700/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -609,7 +699,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Active Tab View */}
         {activeTab === 'pendaftaran' && (
           <TabPendaftaran
             config={data.config}
@@ -617,6 +706,7 @@ export default function App() {
             referralCode={referralCode}
             onSubmitDonatur={handleRegisterDonatur}
             onGoToKonfirmasi={handleGoToKonfirmasi}
+            onNotify={notify}
           />
         )}
 
@@ -657,37 +747,41 @@ export default function App() {
         )}
       </main>
 
-      {/* Quiet Institutional Footer */}
       <footer className="mt-10 border-t border-slate-200/70 dark:border-slate-800 bg-white/45 dark:bg-slate-950/45">
         <div
           style={containerWidthStyle}
           className="mx-auto px-3 sm:px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400"
         >
           <p className="safe-wrap text-center sm:text-left">
-            <strong className="text-slate-700 dark:text-slate-200">{APP_BRAND_NAME}</strong> · {APP_TAGLINE}
+            <strong className="text-slate-700 dark:text-slate-200">
+              {data.config.namaLembaga}
+            </strong>{' '}
+            · {data.config.tagline}
           </p>
           <button
             type="button"
             onClick={() => setIsModalOpen(true)}
             className="font-medium text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-200 hover:underline whitespace-nowrap cursor-pointer"
           >
-            Pengaturan Google Apps Script &amp; Referral
+            Pengaturan Lembaga, QRIS &amp; Referral
           </button>
         </div>
       </footer>
 
-      {/* Connection, Code.gs Copy & Referral Settings Modal */}
       <ConnectionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         gasUrl={gasUrl}
         connectionStatus={connectionStatus}
+        config={data.config}
         panitia={data.panitia}
         onSaveUrl={handleSaveGasUrl}
+        onSavePengaturan={handleSavePengaturan}
+        onSavePanitia={handleSavePanitia}
+        onDeletePanitia={handleDeletePanitia}
         onNotify={notify}
       />
 
-      {/* Non-blocking Toast Notifications */}
       {toasts.length > 0 && (
         <div
           className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-[calc(100vw-2rem)]"

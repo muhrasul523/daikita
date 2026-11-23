@@ -25,6 +25,7 @@ import {
   formatRupiah,
   formatWADisplay,
 } from '../utils/formatters';
+import { SearchableOption, SearchableSelect } from './SearchableSelect';
 
 interface TabVerifikasiProps {
   config: LembagaConfig;
@@ -38,6 +39,19 @@ interface TabVerifikasiProps {
 }
 
 type TrxSortField = 'waktu' | 'nominal' | 'bulan' | 'nama';
+
+const SALUR_FILTER_OPTIONS: SearchableOption[] = [
+  { value: 'Semua', label: 'Penyaluran: Semua', keywords: 'semua' },
+  { value: 'Sudah Disalurkan', label: 'Sudah Disalurkan', keywords: 'sudah disalurkan' },
+  { value: 'Belum Disalurkan', label: 'Belum Disalurkan', keywords: 'belum disalurkan' },
+];
+
+const SORT_OPTIONS: SearchableOption[] = [
+  { value: 'waktu', label: 'Urut: Waktu Input', keywords: 'waktu tanggal input' },
+  { value: 'nominal', label: 'Urut: Nominal', keywords: 'nominal rupiah' },
+  { value: 'bulan', label: 'Urut: Bulan Amanah', keywords: 'bulan periode' },
+  { value: 'nama', label: 'Urut: Nama Donatur', keywords: 'nama donatur' },
+];
 
 export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
   config,
@@ -127,15 +141,15 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Verifikasi &amp; Penyaluran Admin
+            Verifikasi &amp; Penyaluran Pengurus
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-            Periksa bukti transfer, validasi atau tolak konfirmasi, tandai status penyaluran, lalu kirim kuitansi resmi via WhatsApp.
+            Periksa bukti transfer, validasi atau tolak konfirmasi, tandai status penyaluran, lalu
+            kirim kuitansi resmi via WhatsApp.
           </p>
         </div>
       </div>
 
-      {/* Immediate Post-Validation Receipt Action Banner */}
       {recentlyValidated && (
         <div className="glass-surface rounded-3xl p-5 border-emerald-200/90 dark:border-emerald-800/80 bg-gradient-to-r from-emerald-50/90 via-teal-50/75 to-white/90 dark:from-emerald-950/60 dark:via-teal-950/45 dark:to-slate-900/75 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
@@ -149,7 +163,8 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                 <strong className="tabular-nums">
                   {formatRupiah(recentlyValidated.nominalTransfer)}
                 </strong>{' '}
-                ({formatBulanLabel(recentlyValidated.bulanTagihan)}) siap dikirimkan kuitansi &amp; ucapan terima kasih.
+                ({formatBulanLabel(recentlyValidated.bulanTagihan)}) siap dikirimkan kuitansi &amp;
+                ucapan terima kasih.
               </p>
             </div>
           </div>
@@ -176,7 +191,6 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
         </div>
       )}
 
-      {/* Main Verification Panel */}
       <section className="glass-surface rounded-3xl overflow-hidden">
         <div className="p-5 sm:p-6 border-b border-slate-200/70 dark:border-slate-700/70 space-y-4">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -218,30 +232,27 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            <select
-              aria-label="Filter status penyaluran transaksi"
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-w-2xl">
+            <SearchableSelect
+              ariaLabel="Filter status penyaluran transaksi"
+              options={SALUR_FILTER_OPTIONS}
               value={filterSalur}
-              onChange={(e) => setFilterSalur(e.target.value as 'Semua' | StatusPenyaluran)}
-              className="rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 focus:border-emerald-500 focus:outline-none"
-            >
-              <option value="Semua">Penyaluran: Semua</option>
-              <option value="Sudah Disalurkan">Sudah Disalurkan</option>
-              <option value="Belum Disalurkan">Belum Disalurkan</option>
-            </select>
+              onChange={(val) => setFilterSalur((val || 'Semua') as 'Semua' | StatusPenyaluran)}
+              compact
+              searchPlaceholder="Filter penyaluran..."
+            />
 
             <div className="flex items-center gap-1.5">
-              <select
-                aria-label="Urutkan transaksi"
-                value={sortField}
-                onChange={(e) => setSortField(e.target.value as TrxSortField)}
-                className="rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 focus:border-emerald-500 focus:outline-none"
-              >
-                <option value="waktu">Urut: Waktu Input</option>
-                <option value="nominal">Urut: Nominal</option>
-                <option value="bulan">Urut: Bulan Amanah</option>
-                <option value="nama">Urut: Nama Donatur</option>
-              </select>
+              <div className="flex-1 min-w-0">
+                <SearchableSelect
+                  ariaLabel="Urutkan transaksi"
+                  options={SORT_OPTIONS}
+                  value={sortField}
+                  onChange={(val) => setSortField((val || 'waktu') as TrxSortField)}
+                  compact
+                  searchPlaceholder="Urutkan berdasarkan..."
+                />
+              </div>
               <button
                 type="button"
                 onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
@@ -276,12 +287,12 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
               {filterStatus === 'Pending'
                 ? 'Tidak Ada Antrean Verifikasi'
-                : 'Belum Ada Transaksi di Kategori Ini'}
+                : 'Belum Ada Transaksi di Pilihan Ini'}
             </h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
               {filterStatus === 'Pending'
                 ? 'Semua konfirmasi pembayaran yang masuk sudah diperiksa.'
-                : 'Konfirmasi pembayaran baru yang dikirim melalui tab Konfirmasi akan tampil di sini.'}
+                : 'Konfirmasi pembayaran baru yang dikirim melalui halaman Konfirmasi akan tampil di sini.'}
             </p>
           </div>
         ) : (
@@ -291,7 +302,7 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                 <tr className="bg-emerald-800 dark:bg-emerald-950 text-white dark:text-emerald-100 text-[11px] font-semibold">
                   <th className="py-3.5 pl-5 pr-3 w-12 text-center">No</th>
                   <th className="py-3.5 px-4">Transaksi &amp; Periode</th>
-                  <th className="py-3.5 px-4">Donatur &amp; Bank</th>
+                  <th className="py-3.5 px-4">Donatur &amp; Tujuan</th>
                   <th className="py-3.5 px-4 text-right">Nominal</th>
                   <th className="py-3.5 px-4">Verifikasi &amp; Bukti</th>
                   <th className="py-3.5 px-4">Penyaluran</th>
@@ -380,7 +391,7 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                             className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 dark:text-sky-400 hover:underline"
                           >
                             <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                            <span>Lihat Bukti Drive</span>
+                            <span>Lihat Bukti Transfer</span>
                           </a>
                         )}
                         {hasLocalDataUrl && (
@@ -511,7 +522,6 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
         )}
       </section>
 
-      {/* Local Image/PDF Preview Modal */}
       {previewModalTrx && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"

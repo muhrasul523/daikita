@@ -63,7 +63,6 @@ export function validateAndNormalizeWA(raw: string): WaValidationResult {
     digits = '62' + digits;
   }
 
-  // Aturan khusus nomor Indonesia (awalan 628): minimal 9 angka, maksimal 15 angka termasuk 628
   if (digits.startsWith('628')) {
     if (digits.length < 9 || digits.length > 15) {
       return {
@@ -99,7 +98,6 @@ export function validateAndNormalizeWA(raw: string): WaValidationResult {
     };
   }
 
-  // Nomor Internasional (E.164: 7–15 digit)
   if (digits.length < 7 || digits.length > 15) {
     return {
       valid: false,
@@ -117,9 +115,6 @@ export function validateAndNormalizeWA(raw: string): WaValidationResult {
   };
 }
 
-/**
- * Mengembalikan string nomor WA ternormalisasi jika valid, atau string kosong jika tidak valid.
- */
 export function normalizeWA(raw: string): string {
   const res = validateAndNormalizeWA(raw);
   return res.valid ? res.normalized : '';
@@ -132,6 +127,44 @@ export function formatWADisplay(wa: string): string {
     return `+${clean.slice(0, 2)} ${clean.slice(2, 5)}-${clean.slice(5, 9)}${clean.length > 9 ? '-' + clean.slice(9) : ''}`;
   }
   return `+${clean}`;
+}
+
+export function normalizeRoleLabel(role: string): 'Super Admin' | 'Admin' | 'Publik' {
+  const clean = String(role || '').trim().toLowerCase();
+  if (clean === 'super admin' || clean === 'superadmin') return 'Super Admin';
+  if (clean === 'publik' || clean === 'public') return 'Publik';
+  return 'Admin';
+}
+
+export function extractDriveFileId(url: string): string {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  const pathMatch = raw.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (pathMatch) return pathMatch[1];
+  const queryMatch = raw.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (queryMatch) return queryMatch[1];
+  const lhMatch = raw.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/);
+  if (lhMatch) return lhMatch[1];
+  return '';
+}
+
+export function normalizeDriveImageUrl(url: string): string {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('data:')) return raw;
+  const fileId = extractDriveFileId(raw);
+  if (fileId) {
+    return `https://lh3.googleusercontent.com/d/${fileId}`;
+  }
+  return raw;
+}
+
+export function getDriveThumbnailFallback(url: string): string {
+  const fileId = extractDriveFileId(url);
+  if (fileId) {
+    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
+  }
+  return url;
 }
 
 export function formatRupiah(amount: number): string {
@@ -202,7 +235,7 @@ export function previewAutoRenameFile(params: {
 
 export function formatRekeningLines(rekening: RekeningInfo[]): string {
   if (!rekening || rekening.length === 0) {
-    return '- Hubungi admin untuk info rekening resmi.';
+    return '- Hubungi pengurus untuk info rekening resmi.';
   }
   return rekening
     .map((r) => `• ${r.bank}: ${r.nomor} (a.n. ${r.atasNama})`)
@@ -210,7 +243,7 @@ export function formatRekeningLines(rekening: RekeningInfo[]): string {
 }
 
 /**
- * Membangun Smart Link wa.me untuk pengingat amanah donasi rutin (Jalur A — gratis)
+ * Membangun Smart Link wa.me untuk pengingat amanah Kafalah Da'i rutin
  */
 export function buildReminderWaLink(
   donatur: Donatur,
@@ -229,13 +262,15 @@ export function buildReminderWaLink(
     `Yth. Bapak/Ibu *${donatur.namaLengkap}*,`,
     `Semoga Bapak/Ibu beserta keluarga senantiasa dalam kesehatan dan keberkahan.`,
     ``,
-    `Dengan hormat, kami menyampaikan pengingat rutin amanah donasi bulan *${bulanLabel}* melalui *${config.namaLembaga}*:`,
-    `• Program: ${donatur.programDonasi}`,
+    `Dengan hormat, kami menyampaikan pengingat rutin amanah *Kafalah Da'i* bulan *${bulanLabel}* melalui *${config.namaLembaga}*:`,
     `• Nominal Komitmen: *${formatRupiah(donatur.nominalKomitmen)}*`,
     `• Jadwal Pengingat Rutin: Setiap tanggal ${donatur.tglJatuhTempo}`,
     ``,
     `Transfer dapat disalurkan melalui rekening resmi:`,
     rekeningText,
+    config.showQris && config.qrisUrl
+      ? `Pembayaran juga dapat dilakukan melalui QRIS yang tersedia di portal konfirmasi.`
+      : '',
     ``,
     portalUrl ? `Konfirmasi bukti transfer dapat dikirim melalui tautan:\n${portalUrl}` : '',
     ``,
@@ -249,7 +284,7 @@ export function buildReminderWaLink(
 }
 
 /**
- * Membangun Smart Link wa.me untuk kuitansi / ucapan terima kasih setelah validasi admin
+ * Membangun Smart Link wa.me untuk kuitansi / ucapan terima kasih setelah validasi
  */
 export function buildReceiptWaLink(
   trx: TransaksiDonasi,
@@ -262,13 +297,13 @@ export function buildReceiptWaLink(
     `Assalamu'alaikum Warahmatullahi Wabarakatuh,`,
     ``,
     `Alhamdulillah, terima kasih Bapak/Ibu *${trx.namaDonatur}*.`,
-    `Donasi rutin Anda telah kami terima dan *TERVERIFIKASI VALID* oleh admin *${config.namaLembaga}*.`,
+    `Amanah Kafalah Da'i Anda telah kami terima dan *TERVERIFIKASI VALID* oleh *${config.namaLembaga}*.`,
     ``,
     `*RINGKASAN KUITANSI DONASI*`,
     `• No. Transaksi: ${trx.idTransaksi}`,
     `• Periode Amanah: ${bulanLabel}`,
     `• Nominal Diterima: *${formatRupiah(trx.nominalTransfer)}*`,
-    `• Bank Tujuan: ${trx.bankTujuan}`,
+    `• Tujuan Transfer: ${trx.bankTujuan}`,
     `• Status Verifikasi: Valid / Lunas`,
     `• Status Penyaluran: ${trx.statusPenyaluran || 'Belum Disalurkan'}`,
     ``,

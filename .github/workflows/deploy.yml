@@ -1,4 +1,4 @@
-name: Deploy Sistem Donatur Rutin ke GitHub Pages
+name: Deploy DAIKITA ke GitHub Pages
 
 on:
   push:
@@ -21,20 +21,26 @@ jobs:
       - name: Checkout repositori
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
 
       - name: Install dependensi
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund --legacy-peer-deps
+          else
+            npm install --no-audit --no-fund --legacy-peer-deps
+          fi
 
       - name: Build aplikasi produksi (dist)
         run: npm run build
 
-      - name: Tambah file .nojekyll di dist
-        run: touch dist/.nojekyll
+      - name: Siapkan .nojekyll dan fallback 404.html
+        run: |
+          touch dist/.nojekyll
+          cp dist/index.html dist/404.html
 
       - name: Upload artefak GitHub Pages
         uses: actions/upload-pages-artifact@v3

@@ -7,7 +7,7 @@ export const DEFAULT_GAS_URL =
   'https://script.google.com/macros/s/AKfycbza8ngK4Wtqqw9vtAH96d-LejP2mp9KNXvUQVrFg77WGCKooQCEbgfxEyozSQ38FP72nA/exec';
 
 export const APP_BRAND_NAME = 'DAIKITA';
-export const APP_PROGRAM_FOCUS = "Kafalah Da'i";
+export const APP_PROGRAM_FOCUS = "Kafalah Dai";
 export const APP_TAGLINE = 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
 export const APP_PUBLIC_URL = 'https://daikita.duwd.web.id/';
 
@@ -24,7 +24,7 @@ export const DEFAULT_WA_TEMPLATES: string[] = [
   `Assalamu'alaikum Warahmatullahi Wabarakatuh.
 
 Ahlan wa sahlan {sapaan} *{nama}*,
-Jazakumullahu khairan telah bergabung sebagai Donatur Rutin *Kafalah Da'i* di *{lembaga}*.
+Jazakumullahu khairan telah bergabung sebagai Donatur Rutin *Kafalah Dai* di *{lembaga}*.
 
 Ringkasan Amanah Anda:
 • ID Donatur: {id_donatur}
@@ -45,7 +45,7 @@ Semoga Allah SWT membalas dengan keberkahan rezeki dan pahala jariyah yang terus
 
 Alhamdulillah, pendaftaran donatur rutin *{lembaga}* telah resmi tercatat atas nama {sapaan}:
 • Nomor ID: *{id_donatur}*
-• Komitmen Kafalah Da'i: *{nominal} / bulan*
+• Komitmen Kafalah Dai: *{nominal} / bulan*
 • Jadwal Pengingat: Tanggal {tgl_pengingat} setiap bulan
 
 Salurkan amanah Anda melalui:
@@ -54,11 +54,11 @@ Salurkan amanah Anda melalui:
 Jika sudah berdonasi, silakan kirim konfirmasi lewat portal:
 {link_konfirmasi}
 
-Barakallahu fiikum, semoga menjadi amal shalih yang menguatkan langkah dakwah para da'i.`,
+Barakallahu fiikum, semoga menjadi amal shalih yang menguatkan langkah dakwah para dai.`,
 
   `Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} *{nama}* 🌟
 
-Terima kasih atas kepercayaan {sapaan} mendukung program *Kafalah Da'i* bersama *{lembaga}*.
+Terima kasih atas kepercayaan {sapaan} mendukung program *Kafalah Dai* bersama *{lembaga}*.
 
 Detail Komitmen Terdaftar:
 - ID Donatur: {id_donatur}
@@ -77,12 +77,12 @@ Semoga Allah melapangkan urusan dan memberkahi harta {sapaan} sekeluarga. Wassal
 
 export const DEFAULT_EMAIL_TEMPLATES: EmailTemplateItem[] = [
   {
-    subject: "Selamat Bergabung di {lembaga} — Komitmen Kafalah Da'i ({id_donatur})",
+    subject: "Selamat Bergabung di {lembaga} — Komitmen Kafalah Dai ({id_donatur})",
     body: `Assalamu'alaikum Warahmatullahi Wabarakatuh,
 
 Yth. {sapaan} {nama},
 
-Jazakumullahu khairan katsiran telah mendaftarkan komitmen amal rutin Program Kafalah Da'i bersama {lembaga}.
+Jazakumullahu khairan katsiran telah mendaftarkan komitmen amal rutin Program Kafalah Dai bersama {lembaga}.
 
 Ringkasan Data Donatur:
 • ID Donatur: {id_donatur}
@@ -104,7 +104,7 @@ Wassalamu'alaikum Warahmatullahi Wabarakatuh,
 {lembaga}`,
   },
   {
-    subject: "Konfirmasi Pendaftaran Donatur Rutin Kafalah Da'i — {nama}",
+    subject: "Konfirmasi Pendaftaran Donatur Rutin Kafalah Dai — {nama}",
     body: `Bismillahirrahmanirrahim,
 Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} {nama},
 
@@ -114,7 +114,7 @@ Alhamdulillah, data kepesertaan donatur rutin Anda telah kami catat di {lembaga}
 - Tanggal Pengingat: Setiap tanggal {tgl_pengingat}
 - Wilayah: {domisili}
 
-Transfer amanah Kafalah Da'i dapat dikirimkan ke rekening resmi:
+Transfer amanah Kafalah Dai dapat dikirimkan ke rekening resmi:
 {rekening}
 
 Untuk konfirmasi bukti transfer atau informasi QRIS, silakan kunjungi:
@@ -123,10 +123,10 @@ Untuk konfirmasi bukti transfer atau informasi QRIS, silakan kunjungi:
 Terima kasih atas dukungan dan amanah {sapaan}. Barakallahu fiikum.`,
   },
   {
-    subject: "[{id_donatur}] Terima Kasih Amanah Rutin Kafalah Da'i — {lembaga}",
+    subject: "[{id_donatur}] Terima Kasih Amanah Rutin Kafalah Dai — {lembaga}",
     body: `Assalamu'alaikum {sapaan} {nama},
 
-Terima kasih telah menjadi bagian dari penggerak kebaikan Kafalah Da'i bersama {lembaga}.
+Terima kasih telah menjadi bagian dari penggerak kebaikan Kafalah Dai bersama {lembaga}.
 
 Detail Kepesertaan:
 • ID Donatur: {id_donatur}
@@ -144,7 +144,7 @@ Jazakumullahu khairan. Wassalamu'alaikum Warahmatullahi Wabarakatuh.`,
 ];
 
 export const DEFAULT_CONFIG: LembagaConfig = {
-  namaLembaga: "DAIKITA — Kafalah Da'i",
+  namaLembaga: "DAIKITA — Kafalah Dai",
   tagline: APP_TAGLINE,
   logoUrl: '',
   qrisUrl: '',
@@ -153,7 +153,7 @@ export const DEFAULT_CONFIG: LembagaConfig = {
   defaultNominal: 50000,
   defaultTglPengingat: 5,
   catatanPembayaran:
-    "Penyaluran amanah rutin Kafalah Da'i hanya melalui rekening resmi atau QRIS lembaga.",
+    "Penyaluran amanah rutin Kafalah Dai hanya melalui rekening resmi atau QRIS lembaga.",
   infoRekening: [
     {
       bank: 'BSI (Bank Syariah Indonesia)',
@@ -177,7 +177,7 @@ export const DEFAULT_CONFIG: LembagaConfig = {
   waTemplates: DEFAULT_WA_TEMPLATES,
   enableEmailNotif: true,
   emailSenderAlias: 'lajnahdai.dpp@gmail.com',
-  emailSenderName: "DAIKITA — Lajnah Da'i Wahdah Islamiyah",
+  emailSenderName: "DAIKITA — Lajnah Dai Wahdah Islamiyah",
   emailTemplates: DEFAULT_EMAIL_TEMPLATES,
 };
 

@@ -9,6 +9,7 @@ import {
   Moon,
   RefreshCw,
   Settings2,
+  SlidersHorizontal,
   Sun,
   X,
 } from 'lucide-react';
@@ -113,6 +114,7 @@ export default function App() {
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getSavedTheme());
   const [screenWidthPct, setScreenWidthPct] = useState<number>(() => getSavedScreenWidth());
+  const [showUtilityBar, setShowUtilityBar] = useState<boolean>(false);
   const [showDisplayControls, setShowDisplayControls] = useState<boolean>(false);
 
   const [gasUrl, setGasUrl] = useState<string>(() => getSavedGasUrl());
@@ -146,19 +148,31 @@ export default function App() {
     setLogoFallbackTried(false);
   }, [data.config.logoUrl]);
 
-  // Sinkronkan title & favicon browser dengan logo lembaga jika sudah diunggah
+  // Sinkronkan title & seluruh link favicon browser dengan logo lembaga jika sudah diunggah
   useEffect(() => {
     document.title = `${data.config.namaLembaga || APP_BRAND_NAME} | Manajemen Donatur Rutin`;
-    if (resolvedLogoSrc) {
-      let iconEl = document.querySelector<HTMLLinkElement>("link[rel='icon']");
-      if (!iconEl) {
-        iconEl = document.createElement('link');
-        iconEl.rel = 'icon';
-        document.head.appendChild(iconEl);
+    const targetHref = resolvedLogoSrc && !logoImgFailed ? resolvedLogoSrc : './favicon.png';
+
+    // Hapus icon SVG bawaan agar tidak mengalahkan logo PNG/kustom pada browser
+    document
+      .querySelectorAll<HTMLLinkElement>("link[rel='icon'][type='image/svg+xml']")
+      .forEach((el) => el.remove());
+
+    (['icon', 'shortcut icon', 'apple-touch-icon'] as const).forEach((relName) => {
+      let el = document.querySelector<HTMLLinkElement>(`link[rel='${relName}']`);
+      if (!el) {
+        el = document.createElement('link');
+        el.rel = relName;
+        document.head.appendChild(el);
       }
-      iconEl.href = resolvedLogoSrc;
-    }
-  }, [data.config.namaLembaga, resolvedLogoSrc]);
+      if (resolvedLogoSrc && !logoImgFailed) {
+        el.removeAttribute('type');
+      } else {
+        el.type = 'image/png';
+      }
+      el.href = targetHref;
+    });
+  }, [data.config.namaLembaga, resolvedLogoSrc, logoImgFailed]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -518,8 +532,31 @@ export default function App() {
             })}
           </nav>
 
-          {/* Zone 3: Single Primary Utility Action */}
-          <div className="flex items-center shrink-0">
+          {/* Zone 3: Compact Display Toggle & Settings Action */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowUtilityBar((v) => !v)}
+              aria-expanded={showUtilityBar}
+              className={`relative inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                showUtilityBar
+                  ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-200'
+                  : 'border-slate-200/90 dark:border-slate-700 bg-white/85 dark:bg-slate-800/85 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800'
+              }`}
+              title="Atur tema, lebar tampilan, dan sinkronisasi"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden sm:inline">Tampilan</span>
+              {connectionStatus !== 'connected' && (
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    connectionStatus === 'error' ? 'bg-rose-500' : 'bg-sky-500'
+                  }`}
+                  aria-hidden="true"
+                />
+              )}
+            </button>
+
             <button
               type="button"
               onClick={() => setIsModalOpen(true)}
@@ -564,166 +601,178 @@ export default function App() {
           })}
         </div>
 
-        {/* Institutional Identity, Sync Status & Display Controls */}
-        <div className="glass-surface rounded-2xl px-4 sm:px-5 py-3.5 space-y-3">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div className="flex items-start sm:items-center gap-3 min-w-0">
-              {connectionStatus === 'connected' ? (
-                <Cloud className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
-              ) : connectionStatus === 'error' ? (
-                <AlertCircle className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5 sm:mt-0" />
-              ) : (
-                <CloudOff className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5 sm:mt-0" />
-              )}
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-slate-900 dark:text-slate-100 safe-wrap">
-                  {data.config.namaLembaga} — {data.config.tagline}
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
-                  <span
-                    className={
-                      connectionStatus === 'connected'
-                        ? 'font-semibold text-emerald-700 dark:text-emerald-400'
+        {/* Institutional Identity, Sync Status & Display Controls (Hidden by default, toggled via Tampilan) */}
+        {showUtilityBar && (
+          <div className="glass-surface rounded-2xl px-4 sm:px-5 py-3.5 space-y-3">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-3 min-w-0">
+                {connectionStatus === 'connected' ? (
+                  <Cloud className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
+                ) : connectionStatus === 'error' ? (
+                  <AlertCircle className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5 sm:mt-0" />
+                ) : (
+                  <CloudOff className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5 sm:mt-0" />
+                )}
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100 safe-wrap">
+                    {data.config.namaLembaga} — {data.config.tagline}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
+                    <span
+                      className={
+                        connectionStatus === 'connected'
+                          ? 'font-semibold text-emerald-700 dark:text-emerald-400'
+                          : connectionStatus === 'error'
+                          ? 'font-semibold text-rose-700 dark:text-rose-400'
+                          : 'font-semibold text-sky-700 dark:text-sky-400'
+                      }
+                    >
+                      {connectionStatus === 'connected'
+                        ? `Sinkronisasi Aktif · Program ${APP_PROGRAM_FOCUS}`
                         : connectionStatus === 'error'
-                        ? 'font-semibold text-rose-700 dark:text-rose-400'
-                        : 'font-semibold text-sky-700 dark:text-sky-400'
-                    }
-                  >
-                    {connectionStatus === 'connected'
-                      ? `Sinkronisasi Aktif · Program ${APP_PROGRAM_FOCUS}`
-                      : connectionStatus === 'error'
-                      ? 'Koneksi Layanan Gagal'
-                      : `Mode Lokal (Offline) · Program ${APP_PROGRAM_FOCUS}`}
-                  </span>
-                  {connectionError ? ` · ${connectionError}` : ''}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <div
-                className="inline-flex items-center rounded-xl bg-slate-100/90 dark:bg-slate-800/90 p-1"
-                role="group"
-                aria-label="Pilihan Tema Tampilan"
-              >
-                <button
-                  type="button"
-                  onClick={() => setThemeMode('system')}
-                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
-                    themeMode === 'system'
-                      ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                  title="Ikuti tema perangkat"
-                >
-                  <Monitor className="h-3.5 w-3.5 shrink-0" />
-                  <span className="hidden sm:inline">Perangkat</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setThemeMode('light')}
-                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
-                    themeMode === 'light'
-                      ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                  title="Tema Terang"
-                >
-                  <Sun className="h-3.5 w-3.5 shrink-0" />
-                  <span className="hidden sm:inline">Terang</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setThemeMode('dark')}
-                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
-                    themeMode === 'dark'
-                      ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                  title="Tema Gelap"
-                >
-                  <Moon className="h-3.5 w-3.5 shrink-0" />
-                  <span className="hidden sm:inline">Gelap</span>
-                </button>
+                        ? 'Koneksi Layanan Gagal'
+                        : `Mode Lokal (Offline) · Program ${APP_PROGRAM_FOCUS}`}
+                    </span>
+                    {connectionError ? ` · ${connectionError}` : ''}
+                  </p>
+                </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowDisplayControls((v) => !v)}
-                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold tabular-nums transition-colors whitespace-nowrap cursor-pointer ${
-                  showDisplayControls
-                    ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200'
-                    : 'border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700'
-                }`}
-                title="Atur persentase lebar layar"
-              >
-                <Maximize2 className="h-3.5 w-3.5 shrink-0" />
-                <span>Lebar {screenWidthPct}%</span>
-              </button>
-
-              {connectionStatus !== 'connected' && (
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(true)}
-                  className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap cursor-pointer"
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div
+                  className="inline-flex items-center rounded-xl bg-slate-100/90 dark:bg-slate-800/90 p-1"
+                  role="group"
+                  aria-label="Pilihan Tema Tampilan"
                 >
-                  Atur Koneksi
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => void loadData(gasUrl, true)}
-                disabled={isLoading}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-50 transition-colors whitespace-nowrap cursor-pointer"
-              >
-                <RefreshCw
-                  className={`h-3.5 w-3.5 shrink-0 ${isLoading ? 'animate-spin' : ''}`}
-                />
-                <span>{isLoading ? 'Memuat...' : 'Sinkronkan'}</span>
-              </button>
-            </div>
-          </div>
-
-          {showDisplayControls && (
-            <div className="pt-3 border-t border-slate-200/70 dark:border-slate-700/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <label
-                  htmlFor="screen-width-slider"
-                  className="text-xs font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap"
-                >
-                  Lebar Tampilan ({screenWidthPct}%)
-                </label>
-                <input
-                  id="screen-width-slider"
-                  type="range"
-                  min={60}
-                  max={100}
-                  step={1}
-                  value={screenWidthPct}
-                  onChange={(e) => setScreenWidthPct(Number(e.target.value))}
-                  className="w-full max-w-xs accent-emerald-600 cursor-pointer"
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                {WIDTH_PRESETS.map((pct) => (
                   <button
-                    key={pct}
                     type="button"
-                    onClick={() => setScreenWidthPct(pct)}
-                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold tabular-nums transition-colors whitespace-nowrap cursor-pointer ${
-                      screenWidthPct === pct
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'
+                    onClick={() => setThemeMode('system')}
+                    className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                      themeMode === 'system'
+                        ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
+                    title="Ikuti tema perangkat"
                   >
-                    {pct}%
+                    <Monitor className="h-3.5 w-3.5 shrink-0" />
+                    <span className="hidden sm:inline">Perangkat</span>
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => setThemeMode('light')}
+                    className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                      themeMode === 'light'
+                        ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                    title="Tema Terang"
+                  >
+                    <Sun className="h-3.5 w-3.5 shrink-0" />
+                    <span className="hidden sm:inline">Terang</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setThemeMode('dark')}
+                    className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                      themeMode === 'dark'
+                        ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                    title="Tema Gelap"
+                  >
+                    <Moon className="h-3.5 w-3.5 shrink-0" />
+                    <span className="hidden sm:inline">Gelap</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowDisplayControls((v) => !v)}
+                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold tabular-nums transition-colors whitespace-nowrap cursor-pointer ${
+                    showDisplayControls
+                      ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200'
+                      : 'border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700'
+                  }`}
+                  title="Atur persentase lebar layar"
+                >
+                  <Maximize2 className="h-3.5 w-3.5 shrink-0" />
+                  <span>Lebar {screenWidthPct}%</span>
+                </button>
+
+                {connectionStatus !== 'connected' && (
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(true)}
+                    className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap cursor-pointer"
+                  >
+                    Atur Koneksi
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => void loadData(gasUrl, true)}
+                  disabled={isLoading}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-50 transition-colors whitespace-nowrap cursor-pointer"
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 shrink-0 ${isLoading ? 'animate-spin' : ''}`}
+                  />
+                  <span>{isLoading ? 'Memuat...' : 'Sinkronkan'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowUtilityBar(false)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                  title="Sembunyikan bilah tampilan"
+                  aria-label="Sembunyikan bilah tampilan"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
             </div>
-          )}
-        </div>
+
+            {showDisplayControls && (
+              <div className="pt-3 border-t border-slate-200/70 dark:border-slate-700/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <label
+                    htmlFor="screen-width-slider"
+                    className="text-xs font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap"
+                  >
+                    Lebar Tampilan ({screenWidthPct}%)
+                  </label>
+                  <input
+                    id="screen-width-slider"
+                    type="range"
+                    min={60}
+                    max={100}
+                    step={1}
+                    value={screenWidthPct}
+                    onChange={(e) => setScreenWidthPct(Number(e.target.value))}
+                    className="w-full max-w-xs accent-emerald-600 cursor-pointer"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                  {WIDTH_PRESETS.map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => setScreenWidthPct(pct)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold tabular-nums transition-colors whitespace-nowrap cursor-pointer ${
+                        screenWidthPct === pct
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'
+                      }`}
+                    >
+                      {pct}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {activeTab === 'pendaftaran' && (
           <TabPendaftaran

@@ -261,7 +261,7 @@ export function getSapaanByGender(raw?: string): string {
 }
 
 /**
- * Membangun Smart Link wa.me untuk pengingat amanah Kafalah Da'i rutin
+ * Membangun Smart Link wa.me untuk pengingat amanah Kafalah Dai rutin
  */
 export function buildReminderWaLink(
   donatur: Donatur,
@@ -281,7 +281,7 @@ export function buildReminderWaLink(
     `Yth. ${sapaan} *${donatur.namaLengkap}*,`,
     `Semoga ${sapaan} beserta keluarga senantiasa dalam kesehatan dan keberkahan.`,
     ``,
-    `Dengan hormat, kami menyampaikan pengingat rutin amanah *Kafalah Da'i* bulan *${bulanLabel}* melalui *${config.namaLembaga}*:`,
+    `Dengan hormat, kami menyampaikan pengingat rutin amanah *Kafalah Dai* bulan *${bulanLabel}* melalui *${config.namaLembaga}*:`,
     `• Nominal Komitmen: *${formatRupiah(donatur.nominalKomitmen)}*`,
     `• Jadwal Pengingat Rutin: Setiap tanggal ${donatur.tglJatuhTempo}`,
     ``,
@@ -316,7 +316,7 @@ export function buildReceiptWaLink(
     `Assalamu'alaikum Warahmatullahi Wabarakatuh,`,
     ``,
     `Alhamdulillah, terima kasih Bapak/Ibu *${trx.namaDonatur}*.`,
-    `Amanah Kafalah Da'i Anda telah kami terima dan *TERVERIFIKASI VALID* oleh *${config.namaLembaga}*.`,
+    `Amanah Kafalah Dai Anda telah kami terima dan *TERVERIFIKASI VALID* oleh *${config.namaLembaga}*.`,
     ``,
     `*RINGKASAN KUITANSI DONASI*`,
     `• No. Transaksi: ${trx.idTransaksi}`,

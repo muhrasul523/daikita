@@ -294,7 +294,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
       <section className="lg:col-span-8 glass-surface rounded-3xl p-5 sm:p-8 min-w-0">
         <div className="mb-6">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Konfirmasi Pembayaran Kafalah Da&apos;i
+            Konfirmasi Pembayaran Kafalah Dai
           </h1>
           <p className="mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
             Cari dan pilih donatur untuk mengisi data otomatis, atau isi langsung bila belum

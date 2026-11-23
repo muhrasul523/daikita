@@ -63,11 +63,6 @@ const QUICK_NOMINALS = [
   { value: 1000000, label: '1jt' },
 ];
 
-const GENDER_OPTIONS: SearchableOption[] = [
-  { value: 'Laki-laki', label: 'Laki-laki', sublabel: 'Sapaan otomatis: Bapak', keywords: 'laki pria ikhwan' },
-  { value: 'Perempuan', label: 'Perempuan', sublabel: 'Sapaan otomatis: Ibu', keywords: 'perempuan wanita akhwat' },
-];
-
 const TANGGAL_OPTIONS: SearchableOption[] = Array.from({ length: 31 }, (_, i) => {
   const day = i + 1;
   return {
@@ -339,7 +334,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
       <section className="lg:col-span-8 glass-surface rounded-3xl p-5 sm:p-8 min-w-0">
         <div className="mb-6">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Pendaftaran Donatur Rutin Kafalah Da&apos;i
+            Pendaftaran Donatur Rutin Kafalah Dai
           </h1>
           <p className="mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
             Catat komitmen amal rutin bersama{' '}
@@ -580,54 +575,52 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
-            <div className="sm:col-span-4 min-w-0">
-              <label
-                htmlFor="reg-jk"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
-              >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="min-w-0">
+              <span className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
                 Jenis Kelamin <span className="text-rose-600 dark:text-rose-400">*</span>
-              </label>
-              <SearchableSelect
-                id="reg-jk"
-                ariaLabel="Pilih jenis kelamin donatur"
-                options={GENDER_OPTIONS}
-                value={jenisKelamin}
-                onChange={(val) => setJenisKelamin((val as JenisKelamin) || '')}
-                placeholder="Pilih Laki-laki / Perempuan..."
-                searchPlaceholder="Ketik Laki-laki atau Perempuan..."
-                emptyText="Pilihan tidak ditemukan."
-              />
-            </div>
-
-            <div className="sm:col-span-4 min-w-0">
-              <label
-                htmlFor="reg-kab"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
+              </span>
+              <div
+                role="radiogroup"
+                aria-label="Pilih jenis kelamin donatur"
+                className="grid grid-cols-2 gap-2.5"
               >
-                Domisili (Kabupaten / Kota){' '}
-                <span className="font-normal text-slate-400">(Opsional)</span>
-              </label>
-              <SearchableSelect
-                id="reg-kab"
-                ariaLabel="Pilih kabupaten atau kota domisili"
-                options={wilayahOptions}
-                value={selectedKabId}
-                onChange={(val) => setSelectedKabId(val)}
-                allowClear
-                placeholder="Cari kabupaten atau kota..."
-                searchPlaceholder="Ketik nama kabupaten, kota, atau provinsi..."
-                emptyText="Kabupaten/kota tidak ditemukan."
-              />
-              {selectedWilayah && (
-                <p className="mt-1 text-[11px] text-teal-800 dark:text-teal-300 safe-wrap">
-                  Provinsi {selectedWilayah.prov} · Pulau {selectedWilayah.pulau} (ID{' '}
-                  <span className="font-mono">{selectedWilayah.kabId}</span>)
-                </p>
-              )}
+                {(['Laki-laki', 'Perempuan'] as const).map((opt) => {
+                  const selected = jenisKelamin === opt;
+                  return (
+                    <label
+                      key={opt}
+                      className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-sm font-semibold transition-all cursor-pointer select-none ${
+                        selected
+                          ? 'border-emerald-500 bg-emerald-50/90 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20'
+                          : 'border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 text-slate-700 dark:text-slate-200 hover:border-emerald-300 dark:hover:border-emerald-700'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="reg-jenis-kelamin"
+                        value={opt}
+                        checked={selected}
+                        onChange={() => setJenisKelamin(opt)}
+                        className="sr-only"
+                      />
+                      <span
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                          selected
+                            ? 'border-emerald-600 bg-emerald-600'
+                            : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                        }`}
+                      >
+                        {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                      </span>
+                      <span className="whitespace-nowrap">{opt}</span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="sm:col-span-4 min-w-0">
+            <div className="min-w-0">
               <label
                 htmlFor="reg-email"
                 className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
@@ -644,6 +637,33 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
                 className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
+          </div>
+
+          <div className="min-w-0">
+            <label
+              htmlFor="reg-kab"
+              className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
+            >
+              Domisili (Kabupaten / Kota){' '}
+              <span className="font-normal text-slate-400">(Opsional)</span>
+            </label>
+            <SearchableSelect
+              id="reg-kab"
+              ariaLabel="Pilih kabupaten atau kota domisili"
+              options={wilayahOptions}
+              value={selectedKabId}
+              onChange={(val) => setSelectedKabId(val)}
+              allowClear
+              placeholder="Cari kabupaten atau kota..."
+              searchPlaceholder="Ketik nama kabupaten, kota, atau provinsi..."
+              emptyText="Kabupaten/kota tidak ditemukan."
+            />
+            {selectedWilayah && (
+              <p className="mt-1 text-[11px] text-teal-800 dark:text-teal-300 safe-wrap">
+                Provinsi {selectedWilayah.prov} · Pulau {selectedWilayah.pulau} (ID{' '}
+                <span className="font-mono">{selectedWilayah.kabId}</span>)
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
@@ -722,7 +742,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
 
           <div className="pt-3 border-t border-slate-200/70 dark:border-slate-700/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-xs text-slate-500 dark:text-slate-400 safe-wrap">
-              Data donatur akan tersimpan otomatis sebagai Donatur Aktif Kafalah Da&apos;i.
+              Data donatur akan tersimpan otomatis sebagai Donatur Aktif Kafalah Dai.
             </p>
             <button
               type="submit"
@@ -743,7 +763,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
           </h2>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed safe-wrap">
             {config.catatanPembayaran ||
-              `Penyaluran amanah rutin Kafalah Da'i melalui rekening resmi ${config.namaLembaga}.`}
+              `Penyaluran amanah rutin Kafalah Dai melalui rekening resmi ${config.namaLembaga}.`}
           </p>
           <div className="mt-4 divide-y divide-slate-200/70 dark:divide-slate-700/70">
             {config.infoRekening.map((rek) => {

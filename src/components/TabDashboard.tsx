@@ -80,12 +80,6 @@ const AKTIF_OPTIONS: SearchableOption[] = [
   { value: 'Cuti', label: 'Status Cuti', keywords: 'cuti' },
 ];
 
-const GENDER_FILTER_OPTIONS: SearchableOption[] = [
-  { value: 'Semua', label: 'Gender: Semua', keywords: 'semua' },
-  { value: 'Laki-laki', label: 'Laki-laki', keywords: 'laki pria ikhwan' },
-  { value: 'Perempuan', label: 'Perempuan', keywords: 'perempuan wanita akhwat' },
-];
-
 const SORT_OPTIONS: SearchableOption[] = [
   { value: 'nama', label: 'Urut: Nama Donatur', keywords: 'nama' },
   { value: 'nominal', label: 'Urut: Nominal Komitmen', keywords: 'nominal komitmen' },
@@ -571,7 +565,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Dashboard &amp; Pengingat Kafalah Da&apos;i
+            Dashboard &amp; Pengingat Kafalah Dai
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300 safe-wrap">
             Pantau status konfirmasi, penyaluran, dan pengingat rutin periode{' '}
@@ -744,25 +738,63 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-slate-100/85 dark:bg-slate-800/80 p-1.5 w-full xl:w-fit">
-            {(['Semua', 'Lunas', 'Menunggu Verifikasi', 'Belum Bayar'] as const).map((tab) => {
-              const active = statusFilter === tab;
-              return (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setStatusFilter(tab)}
-                  className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
-                    active
-                      ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  {tab}{' '}
-                  <span className="tabular-nums opacity-75">({filterCounts[tab]})</span>
-                </button>
-              );
-            })}
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-slate-100/85 dark:bg-slate-800/80 p-1.5 w-full xl:w-fit">
+              {(['Semua', 'Lunas', 'Menunggu Verifikasi', 'Belum Bayar'] as const).map((tab) => {
+                const active = statusFilter === tab;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setStatusFilter(tab)}
+                    className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                      active
+                        ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {tab}{' '}
+                    <span className="tabular-nums opacity-75">({filterCounts[tab]})</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div
+              role="radiogroup"
+              aria-label="Filter jenis kelamin donatur"
+              className="flex items-center gap-1 rounded-2xl bg-slate-100/85 dark:bg-slate-800/80 p-1.5 w-full sm:w-fit"
+            >
+              {(
+                [
+                  { value: 'Semua', label: 'Semua Gender' },
+                  { value: 'Laki-laki', label: 'Laki-laki' },
+                  { value: 'Perempuan', label: 'Perempuan' },
+                ] as const
+              ).map((opt) => {
+                const active = genderFilter === opt.value;
+                return (
+                  <label
+                    key={opt.value}
+                    className={`flex-1 sm:flex-none text-center rounded-xl px-3 py-2 text-xs font-semibold transition-all whitespace-nowrap cursor-pointer select-none ${
+                      active
+                        ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="dash-gender-filter"
+                      value={opt.value}
+                      checked={active}
+                      onChange={() => setGenderFilter(opt.value)}
+                      className="sr-only"
+                    />
+                    {opt.label}
+                  </label>
+                );
+              })}
+            </div>
           </div>
 
           {/* Wilayah Filter Row (Pulau, Provinsi, Kabupaten/Kota) */}
@@ -802,7 +834,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
           </div>
 
           {/* Operational Filters & Sort */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
             <SearchableSelect
               ariaLabel="Filter status penyaluran"
               options={PENYALURAN_OPTIONS}
@@ -823,17 +855,6 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
               onChange={(val) => setPerantaraFilter(val || 'Semua')}
               compact
               searchPlaceholder="Ketik nama pengurus/perantara..."
-            />
-
-            <SearchableSelect
-              ariaLabel="Filter jenis kelamin donatur"
-              options={GENDER_FILTER_OPTIONS}
-              value={genderFilter}
-              onChange={(val) =>
-                setGenderFilter((val || 'Semua') as 'Semua' | 'Laki-laki' | 'Perempuan')
-              }
-              compact
-              searchPlaceholder="Filter jenis kelamin..."
             />
 
             <SearchableSelect
@@ -1102,7 +1123,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
               Rekap Wilayah &amp; Pengurus
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Ringkasan perolehan dan penyaluran Kafalah Da&apos;i periode{' '}
+              Ringkasan perolehan dan penyaluran Kafalah Dai periode{' '}
               {formatBulanLabel(selectedMonth)} serta kumulatif keseluruhan.
             </p>
           </div>

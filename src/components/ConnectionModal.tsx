@@ -73,11 +73,6 @@ const ROLE_OPTIONS: SearchableOption[] = [
   { value: 'Publik', label: 'Publik', keywords: 'publik donatur' },
 ];
 
-const GENDER_OPTIONS: SearchableOption[] = [
-  { value: 'Laki-laki', label: 'Laki-laki', keywords: 'laki pria ikhwan' },
-  { value: 'Perempuan', label: 'Perempuan', keywords: 'perempuan wanita akhwat' },
-];
-
 const TANGGAL_OPTIONS: SearchableOption[] = Array.from({ length: 31 }, (_, i) => ({
   value: String(i + 1),
   label: `Setiap tanggal ${i + 1}`,
@@ -209,7 +204,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     );
     setEnableEmailNotif(config.enableEmailNotif);
     setEmailSenderAlias(config.emailSenderAlias || 'lajnahdai.dpp@gmail.com');
-    setEmailSenderName(config.emailSenderName || "DAIKITA — Lajnah Da'i Wahdah Islamiyah");
+    setEmailSenderName(config.emailSenderName || 'DAIKITA — Lajnah Dai Wahdah Islamiyah');
     setEmailTemplates(
       config.emailTemplates && config.emailTemplates.length > 0
         ? config.emailTemplates.map((t) => ({ ...t }))
@@ -272,15 +267,16 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 1200, 630);
 
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      // Kartu besar (~95% x 92% kanvas) agar konten bisa dimaksimalkan 85-90%
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
       ctx.beginPath();
-      ctx.roundRect(80, 65, 1040, 500, 36);
+      ctx.roundRect(28, 24, 1144, 582, 36);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(16, 185, 129, 0.25)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.28)';
+      ctx.lineWidth = 3;
       ctx.stroke();
 
-      let textStartY = 260;
+      let titleY = 235;
       let logoSkippedByCors = false;
       if (activeLogoPreview) {
         try {
@@ -293,28 +289,55 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             image.onerror = () => reject(new Error('Logo tidak dapat dimuat ke kanvas.'));
             image.src = activeLogoPreview;
           });
-          const maxLogoH = 160;
-          const maxLogoW = 280;
+          const maxLogoW = 560;
+          const maxLogoH = 295;
           const ratio = Math.min(maxLogoW / img.width, maxLogoH / img.height);
           const w = img.width * ratio;
           const h = img.height * ratio;
-          ctx.drawImage(img, (1200 - w) / 2, 125 + (maxLogoH - h) / 2, w, h);
-          textStartY = 345;
+          ctx.drawImage(img, (1200 - w) / 2, 44 + (maxLogoH - h) / 2, w, h);
+          titleY = 415;
         } catch {
-          textStartY = 250;
+          titleY = 240;
           logoSkippedByCors = true;
         }
       }
 
+      const maxContentW = 1056; // ~88% lebar kanvas 1200px
+      const titleText = namaLembaga || 'DAIKITA — Kafalah Dai';
+      let titleSize = activeLogoPreview && !logoSkippedByCors ? 66 : 74;
       ctx.fillStyle = '#065f46';
-      ctx.font = '700 48px Montserrat, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(namaLembaga || "DAIKITA — Kafalah Da'i", 600, textStartY, 940);
+      while (titleSize > 42) {
+        ctx.font = `700 ${titleSize}px Montserrat, sans-serif`;
+        if (ctx.measureText(titleText).width <= maxContentW) break;
+        titleSize -= 2;
+      }
+      ctx.fillText(titleText, 600, titleY, maxContentW);
 
-      ctx.fillStyle = '#334155';
-      ctx.font = '500 26px Montserrat, sans-serif';
-      const tag = tagline || 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
-      ctx.fillText(tag, 600, textStartY + 56, 940);
+      const tagText = tagline || 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
+      ctx.fillStyle = '#1e293b';
+      const tagSize = activeLogoPreview && !logoSkippedByCors ? 34 : 38;
+      ctx.font = `600 ${tagSize}px Montserrat, sans-serif`;
+
+      const words = tagText.trim().split(/\s+/);
+      const lines: string[] = [];
+      let currentLine = '';
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        if (ctx.measureText(testLine).width <= maxContentW || !currentLine) {
+          currentLine = testLine;
+        } else {
+          lines.push(currentLine);
+          currentLine = word;
+        }
+      }
+      if (currentLine) lines.push(currentLine);
+
+      const lineHeight = tagSize + 12;
+      const tagStartY = titleY + (lines.length > 1 ? 58 : 66);
+      lines.slice(0, 2).forEach((line, idx) => {
+        ctx.fillText(line, 600, tagStartY + idx * lineHeight, maxContentW);
+      });
 
       const url = canvas.toDataURL('image/png');
       const a = document.createElement('a');
@@ -403,7 +426,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
     setIsSavingSettings(true);
     const ok = await onSavePengaturan({
-      namaLembaga: namaLembaga.trim() || "DAIKITA — Kafalah Da'i",
+      namaLembaga: namaLembaga.trim() || 'DAIKITA — Kafalah Dai',
       tagline: tagline.trim(),
       logoUrl,
       logoBase64: logoPendingUpload?.base64,
@@ -425,7 +448,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       waTemplates: cleanWaTemplates.length > 0 ? cleanWaTemplates : DEFAULT_WA_TEMPLATES,
       enableEmailNotif,
       emailSenderAlias: emailSenderAlias.trim() || 'lajnahdai.dpp@gmail.com',
-      emailSenderName: emailSenderName.trim() || "DAIKITA — Lajnah Da'i Wahdah Islamiyah",
+      emailSenderName: emailSenderName.trim() || 'DAIKITA — Lajnah Dai Wahdah Islamiyah',
       emailTemplates:
         cleanEmailTemplates.length > 0 ? cleanEmailTemplates : DEFAULT_EMAIL_TEMPLATES,
     });
@@ -683,7 +706,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     type="text"
                     value={namaLembaga}
                     onChange={(e) => setNamaLembaga(e.target.value)}
-                    placeholder="DAIKITA — Kafalah Da'i"
+                    placeholder="DAIKITA — Kafalah Dai"
                     className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/90 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
@@ -775,19 +798,19 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                 <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
                   Pratinjau Tautan WhatsApp (Logo + Nama + Tagline)
                 </p>
-                <div className="rounded-2xl border border-slate-200/90 dark:border-slate-700 bg-gradient-to-br from-emerald-50 via-teal-50 to-sky-50 dark:from-slate-900 dark:to-slate-800 p-5 text-center space-y-2">
+                <div className="rounded-2xl border border-slate-200/90 dark:border-slate-700 bg-gradient-to-br from-emerald-50 via-teal-50 to-sky-50 dark:from-slate-900 dark:to-slate-800 p-5 sm:p-6 text-center space-y-2.5">
                   {activeLogoPreview && (
                     <img
                       src={activeLogoPreview}
                       alt="Logo Preview WA"
                       referrerPolicy="no-referrer"
-                      className="h-14 w-auto mx-auto object-contain"
+                      className="h-24 sm:h-28 w-auto mx-auto object-contain"
                     />
                   )}
-                  <p className="text-base font-bold text-emerald-900 dark:text-emerald-200 safe-wrap">
-                    {namaLembaga || "DAIKITA — Kafalah Da'i"}
+                  <p className="text-lg sm:text-xl font-bold text-emerald-900 dark:text-emerald-200 safe-wrap">
+                    {namaLembaga || 'DAIKITA — Kafalah Dai'}
                   </p>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 safe-wrap">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200 safe-wrap max-w-lg mx-auto">
                     {tagline || 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.'}
                   </p>
                 </div>
@@ -1129,7 +1152,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                         onClick={() =>
                           setWaTemplates((prev) => [
                             ...prev,
-                            `Assalamu'alaikum {sapaan} *{nama}*,\nTerima kasih komitmen Kafalah Da'i sebesar *{nominal}* (ID: {id_donatur}).`,
+                            `Assalamu'alaikum {sapaan} *{nama}*,\nTerima kasih komitmen Kafalah Dai sebesar *{nominal}* (ID: {id_donatur}).`,
                           ])
                         }
                         className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 cursor-pointer"
@@ -1223,7 +1246,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                         type="text"
                         value={emailSenderName}
                         onChange={(e) => setEmailSenderName(e.target.value)}
-                        placeholder="DAIKITA — Lajnah Da'i Wahdah Islamiyah"
+                        placeholder="DAIKITA — Lajnah Dai Wahdah Islamiyah"
                         className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                       />
                     </div>
@@ -1242,7 +1265,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                             ...prev,
                             {
                               subject: 'Konfirmasi Kepesertaan {lembaga} — {nama}',
-                              body: "Assalamu'alaikum {sapaan} {nama},\n\nTerima kasih atas amanah Kafalah Da'i sebesar {nominal} (ID: {id_donatur}).",
+                              body: "Assalamu'alaikum {sapaan} {nama},\n\nTerima kasih atas amanah Kafalah Dai sebesar {nominal} (ID: {id_donatur}).",
                             },
                           ])
                         }
@@ -1403,16 +1426,44 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     required
                     className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                   />
-                  <SearchableSelect
-                    ariaLabel="Pilih jenis kelamin pengurus"
-                    options={GENDER_OPTIONS}
-                    value={jenisKelaminPanitia}
-                    onChange={(val) =>
-                      setJenisKelaminPanitia((val as JenisKelamin) || 'Laki-laki')
-                    }
-                    placeholder="Jenis Kelamin..."
-                    compact
-                  />
+                  <div
+                    role="radiogroup"
+                    aria-label="Pilih jenis kelamin pengurus"
+                    className="grid grid-cols-2 gap-2"
+                  >
+                    {(['Laki-laki', 'Perempuan'] as const).map((opt) => {
+                      const selected = jenisKelaminPanitia === opt;
+                      return (
+                        <label
+                          key={opt}
+                          className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition-all cursor-pointer select-none ${
+                            selected
+                              ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200'
+                              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-emerald-300'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="panitia-jenis-kelamin"
+                            value={opt}
+                            checked={selected}
+                            onChange={() => setJenisKelaminPanitia(opt)}
+                            className="sr-only"
+                          />
+                          <span
+                            className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${
+                              selected
+                                ? 'border-emerald-600 bg-emerald-600'
+                                : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                            }`}
+                          >
+                            {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                          </span>
+                          <span className="whitespace-nowrap">{opt}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                   <input
                     type="tel"
                     value={waPanitiaInput}

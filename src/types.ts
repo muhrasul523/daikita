@@ -3,6 +3,7 @@ export type TabKey = 'pendaftaran' | 'konfirmasi' | 'dashboard' | 'verifikasi';
 export type ThemeMode = 'system' | 'light' | 'dark';
 
 export type RolePengurus = 'Publik' | 'Admin' | 'Super Admin';
+export type JenisKelamin = 'Laki-laki' | 'Perempuan' | '';
 
 export type StatusAktif = 'Aktif' | 'Cuti';
 export type StatusVerifikasi = 'Pending' | 'Valid' | 'Ditolak';
@@ -13,6 +14,11 @@ export interface RekeningInfo {
   bank: string;
   nomor: string;
   atasNama: string;
+}
+
+export interface EmailTemplateItem {
+  subject: string;
+  body: string;
 }
 
 export interface LembagaConfig {
@@ -26,12 +32,21 @@ export interface LembagaConfig {
   defaultTglPengingat: number;
   catatanPembayaran: string;
   infoRekening: RekeningInfo[];
+  enableWaNotif: boolean;
+  waEndpointUrl: string;
+  waApiKey: string;
+  waTemplates: string[];
+  enableEmailNotif: boolean;
+  emailSenderAlias: string;
+  emailSenderName: string;
+  emailTemplates: EmailTemplateItem[];
 }
 
 export interface Donatur {
   idDonatur: string;
   tanggalDaftar: string;
   namaLengkap: string;
+  jenisKelamin?: JenisKelamin;
   noWa: string;
   email?: string;
   kabId: string;
@@ -64,6 +79,7 @@ export interface TransaksiDonasi {
 export interface Panitia {
   kodePanitia: string;
   namaPanitia: string;
+  jenisKelamin?: JenisKelamin;
   noWaPanitia: string;
   role: string; // Siap untuk pembagian role Publik / Admin / Super Admin
 }
@@ -77,6 +93,7 @@ export interface AppDataState {
 
 export interface RegisterDonaturPayload {
   namaLengkap: string;
+  jenisKelamin?: JenisKelamin;
   noWa: string;
   email?: string;
   kabId: string;
@@ -88,6 +105,18 @@ export interface RegisterDonaturPayload {
   metodeDaftar: string;
   kodePerantara?: string;
   namaPerantara: string;
+}
+
+export interface NotifChannelStatus {
+  attempted: boolean;
+  ok: boolean;
+  detail: string;
+  templateIndex?: number;
+}
+
+export interface NotifDeliveryResult {
+  wa: NotifChannelStatus;
+  email: NotifChannelStatus;
 }
 
 export interface SubmitPembayaranPayload {
@@ -120,6 +149,22 @@ export interface SavePengaturanPayload {
   defaultTglPengingat: number;
   catatanPembayaran: string;
   infoRekening: RekeningInfo[];
+  enableWaNotif: boolean;
+  waEndpointUrl: string;
+  waApiKey: string;
+  waTemplates: string[];
+  enableEmailNotif: boolean;
+  emailSenderAlias: string;
+  emailSenderName: string;
+  emailTemplates: EmailTemplateItem[];
+}
+
+export interface TestNotificationPayload {
+  noWa?: string;
+  email?: string;
+  namaLengkap?: string;
+  jenisKelamin?: JenisKelamin;
+  templateIndex?: number;
 }
 
 export interface ApiResult<T = unknown> {

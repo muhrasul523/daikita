@@ -15,7 +15,9 @@ import {
 import { WILAYAH_KABUPATEN } from '../data/wilayah';
 import {
   Donatur,
+  JenisKelamin,
   LembagaConfig,
+  NotifDeliveryResult,
   Panitia,
   RegisterDonaturPayload,
 } from '../types';
@@ -41,6 +43,7 @@ interface TabPendaftaranProps {
     message: string;
     donatur?: Donatur;
     existingDonatur?: Partial<Donatur>;
+    notifStatus?: NotifDeliveryResult;
   }>;
   onGoToKonfirmasi: (donatur: Donatur) => void;
   onNotify: (type: 'success' | 'error' | 'info', title: string, description?: string) => void;
@@ -58,6 +61,11 @@ const QUICK_NOMINALS = [
   { value: 250000, label: '250rb' },
   { value: 500000, label: '500rb' },
   { value: 1000000, label: '1jt' },
+];
+
+const GENDER_OPTIONS: SearchableOption[] = [
+  { value: 'Laki-laki', label: 'Laki-laki', sublabel: 'Sapaan otomatis: Bapak', keywords: 'laki pria ikhwan' },
+  { value: 'Perempuan', label: 'Perempuan', sublabel: 'Sapaan otomatis: Ibu', keywords: 'perempuan wanita akhwat' },
 ];
 
 const TANGGAL_OPTIONS: SearchableOption[] = Array.from({ length: 31 }, (_, i) => {
@@ -95,6 +103,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
   const [mode, setMode] = useState<'mandiri' | 'panitia'>('mandiri');
   const [selectedPanitiaKode, setSelectedPanitiaKode] = useState('');
   const [namaLengkap, setNamaLengkap] = useState('');
+  const [jenisKelamin, setJenisKelamin] = useState<JenisKelamin>('');
   const [noWaInput, setNoWaInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [selectedKabId, setSelectedKabId] = useState('');
@@ -111,6 +120,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
     existing?: Partial<Donatur>;
   } | null>(null);
   const [registeredDonatur, setRegisteredDonatur] = useState<Donatur | null>(null);
+  const [registeredNotif, setRegisteredNotif] = useState<NotifDeliveryResult | null>(null);
   const [copiedRek, setCopiedRek] = useState<string | null>(null);
   const [showQrisZoom, setShowQrisZoom] = useState(false);
   const [qrisImgSrc, setQrisImgSrc] = useState(() => normalizeDriveImageUrl(config.qrisUrl));
@@ -208,6 +218,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
 
   const handleResetForm = () => {
     setNamaLengkap('');
+    setJenisKelamin('');
     setNoWaInput('');
     setEmailInput('');
     setSelectedKabId('');
@@ -215,6 +226,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
     setTglPengingat(config.defaultTglPengingat || 5);
     setErrorState(null);
     setRegisteredDonatur(null);
+    setRegisteredNotif(null);
   };
 
   const handleCopyRekening = async (nomor: string, bank: string) => {
@@ -234,6 +246,11 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
 
     if (!namaLengkap.trim()) {
       setErrorState({ message: 'Nama lengkap donatur wajib diisi.' });
+      return;
+    }
+
+    if (!jenisKelamin) {
+      setErrorState({ message: 'Jenis kelamin donatur wajib dipilih (Laki-laki atau Perempuan).' });
       return;
     }
 
@@ -286,6 +303,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
     setIsSubmitting(true);
     const res = await onSubmitDonatur({
       namaLengkap: namaLengkap.trim(),
+      jenisKelamin,
       noWa: waValidation.normalized,
       email: trimmedEmail,
       kabId: selectedWilayah?.kabId || '',
@@ -302,7 +320,9 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
 
     if (res.ok && res.donatur) {
       setRegisteredDonatur(res.donatur);
+      setRegisteredNotif(res.notifStatus || null);
       setNamaLengkap('');
+      setJenisKelamin('');
       setNoWaInput('');
       setEmailInput('');
       setSelectedKabId('');
@@ -415,7 +435,8 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
                   Pendaftaran Donatur Berhasil Disimpan
                 </p>
                 <p className="mt-1 text-xs text-emerald-900/85 dark:text-emerald-200/90 leading-relaxed safe-wrap">
-                  <strong className="font-semibold">{registeredDonatur.namaLengkap}</strong> resmi
+                  <strong className="font-semibold">{registeredDonatur.namaLengkap}</strong>
+                  {registeredDonatur.jenisKelamin ? ` (${registeredDonatur.jenisKelamin})` : ''} resmi
                   tercatat dengan ID{' '}
                   <span className="font-mono font-semibold">{registeredDonatur.idDonatur}</span> ·
                   WA <span className="font-mono">{registeredDonatur.noWa}</span> · Komitmen{' '}
@@ -424,6 +445,34 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
                   </span>{' '}
                   (Pengingat rutin setiap tanggal {registeredDonatur.tglJatuhTempo}).
                 </p>
+                {registeredNotif && (
+                  <div className="mt-2.5 space-y-1 text-[11px] rounded-xl bg-white/75 dark:bg-slate-900/60 px-3 py-2 border border-emerald-200/70 dark:border-emerald-800/60">
+                    <p
+                      className={
+                        registeredNotif.wa.ok
+                          ? 'text-emerald-800 dark:text-emerald-300 font-medium'
+                          : 'text-amber-700 dark:text-amber-300'
+                      }
+                    >
+                      Notifikasi WA:{' '}
+                      {registeredNotif.wa.ok
+                        ? `Terkirim (Template #${(registeredNotif.wa.templateIndex ?? 0) + 1})`
+                        : registeredNotif.wa.detail}
+                    </p>
+                    <p
+                      className={
+                        registeredNotif.email.ok
+                          ? 'text-emerald-800 dark:text-emerald-300 font-medium'
+                          : 'text-slate-600 dark:text-slate-300'
+                      }
+                    >
+                      Notifikasi Email:{' '}
+                      {registeredNotif.email.ok
+                        ? `Terkirim (Template #${(registeredNotif.email.templateIndex ?? 0) + 1})`
+                        : registeredNotif.email.detail}
+                    </p>
+                  </div>
+                )}
                 <div className="mt-4 flex flex-wrap items-center gap-2.5">
                   <button
                     type="button"
@@ -531,8 +580,27 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="min-w-0">
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+            <div className="sm:col-span-4 min-w-0">
+              <label
+                htmlFor="reg-jk"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
+              >
+                Jenis Kelamin <span className="text-rose-600 dark:text-rose-400">*</span>
+              </label>
+              <SearchableSelect
+                id="reg-jk"
+                ariaLabel="Pilih jenis kelamin donatur"
+                options={GENDER_OPTIONS}
+                value={jenisKelamin}
+                onChange={(val) => setJenisKelamin((val as JenisKelamin) || '')}
+                placeholder="Pilih Laki-laki / Perempuan..."
+                searchPlaceholder="Ketik Laki-laki atau Perempuan..."
+                emptyText="Pilihan tidak ditemukan."
+              />
+            </div>
+
+            <div className="sm:col-span-4 min-w-0">
               <label
                 htmlFor="reg-kab"
                 className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
@@ -559,12 +627,13 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
               )}
             </div>
 
-            <div className="min-w-0">
+            <div className="sm:col-span-4 min-w-0">
               <label
                 htmlFor="reg-email"
                 className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
               >
-                Alamat Email <span className="font-normal text-slate-400">(Opsional)</span>
+                Alamat Email{' '}
+                <span className="font-normal text-slate-400">(Opsional, untuk notif)</span>
               </label>
               <input
                 id="reg-email"

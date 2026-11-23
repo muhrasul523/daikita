@@ -23,6 +23,7 @@ import {
 import {
   AppDataState,
   Donatur,
+  NotifDeliveryResult,
   Panitia,
   RegisterDonaturPayload,
   SavePengaturanPayload,
@@ -31,6 +32,7 @@ import {
   StatusVerifikasi,
   SubmitPembayaranPayload,
   TabKey,
+  TestNotificationPayload,
   ThemeMode,
   ToastMessage,
   TransaksiDonasi,
@@ -43,6 +45,7 @@ import {
   saveGasUrl,
   savePanitia,
   savePengaturan,
+  sendTestNotification,
   submitPembayaran,
   updateStatusDonatur,
   updateStatusPenyaluran,
@@ -281,6 +284,17 @@ export default function App() {
     return false;
   };
 
+  const handleTestNotification = async (
+    payload: TestNotificationPayload
+  ): Promise<{ ok: boolean; message: string; notifStatus?: NotifDeliveryResult }> => {
+    const res = await sendTestNotification(gasUrl, payload);
+    if (res.status === 'success' && res.data?.notifStatus) {
+      notify('success', 'Pengujian selesai', res.message);
+      return { ok: true, message: res.message, notifStatus: res.data.notifStatus };
+    }
+    return { ok: false, message: res.message };
+  };
+
   const handleRegisterDonatur = async (
     payload: RegisterDonaturPayload
   ): Promise<{
@@ -288,16 +302,28 @@ export default function App() {
     message: string;
     donatur?: Donatur;
     existingDonatur?: Partial<Donatur>;
+    notifStatus?: NotifDeliveryResult;
   }> => {
     const res = await registerDonatur(gasUrl, payload);
     if (res.status === 'success' && res.data?.donatur) {
       const created = res.data.donatur;
+      const notifStatus = res.data.notifStatus;
       setData((prev) => ({
         ...prev,
         donatur: [...prev.donatur, created],
       }));
-      notify('success', 'Donatur terdaftar', `${created.namaLengkap} (${created.idDonatur})`);
-      return { ok: true, message: res.message, donatur: created };
+      const waLabel = notifStatus?.wa.ok ? 'WA terkirim' : 'WA belum terkirim';
+      const emailLabel = notifStatus?.email.ok
+        ? 'Email terkirim'
+        : created.email
+        ? 'Email gagal'
+        : 'Tanpa email';
+      notify(
+        'success',
+        `Donatur terdaftar (${created.namaLengkap})`,
+        `${created.idDonatur} · ${waLabel} · ${emailLabel}`
+      );
+      return { ok: true, message: res.message, donatur: created, notifStatus };
     }
     notify('error', 'Pendaftaran ditolak', res.message);
     return {
@@ -777,6 +803,7 @@ export default function App() {
         panitia={data.panitia}
         onSaveUrl={handleSaveGasUrl}
         onSavePengaturan={handleSavePengaturan}
+        onTestNotification={handleTestNotification}
         onSavePanitia={handleSavePanitia}
         onDeletePanitia={handleDeletePanitia}
         onNotify={notify}

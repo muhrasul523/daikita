@@ -242,6 +242,24 @@ export function formatRekeningLines(rekening: RekeningInfo[]): string {
     .join('\n');
 }
 
+export function normalizeJenisKelamin(raw?: string): 'Laki-laki' | 'Perempuan' | '' {
+  const clean = String(raw || '').trim().toLowerCase();
+  if (clean === 'laki-laki' || clean === 'l' || clean === 'pria' || clean === 'ikhwan') {
+    return 'Laki-laki';
+  }
+  if (clean === 'perempuan' || clean === 'p' || clean === 'wanita' || clean === 'akhwat') {
+    return 'Perempuan';
+  }
+  return '';
+}
+
+export function getSapaanByGender(raw?: string): string {
+  const jk = normalizeJenisKelamin(raw);
+  if (jk === 'Laki-laki') return 'Bapak';
+  if (jk === 'Perempuan') return 'Ibu';
+  return 'Bapak/Ibu';
+}
+
 /**
  * Membangun Smart Link wa.me untuk pengingat amanah Kafalah Da'i rutin
  */
@@ -253,14 +271,15 @@ export function buildReminderWaLink(
   const wa = normalizeWA(donatur.noWa) || String(donatur.noWa || '').replace(/\D/g, '');
   const bulanLabel = formatBulanLabel(bulanTagihan);
   const rekeningText = formatRekeningLines(config.infoRekening);
+  const sapaan = getSapaanByGender(donatur.jenisKelamin);
   const portalUrl =
     typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '';
 
   const message = [
     `Assalamu'alaikum Warahmatullahi Wabarakatuh,`,
     ``,
-    `Yth. Bapak/Ibu *${donatur.namaLengkap}*,`,
-    `Semoga Bapak/Ibu beserta keluarga senantiasa dalam kesehatan dan keberkahan.`,
+    `Yth. ${sapaan} *${donatur.namaLengkap}*,`,
+    `Semoga ${sapaan} beserta keluarga senantiasa dalam kesehatan dan keberkahan.`,
     ``,
     `Dengan hormat, kami menyampaikan pengingat rutin amanah *Kafalah Da'i* bulan *${bulanLabel}* melalui *${config.namaLembaga}*:`,
     `• Nominal Komitmen: *${formatRupiah(donatur.nominalKomitmen)}*`,
@@ -274,7 +293,7 @@ export function buildReminderWaLink(
     ``,
     portalUrl ? `Konfirmasi bukti transfer dapat dikirim melalui tautan:\n${portalUrl}` : '',
     ``,
-    `Jazakumullahu khairan katsiran atas kepedulian dan amanah rutin Bapak/Ibu.`,
+    `Jazakumullahu khairan katsiran atas kepedulian dan amanah rutin ${sapaan}.`,
     `Wassalamu'alaikum Warahmatullahi Wabarakatuh.`,
   ]
     .filter((line, idx, arr) => !(line === '' && arr[idx - 1] === ''))

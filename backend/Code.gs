@@ -2,16 +2,17 @@
  * ============================================================================
  * DAIKITA — SISTEM MANAJEMEN DONATUR RUTIN KAFALAH DA'I (BACKEND APPS SCRIPT)
  * "Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah."
- * Arsitektur Serverless: Google Sheets + Google Drive + Web App JSON API
+ * Arsitektur Serverless: Google Sheets + Google Drive + Gmail + ReChat WA API
  * ============================================================================
  * CARA SETUP / PERBARUI CEPAT:
  * 1. Buka Google Sheets -> menu Ekstensi -> Apps Script.
  * 2. Tempel seluruh kode ini ke file Code.gs lalu simpan (Ctrl+S).
- * 3. Pastikan DRIVE_FOLDER_ID sudah diisi ID folder Google Drive Anda.
+ * 3. Pastikan DRIVE_FOLDER_ID sudah sesuai dengan folder Google Drive Anda.
  * 4. Pilih fungsi "setupDatabase" di toolbar atas -> klik Jalankan (Run).
- *    (Aman dijalankan berulang kali: menambahkan kolom wilayah/kode perantara
- *    serta sheet Pengaturan tanpa menghapus atau mengacak data lama.)
+ *    (Aman dijalankan berulang kali: menambahkan kolom baru Jenis_Kelamin,
+ *    wilayah, kode perantara, sheet Pengaturan, serta memicu izin Drive & Email.)
  * 5. Klik Terapkan (Deploy) -> Kelola deployment -> Edit -> Versi baru -> Terapkan.
+ *    Pastikan Execute as = Me (Saya) dan Who has access = Anyone (Siapa saja).
  * ============================================================================
  */
 
@@ -20,6 +21,13 @@ const DRIVE_FOLDER_ID = '1KqfNK8yLOpb-7Ew6KXkfJoNU6XKmzK73';
 
 const NAMA_LEMBAGA = "DAIKITA — Kafalah Da'i";
 const TAGLINE_LEMBAGA = 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
+const APP_PUBLIC_URL = 'https://daikita.duwd.web.id/';
+
+const DEFAULT_WA_ENDPOINT = 'https://www.rechat.id/api/v1/messages';
+const DEFAULT_WA_API_KEY = 'wag_8d4afa8dfa57f45f95961017e050b36b15de17edd2fdc542';
+
+const DEFAULT_EMAIL_ALIAS = 'lajnahdai.dpp@gmail.com';
+const DEFAULT_EMAIL_SENDER_NAME = "DAIKITA — Lajnah Da'i Wahdah Islamiyah";
 
 const INFO_REKENING_DEFAULT = [
   {
@@ -39,6 +47,27 @@ const INFO_REKENING_DEFAULT = [
   }
 ];
 
+const DEFAULT_WA_TEMPLATES = [
+  "Assalamu'alaikum Warahmatullahi Wabarakatuh.\n\nAhlan wa sahlan {sapaan} *{nama}*,\nJazakumullahu khairan telah bergabung sebagai Donatur Rutin *Kafalah Da'i* di *{lembaga}*.\n\nRingkasan Amanah Anda:\n• ID Donatur: {id_donatur}\n• Domisili: {domisili}\n• Komitmen Bulanan: *{nominal}*\n• Pengingat Rutin: Setiap tanggal {tgl_pengingat}\n• Perantara: {perantara}\n\nPenyaluran dapat melalui rekening resmi:\n{rekening}\n\nKonfirmasi bukti transfer dapat dikirim melalui:\n{link_konfirmasi}\n\nSemoga Allah SWT membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir. Aamiin.",
+  "Bismillah, Assalamu'alaikum {sapaan} *{nama}*.\n\nAlhamdulillah, pendaftaran donatur rutin *{lembaga}* telah resmi tercatat atas nama {sapaan}:\n• Nomor ID: *{id_donatur}*\n• Komitmen Kafalah Da'i: *{nominal} / bulan*\n• Jadwal Pengingat: Tanggal {tgl_pengingat} setiap bulan\n\nSalurkan amanah Anda melalui:\n{rekening}\n\nJika sudah berdonasi, silakan kirim konfirmasi lewat portal:\n{link_konfirmasi}\n\nBarakallahu fiikum, semoga menjadi amal shalih yang menguatkan langkah dakwah para da'i.",
+  "Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} *{nama}* 🌟\n\nTerima kasih atas kepercayaan {sapaan} mendukung program *Kafalah Da'i* bersama *{lembaga}*.\n\nDetail Komitmen Terdaftar:\n- ID Donatur: {id_donatur}\n- Wilayah: {domisili}\n- Nominal Komitmen: {nominal}\n- Tanggal Pengingat: Tgl {tgl_pengingat}\n\nRekening Resmi Penyaluran:\n{rekening}\n\nPortal konfirmasi transfer:\n{link_konfirmasi}\n\nSemoga Allah melapangkan urusan dan memberkahi harta {sapaan} sekeluarga. Wassalamu'alaikum Warahmatullahi Wabarakatuh."
+];
+
+const DEFAULT_EMAIL_TEMPLATES = [
+  {
+    subject: "Selamat Bergabung di {lembaga} — Komitmen Kafalah Da'i ({id_donatur})",
+    body: "Assalamu'alaikum Warahmatullahi Wabarakatuh,\n\nYth. {sapaan} {nama},\n\nJazakumullahu khairan katsiran telah mendaftarkan komitmen amal rutin Program Kafalah Da'i bersama {lembaga}.\n\nRingkasan Data Donatur:\n• ID Donatur: {id_donatur}\n• Nama Lengkap: {nama} ({jenis_kelamin})\n• Domisili: {domisili}\n• Nominal Komitmen: {nominal} / bulan\n• Jadwal Pengingat Rutin: Setiap tanggal {tgl_pengingat}\n• Perantara / Pengurus: {perantara}\n\nSalurkan amanah Anda melalui rekening resmi berikut:\n{rekening}\n\nPortal Konfirmasi Pembayaran:\n{link_konfirmasi}\n\nSemoga Allah SWT senantiasa memberkahi keluarga, kesehatan, dan rezeki {sapaan}. Aamiin.\n\nWassalamu'alaikum Warahmatullahi Wabarakatuh,\n{lembaga}"
+  },
+  {
+    subject: "Konfirmasi Pendaftaran Donatur Rutin Kafalah Da'i — {nama}",
+    body: "Bismillahirrahmanirrahim,\nAssalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} {nama},\n\nAlhamdulillah, data kepesertaan donatur rutin Anda telah kami catat di {lembaga} dengan detail sebagai berikut:\n- ID Donatur: {id_donatur}\n- Komitmen Bulanan: {nominal}\n- Tanggal Pengingat: Setiap tanggal {tgl_pengingat}\n- Wilayah: {domisili}\n\nTransfer amanah Kafalah Da'i dapat dikirimkan ke rekening resmi:\n{rekening}\n\nUntuk konfirmasi bukti transfer atau informasi QRIS, silakan kunjungi:\n{link_konfirmasi}\n\nTerima kasih atas dukungan dan amanah {sapaan}. Barakallahu fiikum."
+  },
+  {
+    subject: "[{id_donatur}] Terima Kasih Amanah Rutin Kafalah Da'i — {lembaga}",
+    body: "Assalamu'alaikum {sapaan} {nama},\n\nTerima kasih telah menjadi bagian dari penggerak kebaikan Kafalah Da'i bersama {lembaga}.\n\nDetail Kepesertaan:\n• ID Donatur: {id_donatur}\n• Domisili: {domisili}\n• Komitmen Rutin: {nominal} (Pengingat tiap tgl {tgl_pengingat})\n\nDaftar Rekening Resmi:\n{rekening}\n\nKirim bukti konfirmasi donasi melalui tautan berikut:\n{link_konfirmasi}\n\nJazakumullahu khairan. Wassalamu'alaikum Warahmatullahi Wabarakatuh."
+  }
+];
+
 const TIMEZONE = 'Asia/Jakarta';
 
 // ==================== KONSTANTA SHEET & HEADER ====================
@@ -54,6 +83,7 @@ const HEADERS = {
     'ID_Donatur',
     'Tanggal_Daftar',
     'Nama_Lengkap',
+    'Jenis_Kelamin',
     'No_WA',
     'Kab_ID',
     'Domisili',
@@ -84,6 +114,7 @@ const HEADERS = {
   Data_Panitia: [
     'Kode_Panitia',
     'Nama_Panitia',
+    'Jenis_Kelamin',
     'No_WA_Panitia',
     'Role'
   ],
@@ -96,8 +127,8 @@ const HEADERS = {
 // ==================== SETUP DATABASE (AMAN DIJALANKAN BERULANG) ====================
 /**
  * Membuat dan merapikan sheet beserta header, format Plain Text No_WA,
- * menambahkan kolom baru (Kab_ID, Provinsi, Pulau, Kode_Perantara, Email)
- * serta sheet Pengaturan tanpa menghapus atau mengacak data yang sudah ada.
+ * menambahkan kolom baru (Jenis_Kelamin, Kab_ID, Provinsi, Pulau, Kode_Perantara)
+ * serta memicu izin Google Drive dan Gmail tanpa menghapus data yang sudah ada.
  */
 function setupDatabase() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -106,12 +137,22 @@ function setupDatabase() {
   }
 
   ensureSheetWithHeaders_(ss, SHEET_NAMES.DONATUR, HEADERS.Master_Donatur, {
-    textHeaders: ['ID_Donatur', 'Tanggal_Daftar', 'No_WA', 'Kab_ID', 'Status_Aktif', 'Email', 'Kode_Perantara'],
+    textHeaders: [
+      'ID_Donatur',
+      'Tanggal_Daftar',
+      'Jenis_Kelamin',
+      'No_WA',
+      'Kab_ID',
+      'Status_Aktif',
+      'Email',
+      'Kode_Perantara'
+    ],
     currencyHeaders: ['Nominal_Komitmen'],
     widthByHeader: {
       ID_Donatur: 145,
       Tanggal_Daftar: 165,
       Nama_Lengkap: 220,
+      Jenis_Kelamin: 120,
       No_WA: 155,
       Kab_ID: 100,
       Domisili: 190,
@@ -147,10 +188,11 @@ function setupDatabase() {
   });
 
   const panitiaSheet = ensureSheetWithHeaders_(ss, SHEET_NAMES.PANITIA, HEADERS.Data_Panitia, {
-    textHeaders: ['Kode_Panitia', 'No_WA_Panitia', 'Role'],
+    textHeaders: ['Kode_Panitia', 'Jenis_Kelamin', 'No_WA_Panitia', 'Role'],
     widthByHeader: {
       Kode_Panitia: 140,
       Nama_Panitia: 220,
+      Jenis_Kelamin: 120,
       No_WA_Panitia: 165,
       Role: 145
     }
@@ -158,21 +200,38 @@ function setupDatabase() {
 
   if (panitiaSheet.getLastRow() <= 1) {
     const initialPanitia = [
-      ['ADM01', 'Admin Sekretariat', '6281100000001', 'Super Admin'],
-      ['PNT01', 'Koordinator Wilayah Utara', '6281100000002', 'Admin'],
-      ['PNT02', 'Koordinator Wilayah Selatan', '6281100000003', 'Admin']
+      ['ADM01', 'Admin Sekretariat', 'Laki-laki', '6281100000001', 'Super Admin'],
+      ['PNT01', 'Koordinator Wilayah Utara', 'Laki-laki', '6281100000002', 'Admin'],
+      ['PNT02', 'Koordinator Wilayah Selatan', 'Perempuan', '6281100000003', 'Admin']
     ];
-    const startRow = 2;
-    panitiaSheet.getRange(startRow, 1, initialPanitia.length, 1).setNumberFormat('@');
-    panitiaSheet.getRange(startRow, 3, initialPanitia.length, 1).setNumberFormat('@');
-    panitiaSheet.getRange(startRow, 1, initialPanitia.length, 4).setValues(initialPanitia);
+    appendRowByHeaderMap_(panitiaSheet, {
+      Kode_Panitia: initialPanitia[0][0],
+      Nama_Panitia: initialPanitia[0][1],
+      Jenis_Kelamin: initialPanitia[0][2],
+      No_WA_Panitia: initialPanitia[0][3],
+      Role: initialPanitia[0][4]
+    }, ['Kode_Panitia', 'Jenis_Kelamin', 'No_WA_Panitia', 'Role'], []);
+    appendRowByHeaderMap_(panitiaSheet, {
+      Kode_Panitia: initialPanitia[1][0],
+      Nama_Panitia: initialPanitia[1][1],
+      Jenis_Kelamin: initialPanitia[1][2],
+      No_WA_Panitia: initialPanitia[1][3],
+      Role: initialPanitia[1][4]
+    }, ['Kode_Panitia', 'Jenis_Kelamin', 'No_WA_Panitia', 'Role'], []);
+    appendRowByHeaderMap_(panitiaSheet, {
+      Kode_Panitia: initialPanitia[2][0],
+      Nama_Panitia: initialPanitia[2][1],
+      Jenis_Kelamin: initialPanitia[2][2],
+      No_WA_Panitia: initialPanitia[2][3],
+      Role: initialPanitia[2][4]
+    }, ['Kode_Panitia', 'Jenis_Kelamin', 'No_WA_Panitia', 'Role'], []);
   }
 
   const pengaturanSheet = ensureSheetWithHeaders_(ss, SHEET_NAMES.PENGATURAN, HEADERS.Pengaturan, {
     textHeaders: ['Kunci', 'Nilai'],
     widthByHeader: {
-      Kunci: 220,
-      Nilai: 520
+      Kunci: 230,
+      Nilai: 560
     }
   });
 
@@ -181,7 +240,7 @@ function setupDatabase() {
     writeSettingsMap_(pengaturanSheet, defaults);
   }
 
-  // Picu permintaan izin Google Drive & verifikasi akses folder saat setupDatabase() dijalankan
+  // Picu verifikasi izin Google Drive & Gmail saat setupDatabase() dijalankan
   let driveStatus = '';
   try {
     const targetFolder = getDriveTargetFolder_();
@@ -190,11 +249,19 @@ function setupDatabase() {
     driveStatus = ' Peringatan Drive: ' + (driveErr && driveErr.message ? driveErr.message : String(driveErr));
   }
 
+  let gmailStatus = '';
+  try {
+    const aliases = GmailApp.getAliases();
+    gmailStatus = ' Izin Email aktif (alias terdeteksi: ' + (aliases.length > 0 ? aliases.join(', ') : 'akun utama') + ').';
+  } catch (mailErr) {
+    gmailStatus = ' Peringatan Email: ' + (mailErr && mailErr.message ? mailErr.message : String(mailErr));
+  }
+
   SpreadsheetApp.flush();
-  Logger.log('setupDatabase() selesai.' + driveStatus);
+  Logger.log('setupDatabase() selesai.' + driveStatus + gmailStatus);
   return {
     status: 'success',
-    message: 'Struktur data DAIKITA berhasil disiapkan tanpa menghapus data lama.' + driveStatus
+    message: 'Struktur data DAIKITA siap digunakan tanpa menghapus data lama.' + driveStatus + gmailStatus
   };
 }
 
@@ -239,7 +306,7 @@ function ensureSheetWithHeaders_(ss, sheetName, targetHeaders, options) {
         if (h) existingSet[h] = true;
       });
 
-      // Tambahkan header baru di sebelah kanan agar data kolom lama tetap selaras
+      // Tambahkan kolom baru di sebelah kanan agar data lama tetap selaras
       targetHeaders.forEach(function (h) {
         if (!existingSet[h]) {
           finalHeaders.push(h);
@@ -407,6 +474,9 @@ function doPost(e) {
       case 'deletePanitia':
         result = handleDeletePanitia_(payload);
         break;
+      case 'testNotification':
+        result = handleTestNotification_(payload);
+        break;
       default:
         return jsonResponse_({
           status: 'error',
@@ -443,7 +513,15 @@ function buildDefaultSettingsMap_() {
     defaultNominal: '50000',
     defaultTglPengingat: '5',
     catatanPembayaran: "Penyaluran amanah rutin Kafalah Da'i hanya melalui rekening resmi atau QRIS lembaga.",
-    infoRekening: JSON.stringify(INFO_REKENING_DEFAULT)
+    infoRekening: JSON.stringify(INFO_REKENING_DEFAULT),
+    enableWaNotif: 'true',
+    waEndpointUrl: DEFAULT_WA_ENDPOINT,
+    waApiKey: DEFAULT_WA_API_KEY,
+    waTemplates: JSON.stringify(DEFAULT_WA_TEMPLATES),
+    enableEmailNotif: 'true',
+    emailSenderAlias: DEFAULT_EMAIL_ALIAS,
+    emailSenderName: DEFAULT_EMAIL_SENDER_NAME,
+    emailTemplates: JSON.stringify(DEFAULT_EMAIL_TEMPLATES)
   };
 }
 
@@ -486,6 +564,42 @@ function loadConfigObject_(ss) {
     parsedRekening = INFO_REKENING_DEFAULT;
   }
 
+  let parsedWaTemplates = DEFAULT_WA_TEMPLATES;
+  try {
+    const candidateWa = JSON.parse(rawMap.waTemplates || '[]');
+    if (Array.isArray(candidateWa) && candidateWa.length > 0) {
+      const cleanWa = candidateWa.map(function (t) { return String(t || '').trim(); }).filter(Boolean);
+      if (cleanWa.length > 0) parsedWaTemplates = cleanWa;
+    }
+  } catch (e) {
+    parsedWaTemplates = DEFAULT_WA_TEMPLATES;
+  }
+
+  let parsedEmailTemplates = DEFAULT_EMAIL_TEMPLATES;
+  try {
+    const candidateEm = JSON.parse(rawMap.emailTemplates || '[]');
+    if (Array.isArray(candidateEm) && candidateEm.length > 0) {
+      const cleanEm = candidateEm
+        .map(function (item) {
+          return {
+            subject: String((item && item.subject) || '').trim(),
+            body: String((item && item.body) || '').trim()
+          };
+        })
+        .filter(function (item) {
+          return item.subject !== '' && item.body !== '';
+        });
+      if (cleanEm.length > 0) parsedEmailTemplates = cleanEm;
+    }
+  } catch (e) {
+    parsedEmailTemplates = DEFAULT_EMAIL_TEMPLATES;
+  }
+
+  const effectiveWaKey = String(rawMap.waApiKey || '').trim() || DEFAULT_WA_API_KEY;
+  const effectiveWaEndpoint = String(rawMap.waEndpointUrl || '').trim() || DEFAULT_WA_ENDPOINT;
+  const effectiveEmailAlias = String(rawMap.emailSenderAlias || '').trim() || DEFAULT_EMAIL_ALIAS;
+  const effectiveEmailName = String(rawMap.emailSenderName || '').trim() || DEFAULT_EMAIL_SENDER_NAME;
+
   return {
     namaLembaga: String(rawMap.namaLembaga || NAMA_LEMBAGA).trim() || NAMA_LEMBAGA,
     tagline: String(rawMap.tagline || TAGLINE_LEMBAGA).trim() || TAGLINE_LEMBAGA,
@@ -496,7 +610,15 @@ function loadConfigObject_(ss) {
     defaultNominal: parseNumber_(rawMap.defaultNominal) || 50000,
     defaultTglPengingat: Math.min(31, Math.max(1, parseNumber_(rawMap.defaultTglPengingat) || 5)),
     catatanPembayaran: String(rawMap.catatanPembayaran || '').trim(),
-    infoRekening: parsedRekening
+    infoRekening: parsedRekening,
+    enableWaNotif: String(rawMap.enableWaNotif || 'true').toLowerCase() !== 'false',
+    waEndpointUrl: effectiveWaEndpoint,
+    waApiKey: effectiveWaKey,
+    waTemplates: parsedWaTemplates,
+    enableEmailNotif: String(rawMap.enableEmailNotif || 'true').toLowerCase() !== 'false',
+    emailSenderAlias: effectiveEmailAlias,
+    emailSenderName: effectiveEmailName,
+    emailTemplates: parsedEmailTemplates
   };
 }
 
@@ -546,6 +668,23 @@ function handleSavePengaturan_(payload) {
         })
     : current.infoRekening;
 
+  const waTemplatesInput = Array.isArray(payload.waTemplates)
+    ? payload.waTemplates.map(function (t) { return String(t || '').trim(); }).filter(Boolean)
+    : current.waTemplates;
+
+  const emailTemplatesInput = Array.isArray(payload.emailTemplates)
+    ? payload.emailTemplates
+        .map(function (t) {
+          return {
+            subject: String((t && t.subject) || '').trim(),
+            body: String((t && t.body) || '').trim()
+          };
+        })
+        .filter(function (t) {
+          return t.subject !== '' && t.body !== '';
+        })
+    : current.emailTemplates;
+
   const updatedMap = {
     namaLembaga: String(payload.namaLembaga || current.namaLembaga).trim() || NAMA_LEMBAGA,
     tagline: String(payload.tagline || current.tagline).trim() || TAGLINE_LEMBAGA,
@@ -556,7 +695,15 @@ function handleSavePengaturan_(payload) {
     defaultNominal: String(parseNumber_(payload.defaultNominal) || current.defaultNominal || 50000),
     defaultTglPengingat: String(Math.min(31, Math.max(1, parseNumber_(payload.defaultTglPengingat) || current.defaultTglPengingat || 5))),
     catatanPembayaran: String(payload.catatanPembayaran !== undefined ? payload.catatanPembayaran : current.catatanPembayaran).trim(),
-    infoRekening: JSON.stringify(rekeningInput.length > 0 ? rekeningInput : current.infoRekening)
+    infoRekening: JSON.stringify(rekeningInput.length > 0 ? rekeningInput : current.infoRekening),
+    enableWaNotif: payload.enableWaNotif === false ? 'false' : 'true',
+    waEndpointUrl: String(payload.waEndpointUrl !== undefined ? payload.waEndpointUrl : current.waEndpointUrl).trim() || DEFAULT_WA_ENDPOINT,
+    waApiKey: String(payload.waApiKey !== undefined ? payload.waApiKey : current.waApiKey).trim() || DEFAULT_WA_API_KEY,
+    waTemplates: JSON.stringify(waTemplatesInput.length > 0 ? waTemplatesInput : current.waTemplates),
+    enableEmailNotif: payload.enableEmailNotif === false ? 'false' : 'true',
+    emailSenderAlias: String(payload.emailSenderAlias !== undefined ? payload.emailSenderAlias : current.emailSenderAlias).trim() || DEFAULT_EMAIL_ALIAS,
+    emailSenderName: String(payload.emailSenderName !== undefined ? payload.emailSenderName : current.emailSenderName).trim() || DEFAULT_EMAIL_SENDER_NAME,
+    emailTemplates: JSON.stringify(emailTemplatesInput.length > 0 ? emailTemplatesInput : current.emailTemplates)
   };
 
   writeSettingsMap_(sheet, updatedMap);
@@ -588,6 +735,7 @@ function getInitialData_() {
       idDonatur: String(row.ID_Donatur || '').trim(),
       tanggalDaftar: formatCellDateString_(row.Tanggal_Daftar),
       namaLengkap: String(row.Nama_Lengkap || '').trim(),
+      jenisKelamin: normalizeJenisKelamin_(row.Jenis_Kelamin),
       noWa: safeNormalizeOrKeep_(row.No_WA),
       email: String(row.Email || '').trim(),
       kabId: String(row.Kab_ID || '').trim(),
@@ -629,6 +777,7 @@ function getInitialData_() {
     return {
       kodePanitia: String(row.Kode_Panitia || '').trim(),
       namaPanitia: String(row.Nama_Panitia || '').trim(),
+      jenisKelamin: normalizeJenisKelamin_(row.Jenis_Kelamin),
       noWaPanitia: safeNormalizeOrKeep_(row.No_WA_Panitia),
       role: normalizeRole_(row.Role)
     };
@@ -652,12 +801,22 @@ function handleRegisterDonatur_(payload) {
     sheet = ss.getSheetByName(SHEET_NAMES.DONATUR);
   } else {
     ensureSheetWithHeaders_(ss, SHEET_NAMES.DONATUR, HEADERS.Master_Donatur, {
-      textHeaders: ['ID_Donatur', 'Tanggal_Daftar', 'No_WA', 'Kab_ID', 'Status_Aktif', 'Email', 'Kode_Perantara'],
+      textHeaders: [
+        'ID_Donatur',
+        'Tanggal_Daftar',
+        'Jenis_Kelamin',
+        'No_WA',
+        'Kab_ID',
+        'Status_Aktif',
+        'Email',
+        'Kode_Perantara'
+      ],
       currencyHeaders: ['Nominal_Komitmen']
     });
   }
 
   const namaLengkap = String(payload.namaLengkap || '').trim();
+  const jenisKelamin = normalizeJenisKelamin_(payload.jenisKelamin);
   const email = String(payload.email || '').trim();
   const kabId = String(payload.kabId || '').trim();
   const domisili = String(payload.domisili || '').trim();
@@ -671,6 +830,9 @@ function handleRegisterDonatur_(payload) {
 
   if (!namaLengkap) {
     return { status: 'error', message: 'Nama lengkap wajib diisi.' };
+  }
+  if (!jenisKelamin) {
+    return { status: 'error', message: 'Jenis kelamin donatur wajib dipilih (Laki-laki atau Perempuan).' };
   }
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { status: 'error', message: 'Format alamat email tidak valid.' };
@@ -702,6 +864,7 @@ function handleRegisterDonatur_(payload) {
           existingDonatur: {
             idDonatur: String(existingRows[i].ID_Donatur || ''),
             namaLengkap: String(existingRows[i].Nama_Lengkap || ''),
+            jenisKelamin: normalizeJenisKelamin_(existingRows[i].Jenis_Kelamin),
             noWa: existingWa,
             email: String(existingRows[i].Email || ''),
             domisili: String(existingRows[i].Domisili || ''),
@@ -723,6 +886,7 @@ function handleRegisterDonatur_(payload) {
     ID_Donatur: idDonatur,
     Tanggal_Daftar: tanggalDaftar,
     Nama_Lengkap: namaLengkap,
+    Jenis_Kelamin: jenisKelamin,
     No_WA: normalizedWa,
     Kab_ID: kabId,
     Domisili: domisili,
@@ -741,6 +905,7 @@ function handleRegisterDonatur_(payload) {
   appendRowByHeaderMap_(sheet, rowValuesByHeader, [
     'ID_Donatur',
     'Tanggal_Daftar',
+    'Jenis_Kelamin',
     'No_WA',
     'Kab_ID',
     'Kode_Perantara',
@@ -749,29 +914,326 @@ function handleRegisterDonatur_(payload) {
   ], ['Nominal_Komitmen']);
   SpreadsheetApp.flush();
 
+  const createdDonatur = {
+    idDonatur: idDonatur,
+    tanggalDaftar: tanggalDaftar,
+    namaLengkap: namaLengkap,
+    jenisKelamin: jenisKelamin,
+    noWa: normalizedWa,
+    email: email,
+    kabId: kabId,
+    domisili: domisili,
+    provinsi: provinsi,
+    pulau: pulau,
+    nominalKomitmen: nominalKomitmen,
+    tglJatuhTempo: tglJatuhTempo,
+    metodeDaftar: metodeDaftar,
+    kodePerantara: kodePerantara,
+    namaPerantara: namaPerantara,
+    statusAktif: statusAktif
+  };
+
+  // Kirim notifikasi WA (ReChat) & Email otomatis secara non-blocking
+  const config = loadConfigObject_(ss);
+  const notifStatus = sendDonorNotifications_(createdDonatur, config);
+
   return {
     status: 'success',
     message: 'Donatur ' + namaLengkap + ' berhasil didaftarkan.',
     data: {
-      donatur: {
-        idDonatur: idDonatur,
-        tanggalDaftar: tanggalDaftar,
-        namaLengkap: namaLengkap,
-        noWa: normalizedWa,
-        email: email,
-        kabId: kabId,
-        domisili: domisili,
-        provinsi: provinsi,
-        pulau: pulau,
-        nominalKomitmen: nominalKomitmen,
-        tglJatuhTempo: tglJatuhTempo,
-        metodeDaftar: metodeDaftar,
-        kodePerantara: kodePerantara,
-        namaPerantara: namaPerantara,
-        statusAktif: statusAktif
-      }
+      donatur: createdDonatur,
+      notifStatus: notifStatus
     }
   };
+}
+
+function handleTestNotification_(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const config = loadConfigObject_(ss);
+  const testWaRaw = String(payload.noWa || '').trim();
+  const testEmail = String(payload.email || '').trim();
+  const testNama = String(payload.namaLengkap || 'Hamba Allah (Tes Notifikasi)').trim();
+  const testJk = normalizeJenisKelamin_(payload.jenisKelamin) || 'Laki-laki';
+
+  let normalizedWa = '';
+  if (testWaRaw) {
+    const waCheck = validateAndNormalizeWA_(testWaRaw);
+    if (!waCheck.valid) {
+      return { status: 'error', message: waCheck.error };
+    }
+    normalizedWa = waCheck.normalized;
+  }
+
+  if (!normalizedWa && !testEmail) {
+    return { status: 'error', message: 'Isi minimal Nomor WhatsApp atau Email tujuan untuk pengujian.' };
+  }
+
+  const sampleDonor = {
+    idDonatur: 'DNR-TES-001',
+    namaLengkap: testNama,
+    jenisKelamin: testJk,
+    noWa: normalizedWa,
+    email: testEmail,
+    domisili: 'Kota Makassar',
+    provinsi: 'Sulawesi Selatan',
+    pulau: 'Sulawesi',
+    nominalKomitmen: config.defaultNominal || 100000,
+    tglJatuhTempo: config.defaultTglPengingat || 5,
+    namaPerantara: 'Admin Sekretariat'
+  };
+
+  const notifStatus = sendDonorNotifications_(sampleDonor, config, payload.templateIndex);
+  return {
+    status: 'success',
+    message: 'Pengujian pengiriman notifikasi selesai dijalankan.',
+    data: {
+      notifStatus: notifStatus
+    }
+  };
+}
+
+// ==================== NOTIFIKASI WA (RECHAT) & EMAIL ALIAS ====================
+function nextNotificationRotationIndex_() {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const raw = props.getProperty('NOTIF_ROTATION_IDX');
+    const current = raw ? parseInt(raw, 10) : 0;
+    const safeCurrent = isNaN(current) || current < 0 ? 0 : current;
+    props.setProperty('NOTIF_ROTATION_IDX', String((safeCurrent + 1) % 1000000));
+    return safeCurrent;
+  } catch (e) {
+    return Math.floor(Math.random() * 100);
+  }
+}
+
+function formatRupiahServer_(amount) {
+  const num = Math.round(parseNumber_(amount));
+  const str = String(num).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return 'Rp ' + str;
+}
+
+function formatRekeningTextServer_(rekeningList) {
+  if (!Array.isArray(rekeningList) || rekeningList.length === 0) {
+    return '• Hubungi pengurus untuk info rekening resmi.';
+  }
+  return rekeningList
+    .map(function (r) {
+      return '• ' + r.bank + ': ' + r.nomor + ' (a.n. ' + r.atasNama + ')';
+    })
+    .join('\n');
+}
+
+function renderNotifTemplate_(templateStr, donatur, config) {
+  const jk = normalizeJenisKelamin_(donatur.jenisKelamin);
+  const sapaan = jk === 'Laki-laki' ? 'Bapak' : jk === 'Perempuan' ? 'Ibu' : 'Bapak/Ibu';
+  const wilayahParts = [donatur.domisili, donatur.provinsi].filter(Boolean);
+  const domisiliLabel = wilayahParts.length > 0 ? wilayahParts.join(', ') : '-';
+
+  const vars = {
+    '{nama}': donatur.namaLengkap || 'Sahabat Kebaikan',
+    '{sapaan}': sapaan,
+    '{jenis_kelamin}': jk || '-',
+    '{id_donatur}': donatur.idDonatur || '-',
+    '{no_wa}': donatur.noWa || '-',
+    '{domisili}': domisiliLabel,
+    '{nominal}': formatRupiahServer_(donatur.nominalKomitmen || 0),
+    '{tgl_pengingat}': String(donatur.tglJatuhTempo || 5),
+    '{perantara}': donatur.namaPerantara || 'Langsung (Tanpa Perantara)',
+    '{lembaga}': config.namaLembaga || NAMA_LEMBAGA,
+    '{rekening}': formatRekeningTextServer_(config.infoRekening),
+    '{link_konfirmasi}': APP_PUBLIC_URL
+  };
+
+  let out = String(templateStr || '');
+  Object.keys(vars).forEach(function (token) {
+    out = out.split(token).join(vars[token]);
+  });
+  return out;
+}
+
+function escapeHtmlServer_(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function sendDonorNotifications_(donatur, config, forcedIndex) {
+  const rotationIdx =
+    typeof forcedIndex === 'number' && !isNaN(forcedIndex) && forcedIndex >= 0
+      ? Math.floor(forcedIndex)
+      : nextNotificationRotationIndex_();
+
+  const result = {
+    wa: { attempted: false, ok: false, detail: 'Tidak dikirim.', templateIndex: undefined },
+    email: { attempted: false, ok: false, detail: 'Tidak dikirim.', templateIndex: undefined }
+  };
+
+  // 1. Kirim WhatsApp via ReChat / MiPos Webhook
+  if (!config.enableWaNotif) {
+    result.wa.detail = 'Notifikasi WA otomatis sedang dinonaktifkan di Pengaturan.';
+  } else if (!donatur.noWa) {
+    result.wa.detail = 'Nomor WA donatur kosong.';
+  } else if (!config.waApiKey) {
+    result.wa.detail = 'API Key perangkat WA belum diisi di Pengaturan.';
+  } else {
+    const waList = Array.isArray(config.waTemplates) && config.waTemplates.length > 0
+      ? config.waTemplates
+      : DEFAULT_WA_TEMPLATES;
+    const waTemplateIdx = rotationIdx % waList.length;
+    const waBody = renderNotifTemplate_(waList[waTemplateIdx], donatur, config);
+    result.wa = sendWaViaRechat_(donatur.noWa, waBody, config);
+    result.wa.templateIndex = waTemplateIdx;
+  }
+
+  // 2. Kirim Email via Gmail Alias (lajnahdai.dpp@gmail.com)
+  if (!config.enableEmailNotif) {
+    result.email.detail = 'Notifikasi Email otomatis sedang dinonaktifkan di Pengaturan.';
+  } else if (!donatur.email) {
+    result.email.detail = 'Donatur tidak mengisi alamat email.';
+  } else {
+    const emList = Array.isArray(config.emailTemplates) && config.emailTemplates.length > 0
+      ? config.emailTemplates
+      : DEFAULT_EMAIL_TEMPLATES;
+    const emTemplateIdx = rotationIdx % emList.length;
+    const chosenTpl = emList[emTemplateIdx];
+    const subject = renderNotifTemplate_(chosenTpl.subject, donatur, config);
+    const plainBody = renderNotifTemplate_(chosenTpl.body, donatur, config);
+    result.email = sendEmailViaAlias_(donatur.email, subject, plainBody, config);
+    result.email.templateIndex = emTemplateIdx;
+  }
+
+  return result;
+}
+
+function sendWaViaRechat_(toNumber, messageText, config) {
+  try {
+    let endpoint = String(config.waEndpointUrl || DEFAULT_WA_ENDPOINT).trim();
+    const apiKey = String(config.waApiKey || '').trim();
+    const useUrlKey = endpoint.indexOf('{API_KEY}') !== -1 || endpoint.indexOf(apiKey) !== -1;
+
+    if (endpoint.indexOf('{API_KEY}') !== -1) {
+      endpoint = endpoint.replace(/\{API_KEY\}/g, encodeURIComponent(apiKey));
+    }
+
+    const headers = {
+      Accept: 'application/json'
+    };
+    if (!useUrlKey && apiKey) {
+      headers.Authorization = 'Bearer ' + apiKey;
+    }
+
+    const bodyPayload = {
+      recipient_type: 'individual',
+      to: String(toNumber).replace(/\D/g, ''),
+      type: 'text',
+      text: {
+        body: messageText
+      }
+    };
+
+    const response = UrlFetchApp.fetch(endpoint, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: headers,
+      payload: JSON.stringify(bodyPayload),
+      muteHttpExceptions: true
+    });
+
+    const code = response.getResponseCode();
+    const rawText = response.getContentText();
+    let parsed = null;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch (parseErr) {
+      parsed = null;
+    }
+
+    if (code >= 200 && code < 300) {
+      return {
+        attempted: true,
+        ok: true,
+        detail: 'Pesan WA masuk antrean kirim (HTTP ' + code + ').'
+      };
+    }
+
+    const errMsg =
+      (parsed && (parsed.message || parsed.error)) ||
+      (code === 429 ? 'Kuota pengiriman harian WA habis (HTTP 429).' : 'HTTP ' + code + ': ' + rawText.substring(0, 140));
+    return {
+      attempted: true,
+      ok: false,
+      detail: 'Gagal kirim WA: ' + errMsg
+    };
+  } catch (err) {
+    return {
+      attempted: true,
+      ok: false,
+      detail: 'Kendala koneksi webhook WA: ' + (err && err.message ? err.message : String(err))
+    };
+  }
+}
+
+function sendEmailViaAlias_(recipientEmail, subject, plainBody, config) {
+  try {
+    const aliasEmail = String(config.emailSenderAlias || DEFAULT_EMAIL_ALIAS).trim();
+    const senderName = String(config.emailSenderName || DEFAULT_EMAIL_SENDER_NAME).trim();
+
+    const safeHtmlParagraphs = escapeHtmlServer_(plainBody)
+      .replace(/\n\n/g, '</p><p style="margin:0 0 12px 0;">')
+      .replace(/\n/g, '<br/>');
+
+    const htmlBody =
+      '<div style="font-family:Montserrat,Arial,sans-serif;background:#f0fdf9;padding:24px;color:#0f172a;">' +
+      '<div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:18px;border:1px solid #d1fae5;overflow:hidden;">' +
+      '<div style="background:linear-gradient(135deg,#059669,#0d9488);padding:18px 24px;color:#ffffff;">' +
+      '<div style="font-size:16px;font-weight:700;">' + escapeHtmlServer_(config.namaLembaga || NAMA_LEMBAGA) + '</div>' +
+      '<div style="font-size:12px;opacity:0.9;margin-top:4px;">' + escapeHtmlServer_(config.tagline || TAGLINE_LEMBAGA) + '</div>' +
+      '</div>' +
+      '<div style="padding:24px;font-size:14px;line-height:1.65;color:#1e293b;"><p style="margin:0 0 12px 0;">' +
+      safeHtmlParagraphs +
+      '</p></div>' +
+      '<div style="padding:14px 24px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:11px;color:#64748b;">' +
+      'Email ini dikirim otomatis oleh sistem ' + escapeHtmlServer_(config.namaLembaga || NAMA_LEMBAGA) +
+      '</div></div></div>';
+
+    const mailOptions = {
+      name: senderName,
+      replyTo: aliasEmail,
+      htmlBody: htmlBody
+    };
+
+    let usedAliasFrom = false;
+    try {
+      const aliases = GmailApp.getAliases();
+      const matchedAlias = aliases.find(function (a) {
+        return String(a || '').trim().toLowerCase() === aliasEmail.toLowerCase();
+      });
+      if (matchedAlias) {
+        mailOptions.from = matchedAlias;
+        usedAliasFrom = true;
+      }
+    } catch (aliasCheckErr) {
+      Logger.log('Pengecekan alias Gmail: ' + aliasCheckErr);
+    }
+
+    GmailApp.sendEmail(recipientEmail, subject, plainBody, mailOptions);
+
+    return {
+      attempted: true,
+      ok: true,
+      detail: usedAliasFrom
+        ? 'Email terkirim menggunakan alias ' + aliasEmail + '.'
+        : 'Email terkirim (Reply-To: ' + aliasEmail + '). Aktifkan "Send mail as" di Gmail untuk ' + aliasEmail + ' jika ingin alamat pengirim utama berubah penuh.'
+    };
+  } catch (err) {
+    return {
+      attempted: true,
+      ok: false,
+      detail: 'Gagal kirim email: ' + (err && err.message ? err.message : String(err))
+    };
+  }
 }
 
 function handleSubmitPembayaran_(payload) {
@@ -977,7 +1439,7 @@ function handleUpdateStatusDonatur_(payload) {
 
   const indexMap = getHeaderIndexMap_(sheet);
   const idCol = indexMap.ID_Donatur || 1;
-  const statusCol = indexMap.Status_Aktif || 11;
+  const statusCol = indexMap.Status_Aktif || 15;
 
   const values = sheet.getDataRange().getValues();
   for (let r = 1; r < values.length; r++) {
@@ -1004,10 +1466,15 @@ function handleSavePanitia_(payload) {
   if (!sheet) {
     setupDatabase();
     sheet = ss.getSheetByName(SHEET_NAMES.PANITIA);
+  } else {
+    ensureSheetWithHeaders_(ss, SHEET_NAMES.PANITIA, HEADERS.Data_Panitia, {
+      textHeaders: ['Kode_Panitia', 'Jenis_Kelamin', 'No_WA_Panitia', 'Role']
+    });
   }
 
   const kodePanitia = String(payload.kodePanitia || '').trim().toUpperCase();
   const namaPanitia = String(payload.namaPanitia || '').trim();
+  const jenisKelamin = normalizeJenisKelamin_(payload.jenisKelamin);
   const noWaRaw = String(payload.noWaPanitia || '').trim();
   const role = normalizeRole_(payload.role);
 
@@ -1027,8 +1494,9 @@ function handleSavePanitia_(payload) {
   const indexMap = getHeaderIndexMap_(sheet);
   const kodeCol = indexMap.Kode_Panitia || 1;
   const namaCol = indexMap.Nama_Panitia || 2;
-  const waCol = indexMap.No_WA_Panitia || 3;
-  const roleCol = indexMap.Role || 4;
+  const jkCol = indexMap.Jenis_Kelamin;
+  const waCol = indexMap.No_WA_Panitia || 4;
+  const roleCol = indexMap.Role || 5;
 
   const values = sheet.getDataRange().getValues();
   let updatedRow = -1;
@@ -1042,15 +1510,17 @@ function handleSavePanitia_(payload) {
   if (updatedRow > 0) {
     sheet.getRange(updatedRow, kodeCol).setNumberFormat('@').setValue(kodePanitia);
     sheet.getRange(updatedRow, namaCol).setValue(namaPanitia);
+    if (jkCol) sheet.getRange(updatedRow, jkCol).setNumberFormat('@').setValue(jenisKelamin);
     sheet.getRange(updatedRow, waCol).setNumberFormat('@').setValue(noWa);
     sheet.getRange(updatedRow, roleCol).setNumberFormat('@').setValue(role);
   } else {
     appendRowByHeaderMap_(sheet, {
       Kode_Panitia: kodePanitia,
       Nama_Panitia: namaPanitia,
+      Jenis_Kelamin: jenisKelamin,
       No_WA_Panitia: noWa,
       Role: role
-    }, ['Kode_Panitia', 'No_WA_Panitia', 'Role'], []);
+    }, ['Kode_Panitia', 'Jenis_Kelamin', 'No_WA_Panitia', 'Role'], []);
   }
   SpreadsheetApp.flush();
 
@@ -1251,6 +1721,13 @@ function normalizeRole_(rawRole) {
   if (clean === 'super admin' || clean === 'superadmin') return 'Super Admin';
   if (clean === 'publik' || clean === 'public') return 'Publik';
   return 'Admin';
+}
+
+function normalizeJenisKelamin_(raw) {
+  const clean = String(raw || '').trim().toLowerCase();
+  if (clean === 'laki-laki' || clean === 'l' || clean === 'pria' || clean === 'ikhwan') return 'Laki-laki';
+  if (clean === 'perempuan' || clean === 'p' || clean === 'wanita' || clean === 'akhwat') return 'Perempuan';
+  return '';
 }
 
 function parseRequestBody_(e) {

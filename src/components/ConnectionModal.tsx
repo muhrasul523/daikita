@@ -1,17 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import {
+  BellRing,
   Check,
   ChevronDown,
   Copy,
   Download,
   ExternalLink,
+  Eye,
+  EyeOff,
   Image as ImageIcon,
   Landmark,
   Link2,
+  Mail,
+  MessageCircle,
   Plus,
   QrCode,
   RefreshCw,
   Save,
+  Send,
   Server,
   ShieldCheck,
   Trash2,
@@ -20,11 +26,16 @@ import {
   X,
 } from 'lucide-react';
 import gasCodeSource from '../../backend/Code.gs?raw';
+import { DEFAULT_EMAIL_TEMPLATES, DEFAULT_WA_TEMPLATES } from '../config';
 import {
+  EmailTemplateItem,
+  JenisKelamin,
   LembagaConfig,
+  NotifDeliveryResult,
   Panitia,
   RekeningInfo,
   SavePengaturanPayload,
+  TestNotificationPayload,
 } from '../types';
 import { isValidGasUrl, pingGasConnection } from '../services/api';
 import {
@@ -32,6 +43,7 @@ import {
   formatRupiahInput,
   getDriveThumbnailFallback,
   normalizeDriveImageUrl,
+  normalizeJenisKelamin,
   normalizeRoleLabel,
   parseRupiahInput,
 } from '../utils/formatters';
@@ -47,6 +59,9 @@ interface ConnectionModalProps {
   panitia: Panitia[];
   onSaveUrl: (newUrl: string) => Promise<void>;
   onSavePengaturan: (payload: SavePengaturanPayload) => Promise<boolean>;
+  onTestNotification: (
+    payload: TestNotificationPayload
+  ) => Promise<{ ok: boolean; message: string; notifStatus?: NotifDeliveryResult }>;
   onSavePanitia: (p: Panitia) => Promise<boolean>;
   onDeletePanitia: (kodePanitia: string) => Promise<boolean>;
   onNotify: (type: 'success' | 'error' | 'info', title: string, description?: string) => void;
@@ -58,11 +73,30 @@ const ROLE_OPTIONS: SearchableOption[] = [
   { value: 'Publik', label: 'Publik', keywords: 'publik donatur' },
 ];
 
+const GENDER_OPTIONS: SearchableOption[] = [
+  { value: 'Laki-laki', label: 'Laki-laki', keywords: 'laki pria ikhwan' },
+  { value: 'Perempuan', label: 'Perempuan', keywords: 'perempuan wanita akhwat' },
+];
+
 const TANGGAL_OPTIONS: SearchableOption[] = Array.from({ length: 31 }, (_, i) => ({
   value: String(i + 1),
   label: `Setiap tanggal ${i + 1}`,
   keywords: `${i + 1}`,
 }));
+
+const TEMPLATE_VARIABLES = [
+  '{sapaan}',
+  '{nama}',
+  '{jenis_kelamin}',
+  '{id_donatur}',
+  '{domisili}',
+  '{nominal}',
+  '{tgl_pengingat}',
+  '{perantara}',
+  '{rekening}',
+  '{lembaga}',
+  '{link_konfirmasi}',
+];
 
 export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   isOpen,
@@ -73,12 +107,13 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   panitia,
   onSaveUrl,
   onSavePengaturan,
+  onTestNotification,
   onSavePanitia,
   onDeletePanitia,
   onNotify,
 }) => {
   const [activeSection, setActiveSection] = useState<
-    'identitas' | 'rekening' | 'pengurus' | 'koneksi'
+    'identitas' | 'rekening' | 'notifikasi' | 'pengurus' | 'koneksi'
   >('identitas');
 
   // State Identitas, Logo & Preview WA
@@ -108,11 +143,30 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     config.defaultTglPengingat || 5
   );
   const [catatanPembayaran, setCatatanPembayaran] = useState(config.catatanPembayaran || '');
+
+  // State Notifikasi WA (ReChat / MiPos) & Email Alias
+  const [enableWaNotif, setEnableWaNotif] = useState<boolean>(config.enableWaNotif);
+  const [waEndpointUrl, setWaEndpointUrl] = useState(config.waEndpointUrl);
+  const [waApiKey, setWaApiKey] = useState(config.waApiKey || '');
+  const [showWaKey, setShowWaKey] = useState(false);
+  const [waTemplates, setWaTemplates] = useState<string[]>(config.waTemplates);
+  const [enableEmailNotif, setEnableEmailNotif] = useState<boolean>(config.enableEmailNotif);
+  const [emailSenderAlias, setEmailSenderAlias] = useState(config.emailSenderAlias);
+  const [emailSenderName, setEmailSenderName] = useState(config.emailSenderName);
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplateItem[]>(config.emailTemplates);
+
+  // State Uji Kirim Notifikasi
+  const [testWaInput, setTestWaInput] = useState('');
+  const [testEmailInput, setTestEmailInput] = useState('');
+  const [isSendingTestNotif, setIsSendingTestNotif] = useState(false);
+  const [testNotifResult, setTestNotifResult] = useState<NotifDeliveryResult | null>(null);
+
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   // State Pengurus & Referral
   const [kodeInput, setKodeInput] = useState('');
   const [namaPanitiaInput, setNamaPanitiaInput] = useState('');
+  const [jenisKelaminPanitia, setJenisKelaminPanitia] = useState<JenisKelamin>('Laki-laki');
   const [waPanitiaInput, setWaPanitiaInput] = useState('');
   const [rolePanitiaInput, setRolePanitiaInput] = useState('Admin');
   const [isSavingPanitia, setIsSavingPanitia] = useState(false);
@@ -144,6 +198,24 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     setDefaultNominalInput((config.defaultNominal || 50000).toLocaleString('id-ID'));
     setDefaultTglPengingat(config.defaultTglPengingat || 5);
     setCatatanPembayaran(config.catatanPembayaran || '');
+
+    setEnableWaNotif(config.enableWaNotif);
+    setWaEndpointUrl(config.waEndpointUrl || 'https://www.rechat.id/api/v1/messages');
+    setWaApiKey(config.waApiKey || '');
+    setWaTemplates(
+      config.waTemplates && config.waTemplates.length > 0
+        ? [...config.waTemplates]
+        : [...DEFAULT_WA_TEMPLATES]
+    );
+    setEnableEmailNotif(config.enableEmailNotif);
+    setEmailSenderAlias(config.emailSenderAlias || 'lajnahdai.dpp@gmail.com');
+    setEmailSenderName(config.emailSenderName || "DAIKITA — Lajnah Da'i Wahdah Islamiyah");
+    setEmailTemplates(
+      config.emailTemplates && config.emailTemplates.length > 0
+        ? config.emailTemplates.map((t) => ({ ...t }))
+        : DEFAULT_EMAIL_TEMPLATES.map((t) => ({ ...t }))
+    );
+    setTestNotifResult(null);
     setUrlInput(gasUrl);
   }, [isOpen, config, gasUrl]);
 
@@ -193,7 +265,6 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // Latar belakang soft gradient 2026
       const grad = ctx.createLinearGradient(0, 0, 1200, 630);
       grad.addColorStop(0, '#ecfdf5');
       grad.addColorStop(0.55, '#f0fdfa');
@@ -201,7 +272,6 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 1200, 630);
 
-      // Kartu frosted di tengah
       ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
       ctx.beginPath();
       ctx.roundRect(80, 65, 1040, 500, 36);
@@ -210,7 +280,6 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Gambar Logo jika ada
       let textStartY = 260;
       let logoSkippedByCors = false;
       if (activeLogoPreview) {
@@ -237,13 +306,11 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         }
       }
 
-      // Nama Aplikasi di bawah logo
       ctx.fillStyle = '#065f46';
       ctx.font = '700 48px Montserrat, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(namaLembaga || "DAIKITA — Kafalah Da'i", 600, textStartY, 940);
 
-      // Tagline di bawah nama aplikasi
       ctx.fillStyle = '#334155';
       ctx.font = '500 26px Montserrat, sans-serif';
       const tag = tagline || 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
@@ -329,6 +396,11 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       return;
     }
 
+    const cleanWaTemplates = waTemplates.map((t) => t.trim()).filter(Boolean);
+    const cleanEmailTemplates = emailTemplates
+      .map((t) => ({ subject: t.subject.trim(), body: t.body.trim() }))
+      .filter((t) => t.subject !== '' && t.body !== '');
+
     setIsSavingSettings(true);
     const ok = await onSavePengaturan({
       namaLembaga: namaLembaga.trim() || "DAIKITA — Kafalah Da'i",
@@ -347,6 +419,15 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       defaultTglPengingat,
       catatanPembayaran: catatanPembayaran.trim(),
       infoRekening: cleanRekening,
+      enableWaNotif,
+      waEndpointUrl: waEndpointUrl.trim() || 'https://www.rechat.id/api/v1/messages',
+      waApiKey: waApiKey.trim(),
+      waTemplates: cleanWaTemplates.length > 0 ? cleanWaTemplates : DEFAULT_WA_TEMPLATES,
+      enableEmailNotif,
+      emailSenderAlias: emailSenderAlias.trim() || 'lajnahdai.dpp@gmail.com',
+      emailSenderName: emailSenderName.trim() || "DAIKITA — Lajnah Da'i Wahdah Islamiyah",
+      emailTemplates:
+        cleanEmailTemplates.length > 0 ? cleanEmailTemplates : DEFAULT_EMAIL_TEMPLATES,
     });
     setIsSavingSettings(false);
     if (ok) {
@@ -369,6 +450,37 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     setInfoRekening((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const handleCopyVariable = async (token: string) => {
+    try {
+      await navigator.clipboard.writeText(token);
+      onNotify('info', `Variabel ${token} disalin`, 'Tempelkan ke dalam isi template WA/Email.');
+    } catch {
+      // Ignore clipboard failure
+    }
+  };
+
+  const handleSendTestNotif = async () => {
+    if (!testWaInput.trim() && !testEmailInput.trim()) {
+      onNotify('error', 'Isi minimal Nomor WA atau Email tujuan pengujian.');
+      return;
+    }
+    setIsSendingTestNotif(true);
+    setTestNotifResult(null);
+    const res = await onTestNotification({
+      noWa: testWaInput.trim(),
+      email: testEmailInput.trim(),
+      namaLengkap: 'Hamba Allah (Uji Coba)',
+      jenisKelamin: 'Laki-laki',
+    });
+    setIsSendingTestNotif(false);
+    if (res.notifStatus) {
+      setTestNotifResult(res.notifStatus);
+    }
+    if (!res.ok) {
+      onNotify('error', 'Uji kirim notifikasi gagal', res.message);
+    }
+  };
+
   const handleSavePanitiaSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!kodeInput.trim() || !namaPanitiaInput.trim()) {
@@ -379,6 +491,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     const ok = await onSavePanitia({
       kodePanitia: kodeInput.trim().toUpperCase(),
       namaPanitia: namaPanitiaInput.trim(),
+      jenisKelamin: jenisKelaminPanitia || 'Laki-laki',
       noWaPanitia: waPanitiaInput.trim(),
       role: rolePanitiaInput,
     });
@@ -386,6 +499,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     if (ok) {
       setKodeInput('');
       setNamaPanitiaInput('');
+      setJenisKelaminPanitia('Laki-laki');
       setWaPanitiaInput('');
       setRolePanitiaInput('Admin');
     }
@@ -394,6 +508,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   const handleEditPanitiaRow = (p: Panitia) => {
     setKodeInput(p.kodePanitia);
     setNamaPanitiaInput(p.namaPanitia);
+    setJenisKelaminPanitia(normalizeJenisKelamin(p.jenisKelamin) || 'Laki-laki');
     setWaPanitiaInput(p.noWaPanitia);
     setRolePanitiaInput(normalizeRoleLabel(p.role));
   };
@@ -486,7 +601,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       aria-modal="true"
       aria-labelledby="modal-pengaturan-title"
     >
-      <div className="glass-surface w-full max-w-3xl max-h-[92vh] flex flex-col rounded-3xl overflow-hidden">
+      <div className="glass-surface w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl overflow-hidden">
         <div className="flex items-center justify-between gap-4 px-5 sm:px-6 py-4 sm:py-5 border-b border-slate-200/70 dark:border-slate-700/70">
           <div className="min-w-0">
             <h2
@@ -525,11 +640,12 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         </div>
 
         <div className="px-5 sm:px-6 pt-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-2xl bg-slate-100/90 dark:bg-slate-800/85 p-1">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1 rounded-2xl bg-slate-100/90 dark:bg-slate-800/85 p-1">
             {(
               [
                 { key: 'identitas', label: 'Identitas & Logo', icon: ImageIcon },
                 { key: 'rekening', label: 'Rekening & QRIS', icon: Landmark },
+                { key: 'notifikasi', label: 'WA & Email', icon: BellRing },
                 { key: 'pengurus', label: 'Pengurus & Link', icon: Users },
                 { key: 'koneksi', label: 'Sinkronisasi', icon: Server },
               ] as const
@@ -541,7 +657,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                   key={item.key}
                   type="button"
                   onClick={() => setActiveSection(item.key)}
-                  className={`flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
                     active
                       ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
                       : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -676,9 +792,9 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                   </p>
                 </div>
                 <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
-                  Agar gambar pratinjau WhatsApp &amp; ikon peramban tampil saat tautan dibagikan,
-                  unduh kedua file di bawah setelah mengunggah logo lalu simpan ke folder{' '}
-                  <code className="font-mono font-semibold">public/</code> sebelum dikirim ke GitHub.
+                  Agar gambar pratinjau WhatsApp menampilkan logo resmi Anda secara langsung saat
+                  tautan dibagikan, unduh kedua file di bawah setelah memilih file logo lalu simpan
+                  menimpa file di folder <code className="font-mono font-semibold">public/</code>.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -909,6 +1025,358 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             </form>
           )}
 
+          {activeSection === 'notifikasi' && (
+            <div className="space-y-6">
+              <form onSubmit={handleSaveAllSettings} className="space-y-6">
+                {/* Variabel Template */}
+                <div className="rounded-2xl border border-emerald-200/80 dark:border-emerald-800/70 bg-emerald-50/45 dark:bg-emerald-950/30 p-4 space-y-2">
+                  <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
+                    Variabel Dinamis &amp; Rotasi Anti-Spam Otomatis
+                  </p>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
+                    Setiap pendaftaran donatur baru otomatis mengirim notifikasi menggunakan
+                    template secara bergantian (Template 1 → 2 → 3 → dst) untuk menghindari pola
+                    spam. Klik variabel untuk menyalin:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {TEMPLATE_VARIABLES.map((token) => (
+                      <button
+                        key={token}
+                        type="button"
+                        onClick={() => void handleCopyVariable(token)}
+                        className="rounded-lg border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-800 px-2 py-1 text-[11px] font-mono font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-slate-700 cursor-pointer"
+                      >
+                        {token}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pengaturan WA ReChat / MiPos */}
+                <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/40 p-4 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <MessageCircle className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                        Notifikasi WhatsApp Otomatis (ReChat / MiPos)
+                      </p>
+                    </div>
+                    <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={enableWaNotif}
+                        onChange={(e) => setEnableWaNotif(e.target.checked)}
+                        className="rounded accent-emerald-600"
+                      />
+                      <span>Aktifkan kirim WA otomatis</span>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="min-w-0">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                        API Key / Token Perangkat WA
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showWaKey ? 'text' : 'password'}
+                          value={waApiKey}
+                          onChange={(e) => setWaApiKey(e.target.value)}
+                          placeholder="wag_..."
+                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-3 pr-10 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowWaKey((v) => !v)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                          aria-label="Tampilkan atau sembunyikan API Key"
+                        >
+                          {showWaKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
+                        Ganti API Key perangkat di sini kapan saja bila ingin mengganti nomor WA
+                        pengirim.
+                      </p>
+                    </div>
+
+                    <div className="min-w-0">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                        URL Endpoint API Webhook
+                      </label>
+                      <input
+                        type="url"
+                        value={waEndpointUrl}
+                        onChange={(e) => setWaEndpointUrl(e.target.value)}
+                        placeholder="https://www.rechat.id/api/v1/messages"
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
+                        Mendukung <code className="font-mono">/api/v1/messages</code> (Bearer)
+                        maupun format <code className="font-mono">{'{API_KEY}'}</code> di URL.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Daftar Template WA */}
+                  <div className="space-y-3 pt-2 border-t border-slate-200/70 dark:border-slate-700/70">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                        Variasi Template Pesan WA ({waTemplates.length} template aktif)
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setWaTemplates((prev) => [
+                            ...prev,
+                            `Assalamu'alaikum {sapaan} *{nama}*,\nTerima kasih komitmen Kafalah Da'i sebesar *{nominal}* (ID: {id_donatur}).`,
+                          ])
+                        }
+                        className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 cursor-pointer"
+                      >
+                        <Plus className="h-3.5 w-3.5 shrink-0" />
+                        <span>Tambah Template WA</span>
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      {waTemplates.map((tpl, idx) => (
+                        <div
+                          key={idx}
+                          className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/70 p-3 space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                              Template WA #{idx + 1}
+                            </span>
+                            {waTemplates.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setWaTemplates((prev) => prev.filter((_, i) => i !== idx))
+                                }
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                                <span>Hapus</span>
+                              </button>
+                            )}
+                          </div>
+                          <textarea
+                            rows={5}
+                            value={tpl}
+                            onChange={(e) =>
+                              setWaTemplates((prev) =>
+                                prev.map((item, i) => (i === idx ? e.target.value : item))
+                              )
+                            }
+                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/60 px-3 py-2 text-xs leading-relaxed text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pengaturan Email Alias */}
+                <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/40 p-4 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Mail className="h-4 w-4 text-sky-700 dark:text-sky-400" />
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                        Notifikasi Email Otomatis (Email Alias)
+                      </p>
+                    </div>
+                    <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={enableEmailNotif}
+                        onChange={(e) => setEnableEmailNotif(e.target.checked)}
+                        className="rounded accent-emerald-600"
+                      />
+                      <span>Aktifkan kirim Email otomatis</span>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="min-w-0">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                        Email Pengirim (Alias)
+                      </label>
+                      <input
+                        type="email"
+                        value={emailSenderAlias}
+                        onChange={(e) => setEmailSenderAlias(e.target.value)}
+                        placeholder="lajnahdai.dpp@gmail.com"
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
+                        Jika alamat alias sudah didaftarkan di Gmail → Send mail as, pengirim
+                        otomatis memakai alias ini.
+                      </p>
+                    </div>
+                    <div className="min-w-0">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                        Nama Pengirim Email
+                      </label>
+                      <input
+                        type="text"
+                        value={emailSenderName}
+                        onChange={(e) => setEmailSenderName(e.target.value)}
+                        placeholder="DAIKITA — Lajnah Da'i Wahdah Islamiyah"
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Daftar Template Email */}
+                  <div className="space-y-3 pt-2 border-t border-slate-200/70 dark:border-slate-700/70">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                        Variasi Template Email ({emailTemplates.length} template aktif)
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEmailTemplates((prev) => [
+                            ...prev,
+                            {
+                              subject: 'Konfirmasi Kepesertaan {lembaga} — {nama}',
+                              body: "Assalamu'alaikum {sapaan} {nama},\n\nTerima kasih atas amanah Kafalah Da'i sebesar {nominal} (ID: {id_donatur}).",
+                            },
+                          ])
+                        }
+                        className="inline-flex items-center gap-1 rounded-xl border border-sky-200 dark:border-sky-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-sky-800 dark:text-sky-200 hover:bg-sky-50 cursor-pointer"
+                      >
+                        <Plus className="h-3.5 w-3.5 shrink-0" />
+                        <span>Tambah Template Email</span>
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      {emailTemplates.map((tpl, idx) => (
+                        <div
+                          key={idx}
+                          className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/70 p-3 space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold text-sky-800 dark:text-sky-300">
+                              Template Email #{idx + 1}
+                            </span>
+                            {emailTemplates.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEmailTemplates((prev) => prev.filter((_, i) => i !== idx))
+                                }
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                                <span>Hapus</span>
+                              </button>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={tpl.subject}
+                            onChange={(e) =>
+                              setEmailTemplates((prev) =>
+                                prev.map((item, i) =>
+                                  i === idx ? { ...item, subject: e.target.value } : item
+                                )
+                              )
+                            }
+                            placeholder="Subjek Email..."
+                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/60 px-3 py-2 text-xs font-semibold text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                          />
+                          <textarea
+                            rows={5}
+                            value={tpl.body}
+                            onChange={(e) =>
+                              setEmailTemplates((prev) =>
+                                prev.map((item, i) =>
+                                  i === idx ? { ...item, body: e.target.value } : item
+                                )
+                              )
+                            }
+                            placeholder="Isi Email..."
+                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/60 px-3 py-2 text-xs leading-relaxed text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={isSavingSettings}
+                    className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Save className="h-4 w-4 shrink-0" />
+                    <span>{isSavingSettings ? 'Menyimpan...' : 'Simpan Pengaturan Notifikasi'}</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* Uji Kirim Notifikasi */}
+              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/75 dark:bg-slate-900/55 p-4 space-y-3">
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Uji Kirim Notifikasi WA &amp; Email (Simulasi Donatur Baru)
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
+                  <input
+                    type="tel"
+                    value={testWaInput}
+                    onChange={(e) => setTestWaInput(e.target.value)}
+                    placeholder="No. WA tujuan tes (mis. 0812...)"
+                    className="sm:col-span-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs tabular-nums text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                  />
+                  <input
+                    type="email"
+                    value={testEmailInput}
+                    onChange={(e) => setTestEmailInput(e.target.value)}
+                    placeholder="Email tujuan tes (mis. nama@gmail.com)"
+                    className="sm:col-span-5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    disabled={isSendingTestNotif}
+                    onClick={() => void handleSendTestNotif()}
+                    className="sm:col-span-3 inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 dark:bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:opacity-95 disabled:opacity-50 whitespace-nowrap cursor-pointer"
+                  >
+                    <Send className="h-3.5 w-3.5 shrink-0" />
+                    <span>{isSendingTestNotif ? 'Mengirim...' : 'Kirim Tes'}</span>
+                  </button>
+                </div>
+
+                {testNotifResult && (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950/60 p-3 text-xs space-y-1">
+                    <p
+                      className={
+                        testNotifResult.wa.ok
+                          ? 'text-emerald-700 dark:text-emerald-300 font-semibold'
+                          : 'text-amber-700 dark:text-amber-300'
+                      }
+                    >
+                      WA: {testNotifResult.wa.detail}
+                    </p>
+                    <p
+                      className={
+                        testNotifResult.email.ok
+                          ? 'text-emerald-700 dark:text-emerald-300 font-semibold'
+                          : 'text-amber-700 dark:text-amber-300'
+                      }
+                    >
+                      Email: {testNotifResult.email.detail}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {activeSection === 'pengurus' && (
             <div className="space-y-5">
               <form
@@ -918,7 +1386,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                 <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
                   Tambah atau Perbarui Pengurus / Perantara
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                   <input
                     type="text"
                     value={kodeInput}
@@ -935,6 +1403,16 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     required
                     className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                   />
+                  <SearchableSelect
+                    ariaLabel="Pilih jenis kelamin pengurus"
+                    options={GENDER_OPTIONS}
+                    value={jenisKelaminPanitia}
+                    onChange={(val) =>
+                      setJenisKelaminPanitia((val as JenisKelamin) || 'Laki-laki')
+                    }
+                    placeholder="Jenis Kelamin..."
+                    compact
+                  />
                   <input
                     type="tel"
                     value={waPanitiaInput}
@@ -942,13 +1420,15 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     placeholder="No. WA (mis. 0812...)"
                     className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs tabular-nums text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                   />
-                  <SearchableSelect
-                    ariaLabel="Pilih peran pengurus"
-                    options={ROLE_OPTIONS}
-                    value={rolePanitiaInput}
-                    onChange={(val) => setRolePanitiaInput(val || 'Admin')}
-                    compact
-                  />
+                  <div className="sm:col-span-2">
+                    <SearchableSelect
+                      ariaLabel="Pilih peran pengurus"
+                      options={ROLE_OPTIONS}
+                      value={rolePanitiaInput}
+                      onChange={(val) => setRolePanitiaInput(val || 'Admin')}
+                      compact
+                    />
+                  </div>
                 </div>
                 <div className="flex justify-end">
                   <button
@@ -977,6 +1457,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                         </p>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
                           Kode {p.kodePanitia} · {normalizeRoleLabel(p.role)}
+                          {p.jenisKelamin ? ` · ${p.jenisKelamin}` : ''}
                           {p.noWaPanitia ? ` · ${p.noWaPanitia}` : ''}
                         </p>
                         <p
@@ -1113,7 +1594,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                 </div>
               </form>
 
-              {/* Pengaturan Skrip Server Lanjutan (Tersembunyi secara default) */}
+              {/* Pengaturan Skrip Server Lanjutan */}
               <div className="pt-4 border-t border-slate-200/70 dark:border-slate-700/70">
                 <button
                   type="button"

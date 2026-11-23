@@ -80,6 +80,12 @@ const AKTIF_OPTIONS: SearchableOption[] = [
   { value: 'Cuti', label: 'Status Cuti', keywords: 'cuti' },
 ];
 
+const GENDER_FILTER_OPTIONS: SearchableOption[] = [
+  { value: 'Semua', label: 'Gender: Semua', keywords: 'semua' },
+  { value: 'Laki-laki', label: 'Laki-laki', keywords: 'laki pria ikhwan' },
+  { value: 'Perempuan', label: 'Perempuan', keywords: 'perempuan wanita akhwat' },
+];
+
 const SORT_OPTIONS: SearchableOption[] = [
   { value: 'nama', label: 'Urut: Nama Donatur', keywords: 'nama' },
   { value: 'nominal', label: 'Urut: Nominal Komitmen', keywords: 'nominal komitmen' },
@@ -110,6 +116,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
   const [kabupatenFilter, setKabupatenFilter] = useState<string>('');
   const [perantaraFilter, setPerantaraFilter] = useState<string>('Semua');
   const [aktifFilter, setAktifFilter] = useState<'Semua' | StatusAktif>('Semua');
+  const [genderFilter, setGenderFilter] = useState<'Semua' | 'Laki-laki' | 'Perempuan'>('Semua');
   const [searchQuery, setSearchQuery] = useState('');
 
   const [sortField, setSortField] = useState<SortField>('nama');
@@ -337,6 +344,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
       const w = resolveDonorWilayah(row.donatur);
       if (statusFilter !== 'Semua' && row.statusBulan !== statusFilter) return false;
       if (aktifFilter !== 'Semua' && row.donatur.statusAktif !== aktifFilter) return false;
+      if (genderFilter !== 'Semua' && row.donatur.jenisKelamin !== genderFilter) return false;
       if (pulauFilter && w.pulau !== pulauFilter) return false;
       if (provinsiFilter && w.provinsi !== provinsiFilter) return false;
       if (kabupatenFilter && w.kab !== kabupatenFilter) return false;
@@ -352,6 +360,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
       const d = row.donatur;
       return (
         d.namaLengkap.toLowerCase().includes(q) ||
+        (d.jenisKelamin || '').toLowerCase().includes(q) ||
         d.noWa.toLowerCase().includes(q) ||
         (d.email || '').toLowerCase().includes(q) ||
         d.namaPerantara.toLowerCase().includes(q) ||
@@ -406,6 +415,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     donorRows,
     statusFilter,
     aktifFilter,
+    genderFilter,
     pulauFilter,
     provinsiFilter,
     kabupatenFilter,
@@ -792,7 +802,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
           </div>
 
           {/* Operational Filters & Sort */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
             <SearchableSelect
               ariaLabel="Filter status penyaluran"
               options={PENYALURAN_OPTIONS}
@@ -813,6 +823,17 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
               onChange={(val) => setPerantaraFilter(val || 'Semua')}
               compact
               searchPlaceholder="Ketik nama pengurus/perantara..."
+            />
+
+            <SearchableSelect
+              ariaLabel="Filter jenis kelamin donatur"
+              options={GENDER_FILTER_OPTIONS}
+              value={genderFilter}
+              onChange={(val) =>
+                setGenderFilter((val || 'Semua') as 'Semua' | 'Laki-laki' | 'Perempuan')
+              }
+              compact
+              searchPlaceholder="Filter jenis kelamin..."
             />
 
             <SearchableSelect
@@ -935,6 +956,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                         </p>
                         <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 tabular-nums safe-wrap">
                           {formatWADisplay(donatur.noWa)}
+                          {donatur.jenisKelamin ? ` · ${donatur.jenisKelamin}` : ''}
                         </p>
                         {donatur.email && (
                           <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">

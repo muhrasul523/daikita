@@ -1,9 +1,17 @@
-import { DEFAULT_CONFIG, DEFAULT_GAS_URL, DEFAULT_PANITIA, STORAGE_KEYS } from '../config';
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_EMAIL_TEMPLATES,
+  DEFAULT_GAS_URL,
+  DEFAULT_PANITIA,
+  DEFAULT_WA_TEMPLATES,
+  STORAGE_KEYS,
+} from '../config';
 import {
   ApiResult,
   AppDataState,
   Donatur,
   LembagaConfig,
+  NotifDeliveryResult,
   Panitia,
   RegisterDonaturPayload,
   SavePengaturanPayload,
@@ -11,9 +19,11 @@ import {
   StatusPenyaluran,
   StatusVerifikasi,
   SubmitPembayaranPayload,
+  TestNotificationPayload,
   TransaksiDonasi,
 } from '../types';
 import {
+  normalizeJenisKelamin,
   normalizeRoleLabel,
   previewAutoRenameFile,
   validateAndNormalizeWA,
@@ -68,6 +78,7 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
   const donatur: Donatur[] = Array.isArray(raw?.donatur)
     ? raw!.donatur.map((d) => ({
         ...d,
+        jenisKelamin: normalizeJenisKelamin(d.jenisKelamin),
         email: d.email || '',
         kabId: d.kabId || '',
         domisili: d.domisili || '',
@@ -81,6 +92,7 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
     Array.isArray(raw?.panitia) && raw!.panitia.length > 0
       ? raw!.panitia.map((p) => ({
           ...p,
+          jenisKelamin: normalizeJenisKelamin(p.jenisKelamin),
           role: normalizeRoleLabel(p.role),
         }))
       : DEFAULT_PANITIA;
@@ -107,6 +119,26 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
           Array.isArray(rawCfg.infoRekening) && rawCfg.infoRekening.length > 0
             ? rawCfg.infoRekening
             : DEFAULT_CONFIG.infoRekening,
+        enableWaNotif:
+          typeof rawCfg.enableWaNotif === 'boolean'
+            ? rawCfg.enableWaNotif
+            : DEFAULT_CONFIG.enableWaNotif,
+        waEndpointUrl: rawCfg.waEndpointUrl || DEFAULT_CONFIG.waEndpointUrl,
+        waApiKey: rawCfg.waApiKey || '',
+        waTemplates:
+          Array.isArray(rawCfg.waTemplates) && rawCfg.waTemplates.length > 0
+            ? rawCfg.waTemplates
+            : DEFAULT_WA_TEMPLATES,
+        enableEmailNotif:
+          typeof rawCfg.enableEmailNotif === 'boolean'
+            ? rawCfg.enableEmailNotif
+            : DEFAULT_CONFIG.enableEmailNotif,
+        emailSenderAlias: rawCfg.emailSenderAlias || DEFAULT_CONFIG.emailSenderAlias,
+        emailSenderName: rawCfg.emailSenderName || DEFAULT_CONFIG.emailSenderName,
+        emailTemplates:
+          Array.isArray(rawCfg.emailTemplates) && rawCfg.emailTemplates.length > 0
+            ? rawCfg.emailTemplates
+            : DEFAULT_EMAIL_TEMPLATES,
       }
     : DEFAULT_CONFIG;
 
@@ -247,11 +279,21 @@ export async function fetchInitialData(gasUrl: string): Promise<ApiResult<AppDat
 export async function registerDonatur(
   gasUrl: string,
   payload: RegisterDonaturPayload
-): Promise<ApiResult<{ donatur?: Donatur; existingDonatur?: Partial<Donatur> }>> {
+): Promise<
+  ApiResult<{
+    donatur?: Donatur;
+    existingDonatur?: Partial<Donatur>;
+    notifStatus?: NotifDeliveryResult;
+  }>
+> {
   const url = gasUrl.trim();
   if (url) {
     try {
-      return await callGasPost<{ donatur?: Donatur; existingDonatur?: Partial<Donatur> }>(url, {
+      return await callGasPost<{
+        donatur?: Donatur;
+        existingDonatur?: Partial<Donatur>;
+        notifStatus?: NotifDeliveryResult;
+      }>(url, {
         action: 'registerDonatur',
         ...payload,
       });
@@ -289,6 +331,7 @@ export async function registerDonatur(
     idDonatur: `DNR-${ym}-${seq}`,
     tanggalDaftar: formatNowLocal(),
     namaLengkap: payload.namaLengkap.trim(),
+    jenisKelamin: normalizeJenisKelamin(payload.jenisKelamin),
     noWa: normalizedWa,
     email: (payload.email || '').trim(),
     kabId: (payload.kabId || '').trim(),
@@ -309,7 +352,21 @@ export async function registerDonatur(
   return {
     status: 'success',
     message: `Donatur ${newDonatur.namaLengkap} berhasil disimpan (Mode Lokal).`,
-    data: { donatur: newDonatur },
+    data: {
+      donatur: newDonatur,
+      notifStatus: {
+        wa: {
+          attempted: false,
+          ok: false,
+          detail: 'Pengiriman WA otomatis hanya berjalan saat sinkronisasi aktif.',
+        },
+        email: {
+          attempted: false,
+          ok: false,
+          detail: 'Pengiriman email otomatis hanya berjalan saat sinkronisasi aktif.',
+        },
+      },
+    },
   };
 }
 
@@ -520,6 +577,20 @@ export async function savePengaturan(
         : 5,
     catatanPembayaran: payload.catatanPembayaran.trim(),
     infoRekening: payload.infoRekening.length > 0 ? payload.infoRekening : DEFAULT_CONFIG.infoRekening,
+    enableWaNotif: payload.enableWaNotif,
+    waEndpointUrl: payload.waEndpointUrl.trim() || DEFAULT_CONFIG.waEndpointUrl,
+    waApiKey: payload.waApiKey.trim(),
+    waTemplates:
+      payload.waTemplates.filter((t) => t.trim() !== '').length > 0
+        ? payload.waTemplates.filter((t) => t.trim() !== '')
+        : DEFAULT_WA_TEMPLATES,
+    enableEmailNotif: payload.enableEmailNotif,
+    emailSenderAlias: payload.emailSenderAlias.trim() || DEFAULT_CONFIG.emailSenderAlias,
+    emailSenderName: payload.emailSenderName.trim() || DEFAULT_CONFIG.emailSenderName,
+    emailTemplates:
+      payload.emailTemplates.filter((t) => t.subject.trim() !== '' && t.body.trim() !== '').length > 0
+        ? payload.emailTemplates.filter((t) => t.subject.trim() !== '' && t.body.trim() !== '')
+        : DEFAULT_EMAIL_TEMPLATES,
   };
   state.config = updatedConfig;
   saveLocalState(state);
@@ -529,6 +600,30 @@ export async function savePengaturan(
     message: 'Pengaturan aplikasi berhasil disimpan (Mode Lokal).',
     data: { config: updatedConfig },
   };
+}
+
+export async function sendTestNotification(
+  gasUrl: string,
+  payload: TestNotificationPayload
+): Promise<ApiResult<{ notifStatus: NotifDeliveryResult }>> {
+  const url = gasUrl.trim();
+  if (!url) {
+    return {
+      status: 'error',
+      message: 'Uji kirim notifikasi WA & Email memerlukan koneksi layanan sinkronisasi aktif.',
+    };
+  }
+  try {
+    return await callGasPost<{ notifStatus: NotifDeliveryResult }>(url, {
+      action: 'testNotification',
+      ...payload,
+    });
+  } catch (err) {
+    return {
+      status: 'error',
+      message: err instanceof Error ? err.message : 'Gagal mengirim tes notifikasi.',
+    };
+  }
 }
 
 export async function savePanitia(
@@ -556,6 +651,7 @@ export async function savePanitia(
   const normalized: Panitia = {
     kodePanitia: kode,
     namaPanitia: panitia.namaPanitia.trim(),
+    jenisKelamin: normalizeJenisKelamin(panitia.jenisKelamin),
     noWaPanitia: waCheck.valid ? waCheck.normalized : panitia.noWaPanitia.trim(),
     role: normalizeRoleLabel(panitia.role),
   };

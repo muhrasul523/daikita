@@ -10,6 +10,7 @@ export const APP_BRAND_NAME = 'DAIKITA';
 export const APP_PROGRAM_FOCUS = "Kafalah Dai";
 export const APP_TAGLINE = 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
 export const APP_PUBLIC_URL = 'https://daikita.duwd.web.id/';
+export const DEFAULT_LOGO_URL = 'https://lh3.googleusercontent.com/d/1OOSQydygv0K9SNcQUXQTqQyduW57mv4Y';
 
 export const DEFAULT_SCREEN_WIDTH_PCT = 95;
 
@@ -146,7 +147,7 @@ Jazakumullahu khairan. Wassalamu'alaikum Warahmatullahi Wabarakatuh.`,
 export const DEFAULT_CONFIG: LembagaConfig = {
   namaLembaga: "DAIKITA — Kafalah Dai",
   tagline: APP_TAGLINE,
-  logoUrl: '',
+  logoUrl: DEFAULT_LOGO_URL,
   qrisUrl: '',
   qrisMerchantName: 'DAIKITA Wahdah Islamiyah',
   showQris: true,

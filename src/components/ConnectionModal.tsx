@@ -1,5 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   BellRing,
   Check,
   ChevronDown,
@@ -166,6 +169,53 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   const [rolePanitiaInput, setRolePanitiaInput] = useState('Admin');
   const [isSavingPanitia, setIsSavingPanitia] = useState(false);
   const [copiedRef, setCopiedRef] = useState<string | null>(null);
+  const [panitiaSortField, setPanitiaSortField] = useState<
+    'kode' | 'nama' | 'role' | 'wa'
+  >('kode');
+  const [panitiaSortDir, setPanitiaSortDir] = useState<'asc' | 'desc'>('asc');
+
+  const sortedPanitia = useMemo(() => {
+    const dir = panitiaSortDir === 'asc' ? 1 : -1;
+    return [...panitia].sort((a, b) => {
+      let cmp = 0;
+      switch (panitiaSortField) {
+        case 'kode':
+          cmp = a.kodePanitia.localeCompare(b.kodePanitia, 'id');
+          break;
+        case 'nama':
+          cmp = a.namaPanitia.localeCompare(b.namaPanitia, 'id');
+          break;
+        case 'role':
+          cmp = normalizeRoleLabel(a.role).localeCompare(normalizeRoleLabel(b.role), 'id');
+          break;
+        case 'wa':
+          cmp = (a.noWaPanitia || '').localeCompare(b.noWaPanitia || '', 'id');
+          break;
+      }
+      if (cmp === 0) return a.kodePanitia.localeCompare(b.kodePanitia, 'id');
+      return cmp * dir;
+    });
+  }, [panitia, panitiaSortField, panitiaSortDir]);
+
+  const handleSortPanitia = (field: 'kode' | 'nama' | 'role' | 'wa') => {
+    if (panitiaSortField === field) {
+      setPanitiaSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setPanitiaSortField(field);
+      setPanitiaSortDir('asc');
+    }
+  };
+
+  const renderPanitiaSortIcon = (field: 'kode' | 'nama' | 'role' | 'wa') => {
+    if (panitiaSortField !== field) {
+      return <ArrowUpDown className="h-3 w-3 opacity-60 shrink-0" />;
+    }
+    return panitiaSortDir === 'asc' ? (
+      <ArrowUp className="h-3 w-3 shrink-0" />
+    ) : (
+      <ArrowDown className="h-3 w-3 shrink-0" />
+    );
+  };
 
   // State Koneksi Sinkronisasi
   const [urlInput, setUrlInput] = useState(gasUrl);
@@ -1493,79 +1543,133 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                 </div>
               </form>
 
-              <div className="divide-y divide-slate-200/70 dark:divide-slate-700/70 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/70 dark:bg-slate-900/50">
-                {panitia.map((p) => {
-                  const refUrl = buildReferralUrl(p.kodePanitia);
-                  const isCopied = copiedRef === p.kodePanitia;
-                  return (
-                    <div
-                      key={p.kodePanitia}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 safe-wrap">
-                          {p.namaPanitia}
-                        </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
-                          Kode {p.kodePanitia} · {normalizeRoleLabel(p.role)}
-                          {p.jenisKelamin ? ` · ${p.jenisKelamin}` : ''}
-                          {p.noWaPanitia ? ` · ${p.noWaPanitia}` : ''}
-                        </p>
-                        <p
-                          className="text-[11px] text-teal-700 dark:text-teal-400 font-mono mt-1 truncate"
-                          title={refUrl}
-                        >
-                          {refUrl}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+              <div className="overflow-x-auto clean-scroll rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/75 dark:bg-slate-900/55">
+                <table className="w-full min-w-[680px] text-left border-collapse">
+                  <thead>
+                    <tr className="bg-emerald-800 dark:bg-emerald-950 text-white dark:text-emerald-100 text-[11px] font-semibold">
+                      <th className="py-3 pl-4 pr-3">
                         <button
                           type="button"
-                          onClick={() => handleEditPanitiaRow(p)}
-                          className="rounded-xl border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                          onClick={() => handleSortPanitia('kode')}
+                          className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
                         >
-                          Ubah
+                          <span>Kode</span>
+                          {renderPanitiaSortIcon('kode')}
                         </button>
+                      </th>
+                      <th className="py-3 px-3">
                         <button
                           type="button"
-                          onClick={() => handleCopyRef(p.kodePanitia)}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap cursor-pointer"
+                          onClick={() => handleSortPanitia('nama')}
+                          className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
                         >
-                          {isCopied ? (
-                            <>
-                              <Check className="h-3.5 w-3.5 shrink-0" />
-                              <span>Tersalin</span>
-                            </>
-                          ) : (
-                            <>
-                              <Link2 className="h-3.5 w-3.5 shrink-0" />
-                              <span>Salin Link</span>
-                            </>
-                          )}
+                          <span>Nama &amp; Gender</span>
+                          {renderPanitiaSortIcon('nama')}
                         </button>
-                        <a
-                          href={refUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shrink-0"
-                          title="Buka tautan referral"
+                      </th>
+                      <th className="py-3 px-3">
+                        <button
+                          type="button"
+                          onClick={() => handleSortPanitia('role')}
+                          className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
                         >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                        {panitia.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => void onDeletePanitia(p.kodePanitia)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer"
-                            title="Hapus pengurus"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                          <span>Peran</span>
+                          {renderPanitiaSortIcon('role')}
+                        </button>
+                      </th>
+                      <th className="py-3 px-3">
+                        <button
+                          type="button"
+                          onClick={() => handleSortPanitia('wa')}
+                          className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
+                        >
+                          <span>No. WA</span>
+                          {renderPanitiaSortIcon('wa')}
+                        </button>
+                      </th>
+                      <th className="py-3 pl-3 pr-4 text-right">Link Referral &amp; Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/70 dark:divide-slate-700/70 text-xs">
+                    {sortedPanitia.map((p) => {
+                      const refUrl = buildReferralUrl(p.kodePanitia);
+                      const isCopied = copiedRef === p.kodePanitia;
+                      return (
+                        <tr
+                          key={p.kodePanitia}
+                          className="hover:bg-emerald-50/50 dark:hover:bg-slate-800/60 transition-colors align-top"
+                        >
+                          <td className="py-3.5 pl-4 pr-3 font-mono font-bold text-emerald-800 dark:text-emerald-300 whitespace-nowrap">
+                            {p.kodePanitia}
+                          </td>
+                          <td className="py-3.5 px-3 min-w-0 max-w-[200px]">
+                            <p className="font-semibold text-slate-900 dark:text-slate-100 safe-wrap">
+                              {p.namaPanitia}
+                            </p>
+                            {p.jenisKelamin && (
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                {p.jenisKelamin}
+                              </p>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-3 whitespace-nowrap text-slate-700 dark:text-slate-300">
+                            {normalizeRoleLabel(p.role)}
+                          </td>
+                          <td className="py-3.5 px-3 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">
+                            {p.noWaPanitia || '-'}
+                          </td>
+                          <td className="py-3.5 pl-3 pr-4 text-right">
+                            <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleEditPanitiaRow(p)}
+                                className="rounded-xl border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                              >
+                                Ubah
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyRef(p.kodePanitia)}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap cursor-pointer"
+                              >
+                                {isCopied ? (
+                                  <>
+                                    <Check className="h-3.5 w-3.5 shrink-0" />
+                                    <span>Tersalin</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Link2 className="h-3.5 w-3.5 shrink-0" />
+                                    <span>Salin Link</span>
+                                  </>
+                                )}
+                              </button>
+                              <a
+                                href={refUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shrink-0"
+                                title="Buka tautan referral"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                              {panitia.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => void onDeletePanitia(p.kodePanitia)}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer"
+                                  title="Hapus pengurus"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

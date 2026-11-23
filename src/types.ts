@@ -74,6 +74,7 @@ export interface TransaksiDonasi {
   statusVerifikasi: StatusVerifikasi;
   diinputOleh: string;
   statusPenyaluran: StatusPenyaluran;
+  keterangan?: string;
 }
 
 export interface Panitia {
@@ -124,12 +125,14 @@ export interface SubmitPembayaranPayload {
   namaDonatur: string;
   noWa: string;
   bulanTagihan: string;
+  bulanTagihanList?: string[];
   nominalTransfer: number;
-  bankTujuan: string;
+  bankTujuan?: string;
   diinputOleh: string;
-  fileBase64: string;
-  fileMimeType: string;
-  fileName: string;
+  keterangan?: string;
+  fileBase64?: string;
+  fileMimeType?: string;
+  fileName?: string;
 }
 
 export interface SavePengaturanPayload {

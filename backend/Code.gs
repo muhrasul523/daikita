@@ -22,6 +22,7 @@ const DRIVE_FOLDER_ID = '1KqfNK8yLOpb-7Ew6KXkfJoNU6XKmzK73';
 const NAMA_LEMBAGA = "DAIKITA — Kafalah Dai";
 const TAGLINE_LEMBAGA = 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
 const APP_PUBLIC_URL = 'https://daikita.duwd.web.id/';
+const DEFAULT_LOGO_URL = 'https://lh3.googleusercontent.com/d/1OOSQydygv0K9SNcQUXQTqQyduW57mv4Y';
 
 const DEFAULT_WA_ENDPOINT = 'https://www.rechat.id/api/v1/messages';
 const DEFAULT_WA_API_KEY = 'wag_8d4afa8dfa57f45f95961017e050b36b15de17edd2fdc542';
@@ -109,7 +110,8 @@ const HEADERS = {
     'Link_Bukti_Drive',
     'Status_Verifikasi',
     'Diinput_Oleh',
-    'Status_Penyaluran'
+    'Status_Penyaluran',
+    'Keterangan'
   ],
   Data_Panitia: [
     'Kode_Panitia',
@@ -169,7 +171,7 @@ function setupDatabase() {
   });
 
   ensureSheetWithHeaders_(ss, SHEET_NAMES.TRANSAKSI, HEADERS.Transaksi_Donasi, {
-    textHeaders: ['ID_Transaksi', 'Waktu_Input', 'ID_Donatur', 'No_WA', 'Bulan_Tagihan', 'Status_Verifikasi', 'Status_Penyaluran'],
+    textHeaders: ['ID_Transaksi', 'Waktu_Input', 'ID_Donatur', 'No_WA', 'Bulan_Tagihan', 'Status_Verifikasi', 'Status_Penyaluran', 'Keterangan'],
     currencyHeaders: ['Nominal_Transfer'],
     widthByHeader: {
       ID_Transaksi: 165,
@@ -183,7 +185,8 @@ function setupDatabase() {
       Link_Bukti_Drive: 260,
       Status_Verifikasi: 145,
       Diinput_Oleh: 185,
-      Status_Penyaluran: 165
+      Status_Penyaluran: 165,
+      Keterangan: 240
     }
   });
 
@@ -239,6 +242,7 @@ function setupDatabase() {
     const defaults = buildDefaultSettingsMap_();
     writeSettingsMap_(pengaturanSheet, defaults);
   }
+  ensureMigratedDefaultLogo_(ss);
 
   // Picu verifikasi izin Google Drive & Gmail saat setupDatabase() dijalankan
   let driveStatus = '';
@@ -506,7 +510,7 @@ function buildDefaultSettingsMap_() {
   return {
     namaLembaga: NAMA_LEMBAGA,
     tagline: TAGLINE_LEMBAGA,
-    logoUrl: '',
+    logoUrl: DEFAULT_LOGO_URL,
     qrisUrl: '',
     qrisMerchantName: 'DAIKITA Wahdah Islamiyah',
     showQris: 'true',
@@ -603,7 +607,7 @@ function loadConfigObject_(ss) {
   return {
     namaLembaga: String(rawMap.namaLembaga || NAMA_LEMBAGA).trim() || NAMA_LEMBAGA,
     tagline: String(rawMap.tagline || TAGLINE_LEMBAGA).trim() || TAGLINE_LEMBAGA,
-    logoUrl: String(rawMap.logoUrl || '').trim(),
+    logoUrl: String(rawMap.logoUrl || DEFAULT_LOGO_URL).trim() || DEFAULT_LOGO_URL,
     qrisUrl: String(rawMap.qrisUrl || '').trim(),
     qrisMerchantName: String(rawMap.qrisMerchantName || '').trim(),
     showQris: String(rawMap.showQris || 'true').toLowerCase() !== 'false',
@@ -718,6 +722,31 @@ function handleSavePengaturan_(payload) {
   };
 }
 
+function ensureMigratedDefaultLogo_(ss) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    if (props.getProperty('MIGRATED_LOGO_1OOSQ') === '1') return;
+    const sheet = ss.getSheetByName(SHEET_NAMES.PENGATURAN);
+    if (sheet && sheet.getLastRow() > 1) {
+      const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+      let found = false;
+      for (let i = 0; i < data.length; i++) {
+        if (String(data[i][0] || '').trim() === 'logoUrl') {
+          sheet.getRange(i + 2, 2).setNumberFormat('@').setValue(DEFAULT_LOGO_URL);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        sheet.getRange(sheet.getLastRow() + 1, 1, 1, 2).setNumberFormat('@').setValues([['logoUrl', DEFAULT_LOGO_URL]]);
+      }
+    }
+    props.setProperty('MIGRATED_LOGO_1OOSQ', '1');
+  } catch (err) {
+    Logger.log('Info migrasi logo default: ' + err);
+  }
+}
+
 // ==================== HANDLER DATA UTAMA ====================
 function getInitialData_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -726,6 +755,8 @@ function getInitialData_() {
       !ss.getSheetByName(SHEET_NAMES.PANITIA) ||
       !ss.getSheetByName(SHEET_NAMES.PENGATURAN)) {
     setupDatabase();
+  } else {
+    ensureMigratedDefaultLogo_(ss);
   }
 
   const config = loadConfigObject_(ss);
@@ -767,7 +798,8 @@ function getInitialData_() {
       linkBuktiDrive: String(row.Link_Bukti_Drive || '').trim(),
       statusVerifikasi: String(row.Status_Verifikasi || 'Pending').trim(),
       diinputOleh: String(row.Diinput_Oleh || '').trim(),
-      statusPenyaluran: rawPenyaluran === 'Sudah Disalurkan' ? 'Sudah Disalurkan' : 'Belum Disalurkan'
+      statusPenyaluran: rawPenyaluran === 'Sudah Disalurkan' ? 'Sudah Disalurkan' : 'Belum Disalurkan',
+      keterangan: String(row.Keterangan || '').trim()
     };
   }).filter(function (t) {
     return t.idTransaksi !== '';
@@ -1244,7 +1276,7 @@ function handleSubmitPembayaran_(payload) {
     sheet = ss.getSheetByName(SHEET_NAMES.TRANSAKSI);
   } else {
     ensureSheetWithHeaders_(ss, SHEET_NAMES.TRANSAKSI, HEADERS.Transaksi_Donasi, {
-      textHeaders: ['ID_Transaksi', 'Waktu_Input', 'ID_Donatur', 'No_WA', 'Bulan_Tagihan', 'Status_Verifikasi', 'Status_Penyaluran'],
+      textHeaders: ['ID_Transaksi', 'Waktu_Input', 'ID_Donatur', 'No_WA', 'Bulan_Tagihan', 'Status_Verifikasi', 'Status_Penyaluran', 'Keterangan'],
       currencyHeaders: ['Nominal_Transfer']
     });
   }
@@ -1252,83 +1284,119 @@ function handleSubmitPembayaran_(payload) {
   const idDonatur = String(payload.idDonatur || '').trim();
   const namaDonatur = String(payload.namaDonatur || '').trim();
   const waCheck = validateAndNormalizeWA_(payload.noWa);
-  const bulanTagihan = formatBulanTagihan_(payload.bulanTagihan);
   const nominalTransfer = parseNumber_(payload.nominalTransfer);
   const bankTujuan = String(payload.bankTujuan || '').trim();
   const diinputOleh = String(payload.diinputOleh || 'Donatur (Mandiri)').trim();
+  const userKeterangan = String(payload.keterangan || '').trim();
+
+  const rawMonths = Array.isArray(payload.bulanTagihanList) && payload.bulanTagihanList.length > 0
+    ? payload.bulanTagihanList
+    : [payload.bulanTagihan];
+
+  const monthMap = {};
+  rawMonths.forEach(function (m) {
+    const formatted = formatBulanTagihan_(m);
+    if (/^\d{4}-\d{2}$/.test(formatted)) {
+      monthMap[formatted] = true;
+    }
+  });
+  const bulanList = Object.keys(monthMap).sort();
 
   if (!namaDonatur) {
-    return { status: 'error', message: 'Nama donatur wajib diisi.' };
+    return { status: 'error', message: 'Pilih donatur terdaftar terlebih dahulu.' };
   }
   if (!waCheck.valid) {
     return { status: 'error', message: waCheck.error };
   }
   const normalizedWa = waCheck.normalized;
 
-  if (!/^\d{4}-\d{2}$/.test(bulanTagihan)) {
-    return { status: 'error', message: 'Format bulan tagihan harus YYYY-MM.' };
+  if (bulanList.length === 0) {
+    return { status: 'error', message: 'Pilih minimal 1 bulan tagihan yang valid (format YYYY-MM).' };
   }
   if (nominalTransfer <= 0) {
     return { status: 'error', message: 'Nominal transfer harus lebih dari Rp 0.' };
   }
-  if (!bankTujuan) {
-    return { status: 'error', message: 'Metode atau bank tujuan wajib dipilih.' };
-  }
-  if (!payload.fileBase64) {
-    return { status: 'error', message: 'Bukti transfer (gambar/PDF) wajib diunggah.' };
-  }
 
-  const uploadResult = uploadBuktiToDrive_({
-    fileBase64: String(payload.fileBase64),
-    fileMimeType: String(payload.fileMimeType || 'image/jpeg'),
-    fileName: String(payload.fileName || 'bukti.jpg'),
-    bulanTagihan: bulanTagihan,
-    namaDonatur: namaDonatur,
-    nominalTransfer: nominalTransfer
-  });
+  let proofUrl = '';
+  let savedFileName = '';
+  if (payload.fileBase64) {
+    const uploadResult = uploadBuktiToDrive_({
+      fileBase64: String(payload.fileBase64),
+      fileMimeType: String(payload.fileMimeType || 'image/jpeg'),
+      fileName: String(payload.fileName || 'bukti.jpg'),
+      bulanTagihan: bulanList[0],
+      bulanList: bulanList,
+      namaDonatur: namaDonatur,
+      nominalTransfer: nominalTransfer
+    });
+    proofUrl = uploadResult.url;
+    savedFileName = uploadResult.savedFileName;
+  }
 
   const now = new Date();
-  const existingCount = Math.max(sheet.getLastRow() - 1, 0);
-  const idTransaksi = generateTransaksiId_(existingCount + 1, now);
   const waktuInput = formatTimestamp_(now);
   const statusVerifikasi = 'Pending';
   const statusPenyaluran = 'Belum Disalurkan';
+  const existingCount = Math.max(sheet.getLastRow() - 1, 0);
 
-  appendRowByHeaderMap_(sheet, {
-    ID_Transaksi: idTransaksi,
-    Waktu_Input: waktuInput,
-    ID_Donatur: idDonatur || '-',
-    Nama_Donatur: namaDonatur,
-    No_WA: normalizedWa,
-    Bulan_Tagihan: bulanTagihan,
-    Nominal_Transfer: nominalTransfer,
-    Bank_Tujuan: bankTujuan,
-    Link_Bukti_Drive: uploadResult.url,
-    Status_Verifikasi: statusVerifikasi,
-    Diinput_Oleh: diinputOleh,
-    Status_Penyaluran: statusPenyaluran
-  }, ['ID_Transaksi', 'Waktu_Input', 'ID_Donatur', 'No_WA', 'Bulan_Tagihan', 'Status_Verifikasi', 'Status_Penyaluran'], ['Nominal_Transfer']);
+  const totalRp = Math.round(nominalTransfer);
+  const basePerMonth = Math.floor(totalRp / bulanList.length);
+  const remainder = totalRp % bulanList.length;
+  const batchNote = bulanList.length > 1
+    ? 'Bayar sekaligus ' + bulanList.length + ' bln (Total ' + formatRupiahServer_(totalRp) + ')'
+    : '';
+  const finalKeterangan = [userKeterangan, batchNote].filter(Boolean).join(' · ');
+
+  const createdRows = [];
+  for (let idx = 0; idx < bulanList.length; idx++) {
+    const bulanItem = bulanList[idx];
+    const nominalBulan = basePerMonth + (idx < remainder ? 1 : 0);
+    const idTransaksi = generateTransaksiId_(existingCount + idx + 1, now);
+
+    appendRowByHeaderMap_(sheet, {
+      ID_Transaksi: idTransaksi,
+      Waktu_Input: waktuInput,
+      ID_Donatur: idDonatur || '-',
+      Nama_Donatur: namaDonatur,
+      No_WA: normalizedWa,
+      Bulan_Tagihan: bulanItem,
+      Nominal_Transfer: nominalBulan,
+      Bank_Tujuan: bankTujuan,
+      Link_Bukti_Drive: proofUrl,
+      Status_Verifikasi: statusVerifikasi,
+      Diinput_Oleh: diinputOleh,
+      Status_Penyaluran: statusPenyaluran,
+      Keterangan: finalKeterangan
+    }, ['ID_Transaksi', 'Waktu_Input', 'ID_Donatur', 'No_WA', 'Bulan_Tagihan', 'Status_Verifikasi', 'Status_Penyaluran', 'Keterangan'], ['Nominal_Transfer']);
+
+    createdRows.push({
+      idTransaksi: idTransaksi,
+      waktuInput: waktuInput,
+      idDonatur: idDonatur || '-',
+      namaDonatur: namaDonatur,
+      noWa: normalizedWa,
+      bulanTagihan: bulanItem,
+      nominalTransfer: nominalBulan,
+      bankTujuan: bankTujuan,
+      linkBuktiDrive: proofUrl,
+      statusVerifikasi: statusVerifikasi,
+      diinputOleh: diinputOleh,
+      statusPenyaluran: statusPenyaluran,
+      keterangan: finalKeterangan
+    });
+  }
+
   SpreadsheetApp.flush();
 
   return {
     status: 'success',
-    message: 'Konfirmasi pembayaran berhasil dikirim dan menunggu verifikasi pengurus.',
+    message: createdRows.length > 1
+      ? 'Konfirmasi pembayaran untuk ' + createdRows.length + ' bulan berhasil dikirim dan menunggu verifikasi pengurus.'
+      : 'Konfirmasi pembayaran berhasil dikirim dan menunggu verifikasi pengurus.',
     data: {
-      transaksi: {
-        idTransaksi: idTransaksi,
-        waktuInput: waktuInput,
-        idDonatur: idDonatur || '-',
-        namaDonatur: namaDonatur,
-        noWa: normalizedWa,
-        bulanTagihan: bulanTagihan,
-        nominalTransfer: nominalTransfer,
-        bankTujuan: bankTujuan,
-        linkBuktiDrive: uploadResult.url,
-        statusVerifikasi: statusVerifikasi,
-        diinputOleh: diinputOleh,
-        statusPenyaluran: statusPenyaluran
-      },
-      savedFileName: uploadResult.savedFileName
+      transaksi: createdRows[0],
+      transaksiList: createdRows,
+      savedFileName: savedFileName
     }
   };
 }
@@ -1662,7 +1730,11 @@ function uploadBuktiToDrive_(params) {
 
   const ext = resolveExtension_(mimeType, params.fileName);
   const datePart = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd');
-  const bulanPart = sanitizeFileToken_(params.bulanTagihan || Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM'));
+  const bulanArr = Array.isArray(params.bulanList) && params.bulanList.length > 0 ? params.bulanList : [];
+  const rawBulanToken = bulanArr.length > 1
+    ? bulanArr[0] + '-sd-' + bulanArr[bulanArr.length - 1]
+    : (bulanArr[0] || params.bulanTagihan || Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM'));
+  const bulanPart = sanitizeFileToken_(rawBulanToken);
   const namaBersih = sanitizeDonorName_(params.namaDonatur || 'Donatur');
   const nominalPart = String(Math.round(parseNumber_(params.nominalTransfer)));
 

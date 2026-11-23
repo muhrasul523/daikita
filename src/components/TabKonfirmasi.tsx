@@ -1,12 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Calendar,
   Check,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Download,
   FileText,
+  Info,
+  Lock,
   QrCode,
+  Sparkles,
   Upload,
+  UserPlus,
   X,
 } from 'lucide-react';
 import {
@@ -17,14 +24,16 @@ import {
   TransaksiDonasi,
 } from '../types';
 import {
+  buildMonthSequence,
   formatBulanLabel,
+  formatBulanShortLabel,
   formatRupiah,
   formatRupiahInput,
   formatWADisplay,
   getCurrentYearMonth,
   getDriveThumbnailFallback,
   normalizeDriveImageUrl,
-  normalizeRoleLabel,
+  normalizeWA,
   parseRupiahInput,
   previewAutoRenameFile,
   validateAndNormalizeWA,
@@ -39,8 +48,11 @@ import { SearchableOption, SearchableSelect } from './SearchableSelect';
 interface TabKonfirmasiProps {
   config: LembagaConfig;
   donaturList: Donatur[];
+  transaksiList: TransaksiDonasi[];
   panitia: Panitia[];
+  referralCode: string | null;
   preselectedDonatur: Donatur | null;
+  preselectedMonth?: string | null;
   onClearPreselected: () => void;
   onSubmitPembayaran: (
     payload: SubmitPembayaranPayload
@@ -48,39 +60,60 @@ interface TabKonfirmasiProps {
     ok: boolean;
     message: string;
     transaksi?: TransaksiDonasi;
+    transaksiList?: TransaksiDonasi[];
     savedFileName?: string;
   }>;
+  onGoToPendaftaran: () => void;
   onNotify: (type: 'success' | 'error' | 'info', title: string, description?: string) => void;
 }
+
+const MONTH_NUMBERS = [
+  '01',
+  '02',
+  '03',
+  '04',
+  '05',
+  '06',
+  '07',
+  '08',
+  '09',
+  '10',
+  '11',
+  '12',
+] as const;
 
 export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
   config,
   donaturList,
+  transaksiList,
   panitia,
+  referralCode,
   preselectedDonatur,
+  preselectedMonth,
   onClearPreselected,
   onSubmitPembayaran,
+  onGoToPendaftaran,
   onNotify,
 }) => {
+  const initialYm =
+    preselectedMonth && /^\d{4}-\d{2}$/.test(preselectedMonth)
+      ? preselectedMonth
+      : getCurrentYearMonth();
+
   const [selectedDonaturId, setSelectedDonaturId] = useState('');
-  const [idDonatur, setIdDonatur] = useState('');
-  const [namaDonatur, setNamaDonatur] = useState('');
-  const [noWaInput, setNoWaInput] = useState('');
-  const [bulanTagihan, setBulanTagihan] = useState(getCurrentYearMonth());
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([initialYm]);
+  const [pickerYear, setPickerYear] = useState<number>(() => Number(initialYm.slice(0, 4)));
   const [nominalInput, setNominalInput] = useState('');
-  const [bankTujuan, setBankTujuan] = useState(
-    config.infoRekening[0]
-      ? `${config.infoRekening[0].bank} - ${config.infoRekening[0].nomor}`
-      : 'BSI'
-  );
-  const [diinputOleh, setDiinputOleh] = useState('Donatur (Mandiri)');
+  const [isNominalCustom, setIsNominalCustom] = useState(false);
+  const [keterangan, setKeterangan] = useState('');
 
   const [uploadFile, setUploadFile] = useState<ProcessedUploadFile | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<{
-    transaksi: TransaksiDonasi;
+    transaksiList: TransaksiDonasi[];
+    totalNominal: number;
     savedFileName?: string;
   } | null>(null);
   const [copiedRek, setCopiedRek] = useState<string | null>(null);
@@ -93,35 +126,24 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     setQrisImgSrc(normalizeDriveImageUrl(config.qrisUrl));
   }, [config.qrisUrl]);
 
-  const bankOptions = useMemo<SearchableOption[]>(() => {
-    const list: SearchableOption[] = config.infoRekening.map((r) => {
-      const val = `${r.bank} - ${r.nomor}`;
-      return {
-        value: val,
-        label: val,
-        sublabel: `a.n. ${r.atasNama}`,
-        keywords: `${r.bank} ${r.nomor} ${r.atasNama}`,
-      };
-    });
-    if (config.showQris && config.qrisUrl) {
-      const qrisLabel = config.qrisMerchantName
-        ? `QRIS (${config.qrisMerchantName})`
-        : `QRIS (${config.namaLembaga})`;
-      list.push({
-        value: qrisLabel,
-        label: qrisLabel,
-        sublabel: 'Pembayaran Pindai QRIS',
-        keywords: 'qris scan qr',
-      });
+  // Penentuan otomatis Diinput Oleh berdasarkan link referral ?ref=KODE
+  const autoDiinputOleh = useMemo(() => {
+    if (referralCode && referralCode.trim()) {
+      const codeUpper = referralCode.trim().toUpperCase();
+      const matched = panitia.find((p) => p.kodePanitia.toUpperCase() === codeUpper);
+      if (matched) {
+        return `${matched.namaPanitia} (${matched.kodePanitia})`;
+      }
+      return `Pengurus (${codeUpper})`;
     }
-    return list;
-  }, [config]);
+    return 'Donatur (Mandiri)';
+  }, [referralCode, panitia]);
 
-  useEffect(() => {
-    if (bankOptions.length > 0 && !bankOptions.some((b) => b.value === bankTujuan)) {
-      setBankTujuan(bankOptions[0].value);
-    }
-  }, [bankOptions, bankTujuan]);
+  const matchedReferralPanitia = useMemo(() => {
+    if (!referralCode) return null;
+    const codeUpper = referralCode.trim().toUpperCase();
+    return panitia.find((p) => p.kodePanitia.toUpperCase() === codeUpper) || null;
+  }, [referralCode, panitia]);
 
   const donaturOptions = useMemo<SearchableOption[]>(
     () =>
@@ -135,68 +157,115 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     [donaturList]
   );
 
-  const penginputOptions = useMemo<SearchableOption[]>(() => {
-    const list: SearchableOption[] = [
-      {
-        value: 'Donatur (Mandiri)',
-        label: 'Donatur (Mandiri)',
-        sublabel: 'Konfirmasi langsung oleh donatur',
-        keywords: 'donatur mandiri langsung',
-      },
-    ];
-    panitia.forEach((p) => {
-      const val = `${p.namaPanitia} (${p.kodePanitia})`;
-      list.push({
-        value: val,
-        label: val,
-        sublabel: `Peran: ${normalizeRoleLabel(p.role)}`,
-        keywords: `${p.namaPanitia} ${p.kodePanitia} ${p.role}`,
-      });
-    });
-    return list;
-  }, [panitia]);
+  const selectedDonatur = useMemo(
+    () => donaturList.find((d) => d.idDonatur === selectedDonaturId) || null,
+    [donaturList, selectedDonaturId]
+  );
 
-  const applySelectedDonatur = (d: Donatur) => {
-    setSelectedDonaturId(d.idDonatur);
-    setIdDonatur(d.idDonatur);
-    setNamaDonatur(d.namaLengkap);
-    setNoWaInput(d.noWa);
-    setNominalInput(d.nominalKomitmen > 0 ? d.nominalKomitmen.toLocaleString('id-ID') : '');
-    setErrorMsg(null);
-  };
+  // Status transaksi yang sudah ada per bulan untuk donatur terpilih
+  const donorMonthStatusMap = useMemo(() => {
+    const map = new Map<string, 'Valid' | 'Pending'>();
+    if (!selectedDonatur) return map;
+    const targetWa = normalizeWA(selectedDonatur.noWa) || selectedDonatur.noWa;
+
+    transaksiList.forEach((t) => {
+      const byId =
+        t.idDonatur && t.idDonatur !== '-' && t.idDonatur === selectedDonatur.idDonatur;
+      const byWa = targetWa && (normalizeWA(t.noWa) || t.noWa) === targetWa;
+      if (!byId && !byWa) return;
+      if (!/^\d{4}-\d{2}$/.test(t.bulanTagihan)) return;
+
+      const prev = map.get(t.bulanTagihan);
+      if (t.statusVerifikasi === 'Valid') {
+        map.set(t.bulanTagihan, 'Valid');
+      } else if (t.statusVerifikasi === 'Pending' && prev !== 'Valid') {
+        map.set(t.bulanTagihan, 'Pending');
+      }
+    });
+    return map;
+  }, [selectedDonatur, transaksiList]);
+
+  const sortedSelectedMonths = useMemo(
+    () => [...selectedMonths].sort((a, b) => a.localeCompare(b)),
+    [selectedMonths]
+  );
+
+  // Isi otomatis nominal saat memilih donatur atau mengubah jumlah bulan (kecuali jika user mengedit manual)
+  useEffect(() => {
+    if (!selectedDonatur) {
+      if (!isNominalCustom) setNominalInput('');
+      return;
+    }
+    if (!isNominalCustom) {
+      const total = Math.max(1, sortedSelectedMonths.length) * selectedDonatur.nominalKomitmen;
+      setNominalInput(total > 0 ? total.toLocaleString('id-ID') : '');
+    }
+  }, [selectedDonatur, sortedSelectedMonths, isNominalCustom]);
 
   useEffect(() => {
     if (preselectedDonatur) {
-      applySelectedDonatur(preselectedDonatur);
+      setSelectedDonaturId(preselectedDonatur.idDonatur);
+      setIsNominalCustom(false);
+      if (preselectedMonth && /^\d{4}-\d{2}$/.test(preselectedMonth)) {
+        setSelectedMonths([preselectedMonth]);
+        setPickerYear(Number(preselectedMonth.slice(0, 4)));
+      }
+      setErrorMsg(null);
       onClearPreselected();
     }
-  }, [preselectedDonatur, onClearPreselected]);
+  }, [preselectedDonatur, preselectedMonth, onClearPreselected]);
 
   const handleDonaturDropdownChange = (val: string) => {
+    setSelectedDonaturId(val);
+    setIsNominalCustom(false);
+    setErrorMsg(null);
     if (!val) {
-      setSelectedDonaturId('');
-      setIdDonatur('');
-      setNamaDonatur('');
-      setNoWaInput('');
       setNominalInput('');
-      return;
     }
-    const found = donaturList.find((d) => d.idDonatur === val);
-    if (found) {
-      applySelectedDonatur(found);
-    }
+  };
+
+  const handleToggleMonth = (ym: string) => {
+    setIsNominalCustom(false);
+    setErrorMsg(null);
+    setSelectedMonths((prev) => {
+      if (prev.includes(ym)) {
+        if (prev.length === 1) return prev; // Wajib minimal 1 bulan
+        return prev.filter((m) => m !== ym);
+      }
+      return [...prev, ym].sort((a, b) => a.localeCompare(b));
+    });
+  };
+
+  const handleApplyConsecutiveMonths = (count: number) => {
+    const baseMonth = sortedSelectedMonths[0] || getCurrentYearMonth();
+    const seq = buildMonthSequence(baseMonth, count);
+    setSelectedMonths(seq);
+    setIsNominalCustom(false);
+    setErrorMsg(null);
   };
 
   const parsedNominal = useMemo(() => parseRupiahInput(nominalInput), [nominalInput]);
 
+  // Deteksi cerdas bila user mengetik nominal kelipatan komitmen (mis. komitmen 100rb -> ketik 300rb)
+  const smartBatchSuggestionCount = useMemo(() => {
+    if (!selectedDonatur || selectedDonatur.nominalKomitmen <= 0 || parsedNominal <= 0) return null;
+    if (parsedNominal % selectedDonatur.nominalKomitmen !== 0) return null;
+    const multiple = Math.round(parsedNominal / selectedDonatur.nominalKomitmen);
+    if (multiple >= 2 && multiple <= 24 && multiple !== sortedSelectedMonths.length) {
+      return multiple;
+    }
+    return null;
+  }, [selectedDonatur, parsedNominal, sortedSelectedMonths.length]);
+
   const autoRenamePreview = useMemo(() => {
     return previewAutoRenameFile({
-      bulanTagihan,
-      namaDonatur: namaDonatur || 'Nama-Donatur',
+      bulanTagihan: sortedSelectedMonths[0] || getCurrentYearMonth(),
+      bulanList: sortedSelectedMonths,
+      namaDonatur: selectedDonatur?.namaLengkap || 'Nama-Donatur',
       nominalTransfer: parsedNominal,
       extension: uploadFile?.extension || 'jpg',
     });
-  }, [bulanTagihan, namaDonatur, parsedNominal, uploadFile]);
+  }, [sortedSelectedMonths, selectedDonatur, parsedNominal, uploadFile]);
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -237,52 +306,60 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     setErrorMsg(null);
     setSuccessInfo(null);
 
-    if (!namaDonatur.trim()) {
-      setErrorMsg('Pilih donatur dari daftar atau isi nama lengkap donatur.');
+    if (!selectedDonatur) {
+      setErrorMsg(
+        'Silakan pilih donatur terdaftar terlebih dahulu. Jika nama belum ada, klik tombol Daftar Donatur Baru.'
+      );
       return;
     }
 
-    const waCheck = validateAndNormalizeWA(noWaInput);
+    const waCheck = validateAndNormalizeWA(selectedDonatur.noWa);
     if (!waCheck.valid) {
       setErrorMsg(waCheck.error);
       return;
     }
 
-    if (!/^\d{4}-\d{2}$/.test(bulanTagihan)) {
-      setErrorMsg('Pilih periode bulan yang valid.');
+    if (sortedSelectedMonths.length === 0) {
+      setErrorMsg('Pilih minimal 1 periode bulan amanah / tagihan.');
       return;
     }
 
     if (parsedNominal <= 0) {
-      setErrorMsg('Nominal transfer harus lebih dari Rp 0.');
-      return;
-    }
-
-    if (!uploadFile) {
-      setErrorMsg('Silakan unggah bukti transfer (gambar atau PDF) terlebih dahulu.');
+      setErrorMsg('Nominal transfer wajib diisi dan harus lebih dari Rp 0.');
       return;
     }
 
     setIsSubmitting(true);
     const res = await onSubmitPembayaran({
-      idDonatur: idDonatur || '-',
-      namaDonatur: namaDonatur.trim(),
+      idDonatur: selectedDonatur.idDonatur,
+      namaDonatur: selectedDonatur.namaLengkap,
       noWa: waCheck.normalized,
-      bulanTagihan,
+      bulanTagihan: sortedSelectedMonths[0],
+      bulanTagihanList: sortedSelectedMonths,
       nominalTransfer: parsedNominal,
-      bankTujuan,
-      diinputOleh,
-      fileBase64: uploadFile.base64,
-      fileMimeType: uploadFile.mimeType,
-      fileName: uploadFile.originalName,
+      diinputOleh: autoDiinputOleh,
+      keterangan: keterangan.trim() || undefined,
+      fileBase64: uploadFile?.base64,
+      fileMimeType: uploadFile?.mimeType,
+      fileName: uploadFile?.originalName,
     });
     setIsSubmitting(false);
 
-    if (res.ok && res.transaksi) {
+    const createdList =
+      res.transaksiList && res.transaksiList.length > 0
+        ? res.transaksiList
+        : res.transaksi
+        ? [res.transaksi]
+        : [];
+
+    if (res.ok && createdList.length > 0) {
       setSuccessInfo({
-        transaksi: res.transaksi,
+        transaksiList: createdList,
+        totalNominal: createdList.reduce((sum, t) => sum + t.nominalTransfer, 0),
         savedFileName: res.savedFileName,
       });
+      setKeterangan('');
+      setIsNominalCustom(false);
       handleRemoveFile();
     } else {
       setErrorMsg(res.message);
@@ -297,9 +374,27 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
             Konfirmasi Pembayaran Kafalah Dai
           </h1>
           <p className="mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-            Cari dan pilih donatur untuk mengisi data otomatis, atau isi langsung bila belum
-            terdaftar. Bukti gambar otomatis dikompresi agar unggahan cepat dan ringan.
+            Pilih donatur terdaftar, tentukan satu atau beberapa bulan sekaligus, dan cek nominal
+            otomatis sesuai komitmen. Bukti transfer bersifat opsional.
           </p>
+        </div>
+
+        {/* Info Pencatatan Referral Otomatis */}
+        <div className="mb-5 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/70 bg-emerald-50/55 dark:bg-emerald-950/35 px-4 py-3 flex items-start gap-2.5">
+          <Info className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
+          <div className="min-w-0 text-xs text-emerald-900 dark:text-emerald-200 safe-wrap">
+            {matchedReferralPanitia || referralCode ? (
+              <span>
+                Konfirmasi dicatat otomatis melalui link referral pengurus:{' '}
+                <strong>{autoDiinputOleh}</strong>.
+              </span>
+            ) : (
+              <span>
+                Tanpa link referral pengurus, konfirmasi dicatat otomatis sebagai{' '}
+                <strong>Donatur (Mandiri)</strong>.
+              </span>
+            )}
+          </div>
         </div>
 
         {successInfo && (
@@ -308,22 +403,25 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
               <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-emerald-950 dark:text-emerald-100">
-                  Konfirmasi Pembayaran Terkirim
+                  Konfirmasi Pembayaran Terkirim ({successInfo.transaksiList.length} Periode Bulan)
                 </p>
                 <p className="mt-1 text-xs text-emerald-900/85 dark:text-emerald-200/90 leading-relaxed safe-wrap">
-                  ID Transaksi{' '}
-                  <span className="font-mono font-semibold">{successInfo.transaksi.idTransaksi}</span>{' '}
-                  atas nama <strong>{successInfo.transaksi.namaDonatur}</strong> sebesar{' '}
-                  <strong className="tabular-nums">
-                    {formatRupiah(successInfo.transaksi.nominalTransfer)}
-                  </strong>{' '}
+                  Atas nama <strong>{successInfo.transaksiList[0].namaDonatur}</strong> sebesar total{' '}
+                  <strong className="tabular-nums">{formatRupiah(successInfo.totalNominal)}</strong>{' '}
                   untuk periode{' '}
-                  <strong>{formatBulanLabel(successInfo.transaksi.bulanTagihan)}</strong> kini
-                  berstatus <strong>Menunggu Verifikasi</strong>.
+                  <strong>
+                    {successInfo.transaksiList
+                      .map((t) => formatBulanLabel(t.bulanTagihan))
+                      .join(', ')}
+                  </strong>{' '}
+                  kini berstatus <strong>Menunggu Verifikasi</strong>.
+                </p>
+                <p className="mt-1.5 text-[11px] font-mono text-emerald-800 dark:text-emerald-300 safe-wrap">
+                  ID Transaksi: {successInfo.transaksiList.map((t) => t.idTransaksi).join(', ')}
                 </p>
                 {successInfo.savedFileName && (
-                  <p className="mt-2 text-[11px] font-mono text-teal-800 dark:text-teal-300 safe-wrap">
-                    Arsip Tersimpan: {successInfo.savedFileName}
+                  <p className="mt-1 text-[11px] font-mono text-teal-800 dark:text-teal-300 safe-wrap">
+                    Arsip Bukti: {successInfo.savedFileName}
                   </p>
                 )}
               </div>
@@ -338,13 +436,26 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label
-              htmlFor="konf-search"
-              className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
-            >
-              Pilih Donatur Terdaftar (Nama / No. WA / ID / Domisili)
-            </label>
+          {/* Pilih Donatur Terdaftar + Tombol Daftar Baru */}
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label
+                htmlFor="konf-search"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-200"
+              >
+                Pilih Donatur Terdaftar (Nama / No. WA / ID / Domisili){' '}
+                <span className="text-rose-600 dark:text-rose-400">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={onGoToPendaftaran}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/90 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <UserPlus className="h-3.5 w-3.5 shrink-0" />
+                <span>Belum terdaftar? Daftar Donatur Baru</span>
+              </button>
+            </div>
+
             <SearchableSelect
               id="konf-search"
               ariaLabel="Pilih donatur terdaftar"
@@ -354,89 +465,208 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
               allowClear
               placeholder="Ketik atau pilih donatur dari daftar..."
               searchPlaceholder="Ketik nama, nomor WA, atau ID donatur..."
-              emptyText="Donatur belum ditemukan dalam daftar. Silakan isi data manual di bawah."
+              emptyText="Donatur belum ditemukan. Klik tombol 'Daftar Donatur Baru' di atas."
             />
+
+            {/* Profil Otomatis Donatur Terpilih (Read-only) */}
+            {selectedDonatur ? (
+              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/75 dark:bg-slate-800/45 p-4">
+                <div className="flex items-center justify-between gap-2 mb-2.5">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                    <Lock className="h-3 w-3 shrink-0" />
+                    <span>Identitas Donatur Terisi Otomatis</span>
+                  </span>
+                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 tabular-nums">
+                    Komitmen: {formatRupiah(selectedDonatur.nominalKomitmen)} / bulan
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="min-w-0 rounded-xl bg-white/80 dark:bg-slate-900/70 px-3 py-2 border border-slate-200/60 dark:border-slate-700/60">
+                    <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                      ID Donatur
+                    </p>
+                    <p className="mt-0.5 font-mono font-bold text-slate-900 dark:text-slate-100 truncate">
+                      {selectedDonatur.idDonatur}
+                    </p>
+                  </div>
+                  <div className="min-w-0 rounded-xl bg-white/80 dark:bg-slate-900/70 px-3 py-2 border border-slate-200/60 dark:border-slate-700/60">
+                    <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                      Nama Donatur
+                    </p>
+                    <p className="mt-0.5 font-bold text-slate-900 dark:text-slate-100 safe-wrap">
+                      {selectedDonatur.namaLengkap}
+                    </p>
+                  </div>
+                  <div className="min-w-0 rounded-xl bg-white/80 dark:bg-slate-900/70 px-3 py-2 border border-slate-200/60 dark:border-slate-700/60">
+                    <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                      No. WhatsApp
+                    </p>
+                    <p className="mt-0.5 font-semibold text-slate-900 dark:text-slate-100 tabular-nums">
+                      {formatWADisplay(selectedDonatur.noWa)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-900/30 px-4 py-3 text-xs text-slate-500 dark:text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="safe-wrap">
+                  ID Donatur, Nama, dan No. WhatsApp terisi otomatis setelah Anda memilih donatur di
+                  atas.
+                </span>
+                <button
+                  type="button"
+                  onClick={onGoToPendaftaran}
+                  className="font-semibold text-emerald-700 dark:text-emerald-400 hover:underline whitespace-nowrap shrink-0 text-left cursor-pointer"
+                >
+                  Ke Halaman Pendaftaran →
+                </button>
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="min-w-0">
-              <label
-                htmlFor="konf-id"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
-              >
-                ID Donatur
-              </label>
-              <input
-                id="konf-id"
-                type="text"
-                value={idDonatur}
-                onChange={(e) => setIdDonatur(e.target.value)}
-                placeholder="Otomatis dari pilihan"
-                className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/70 px-3.5 py-2.5 text-sm font-mono text-slate-800 dark:text-slate-200 focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              />
+          {/* Pilih Bulan Amanah (Bisa Sekaligus Beberapa Bulan) */}
+          <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/60 dark:bg-slate-900/50 p-4 space-y-3.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>
+                    Pilih Bulan Amanah / Tagihan{' '}
+                    <span className="text-rose-600 dark:text-rose-400">*</span>
+                  </span>
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
+                  Bisa memilih 1 bulan atau sekaligus beberapa bulan (mis. bayar 2–3 bulan).
+                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setPickerYear((y) => y - 1)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 cursor-pointer"
+                  aria-label="Tahun sebelumnya"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="px-2.5 text-xs font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                  {pickerYear}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPickerYear((y) => y + 1)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 cursor-pointer"
+                  aria-label="Tahun berikutnya"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
-            <div className="min-w-0">
-              <label
-                htmlFor="konf-nama"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
-              >
-                Nama Donatur <span className="text-rose-600 dark:text-rose-400">*</span>
-              </label>
-              <input
-                id="konf-nama"
-                type="text"
-                required
-                value={namaDonatur}
-                onChange={(e) => setNamaDonatur(e.target.value)}
-                placeholder="Nama lengkap donatur"
-                className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              />
+            {/* Pintasan Paket Beberapa Bulan Berurutan */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-1">
+                Pilih cepat berurutan:
+              </span>
+              {[1, 2, 3, 6, 12].map((count) => {
+                const active = sortedSelectedMonths.length === count;
+                return (
+                  <button
+                    key={count}
+                    type="button"
+                    onClick={() => handleApplyConsecutiveMonths(count)}
+                    className={`rounded-xl px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors cursor-pointer ${
+                      active
+                        ? 'bg-emerald-600 text-white'
+                        : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:border-emerald-400'
+                    }`}
+                  >
+                    {count} Bulan
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="min-w-0">
-              <label
-                htmlFor="konf-wa"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
-              >
-                No. WhatsApp <span className="text-rose-600 dark:text-rose-400">*</span>
-              </label>
-              <input
-                id="konf-wa"
-                type="tel"
-                required
-                value={noWaInput}
-                onChange={(e) => setNoWaInput(e.target.value)}
-                placeholder="628... / +60..."
-                className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-3.5 py-2.5 text-sm tabular-nums text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              />
+            {/* Grid 12 Bulan */}
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+              {MONTH_NUMBERS.map((mm) => {
+                const ym = `${pickerYear}-${mm}`;
+                const isSelected = sortedSelectedMonths.includes(ym);
+                const existingStatus = donorMonthStatusMap.get(ym);
+
+                return (
+                  <button
+                    key={ym}
+                    type="button"
+                    onClick={() => handleToggleMonth(ym)}
+                    className={`rounded-xl border px-2.5 py-2 text-left transition-all cursor-pointer ${
+                      isSelected
+                        ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
+                        : 'border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 hover:border-emerald-400'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-xs font-bold tabular-nums">
+                        {formatBulanShortLabel(ym)}
+                      </span>
+                      {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                    </div>
+                    <p
+                      className={`mt-0.5 text-[10px] font-medium truncate ${
+                        isSelected
+                          ? 'text-emerald-100'
+                          : existingStatus === 'Valid'
+                          ? 'text-emerald-700 dark:text-emerald-400'
+                          : existingStatus === 'Pending'
+                          ? 'text-amber-600 dark:text-amber-400'
+                          : 'text-slate-400 dark:text-slate-500'
+                      }`}
+                    >
+                      {existingStatus === 'Valid'
+                        ? 'Sudah Lunas'
+                        : existingStatus === 'Pending'
+                        ? 'Pending'
+                        : 'Belum Bayar'}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Ringkasan Bulan Terpilih */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                Terpilih ({sortedSelectedMonths.length} bulan):
+              </span>
+              {sortedSelectedMonths.map((ym) => (
+                <span
+                  key={ym}
+                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:text-emerald-200"
+                >
+                  <span>{formatBulanLabel(ym)}</span>
+                  {sortedSelectedMonths.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleMonth(ym)}
+                      className="hover:text-rose-600 cursor-pointer"
+                      aria-label={`Hapus ${formatBulanLabel(ym)}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </span>
+              ))}
             </div>
           </div>
 
+          {/* Nominal Transfer & Keterangan (Opsional) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="min-w-0">
-              <label
-                htmlFor="konf-bulan"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
-              >
-                Bulan Amanah / Tagihan
-              </label>
-              <input
-                id="konf-bulan"
-                type="month"
-                required
-                value={bulanTagihan}
-                onChange={(e) => setBulanTagihan(e.target.value)}
-                className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-4 py-3 text-sm font-medium text-slate-900 dark:text-slate-100 tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              />
-            </div>
-
             <div className="min-w-0">
               <label
                 htmlFor="konf-nominal"
                 className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
               >
-                Nominal Transfer
+                Nominal Transfer Total <span className="text-rose-600 dark:text-rose-400">*</span>
               </label>
               <div className="relative">
                 <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500 dark:text-slate-400">
@@ -448,61 +678,76 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                   inputMode="numeric"
                   required
                   value={nominalInput}
-                  onChange={(e) => setNominalInput(formatRupiahInput(e.target.value))}
-                  placeholder="50.000"
+                  onChange={(e) => {
+                    setIsNominalCustom(true);
+                    setNominalInput(formatRupiahInput(e.target.value));
+                  }}
+                  placeholder="100.000"
                   className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 pl-11 pr-4 py-3 text-sm font-semibold text-slate-900 dark:text-slate-100 tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                 />
               </div>
+              {selectedDonatur && (
+                <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
+                  Otomatis: {sortedSelectedMonths.length} bln ×{' '}
+                  {formatRupiah(selectedDonatur.nominalKomitmen)} ={' '}
+                  <strong>
+                    {formatRupiah(sortedSelectedMonths.length * selectedDonatur.nominalKomitmen)}
+                  </strong>
+                  {sortedSelectedMonths.length > 1 && parsedNominal > 0 && (
+                    <>
+                      {' '}
+                      (± {formatRupiah(Math.round(parsedNominal / sortedSelectedMonths.length))}/bln)
+                    </>
+                  )}
+                </p>
+              )}
+
+              {smartBatchSuggestionCount && selectedDonatur && (
+                <div className="mt-2 rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50/80 dark:bg-sky-950/40 px-3 py-2 flex items-center justify-between gap-2">
+                  <p className="text-[11px] text-sky-900 dark:text-sky-200 safe-wrap">
+                    <Sparkles className="inline h-3 w-3 mr-1 text-sky-600 dark:text-sky-400" />
+                    Nominal ini setara <strong>{smartBatchSuggestionCount} bulan</strong> komitmen (
+                    {formatRupiah(selectedDonatur.nominalKomitmen)}/bln).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyConsecutiveMonths(smartBatchSuggestionCount)}
+                    className="rounded-lg bg-sky-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-sky-700 whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    Pilih {smartBatchSuggestionCount} Bln
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="min-w-0">
+              <label
+                htmlFor="konf-keterangan"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
+              >
+                Keterangan (Opsional)
+              </label>
+              <textarea
+                id="konf-keterangan"
+                rows={3}
+                value={keterangan}
+                onChange={(e) => setKeterangan(e.target.value)}
+                placeholder="Catatan tambahan, mis. bayar rapel 3 bulan, titip doa, atau transfer via rekening keluarga..."
+                className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="min-w-0">
-              <label
-                htmlFor="konf-bank"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
-              >
-                Tujuan Transfer / Metode
-              </label>
-              <SearchableSelect
-                id="konf-bank"
-                ariaLabel="Pilih rekening tujuan atau QRIS"
-                options={bankOptions}
-                value={bankTujuan}
-                onChange={(val) => setBankTujuan(val)}
-                placeholder="Pilih rekening atau QRIS..."
-                searchPlaceholder="Ketik nama bank, nomor, atau QRIS..."
-              />
-            </div>
-
-            <div className="min-w-0">
-              <label
-                htmlFor="konf-penginput"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
-              >
-                Diinput Oleh
-              </label>
-              <SearchableSelect
-                id="konf-penginput"
-                ariaLabel="Pilih penginput konfirmasi"
-                options={penginputOptions}
-                value={diinputOleh}
-                onChange={(val) => setDiinputOleh(val || 'Donatur (Mandiri)')}
-                placeholder="Pilih penginput..."
-                searchPlaceholder="Ketik nama pengurus atau Donatur..."
-              />
-            </div>
-          </div>
-
+          {/* Upload Bukti Transfer (Opsional) */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
-              Unggah Bukti Transfer (JPG, PNG, WEBP, atau PDF)
+              Unggah Bukti Transfer (Opsional — jika ada: JPG, PNG, WEBP, atau PDF)
             </label>
 
             {!uploadFile ? (
               <label
                 htmlFor="konf-file"
-                className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-emerald-200/90 dark:border-emerald-800/80 bg-emerald-50/35 dark:bg-emerald-950/25 px-6 py-8 text-center hover:border-emerald-400 dark:hover:border-emerald-600 hover:bg-emerald-50/60 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer"
+                className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-emerald-200/90 dark:border-emerald-800/80 bg-emerald-50/35 dark:bg-emerald-950/25 px-6 py-7 text-center hover:border-emerald-400 dark:hover:border-emerald-600 hover:bg-emerald-50/60 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer"
               >
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 shadow-sm mb-3">
                   <Upload className="h-5 w-5" />
@@ -510,11 +755,11 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                   {isCompressing
                     ? 'Mengompresi gambar bukti transfer...'
-                    : 'Pilih atau ketuk untuk unggah bukti transfer'}
+                    : 'Pilih file bukti transfer (opsional)'}
                 </p>
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-md">
-                  Gambar otomatis dikompresi ke resolusi optimal (maks. 1280px) agar pengiriman
-                  ringan dan cepat.
+                  Anda tetap dapat mengirim konfirmasi meski tanpa mengunggah file bukti transfer.
+                  Jika diunggah, gambar otomatis dikompresi agar ringan.
                 </p>
                 <input
                   ref={fileInputRef}
@@ -559,7 +804,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                   className="inline-flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-rose-50 dark:hover:bg-rose-950/50 hover:text-rose-700 dark:hover:text-rose-300 hover:border-rose-200 dark:hover:border-rose-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   <X className="h-3.5 w-3.5" />
-                  <span>Ganti</span>
+                  <span>Hapus File</span>
                 </button>
               </div>
             )}
@@ -567,10 +812,16 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
 
           <div className="pt-3 border-t border-slate-200/70 dark:border-slate-700/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-xs text-slate-500 dark:text-slate-400 safe-wrap">
-              Nama file otomatis:{' '}
-              <span className="font-mono text-slate-700 dark:text-slate-300">
-                {autoRenamePreview}
-              </span>
+              {uploadFile ? (
+                <>
+                  Nama file otomatis:{' '}
+                  <span className="font-mono text-slate-700 dark:text-slate-300">
+                    {autoRenamePreview}
+                  </span>
+                </>
+              ) : (
+                <span>Tanpa bukti upload — pencatatan nominal &amp; periode tetap tersimpan.</span>
+              )}
             </p>
             <button
               type="submit"
@@ -578,7 +829,13 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_20px_-6px_rgba(5,150,105,0.45)] hover:opacity-95 disabled:opacity-55 transition-all whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Upload className="h-4 w-4 shrink-0" />
-              <span>{isSubmitting ? 'Mengunggah & Menyimpan...' : 'Kirim Konfirmasi Pembayaran'}</span>
+              <span>
+                {isSubmitting
+                  ? 'Mengirim Konfirmasi...'
+                  : sortedSelectedMonths.length > 1
+                  ? `Kirim Konfirmasi (${sortedSelectedMonths.length} Bulan)`
+                  : 'Kirim Konfirmasi Pembayaran'}
+              </span>
             </button>
           </div>
         </form>

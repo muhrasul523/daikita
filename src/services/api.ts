@@ -2,6 +2,7 @@ import {
   DEFAULT_CONFIG,
   DEFAULT_EMAIL_TEMPLATES,
   DEFAULT_GAS_URL,
+  DEFAULT_LOGO_URL,
   DEFAULT_PANITIA,
   DEFAULT_WA_TEMPLATES,
   STORAGE_KEYS,
@@ -69,6 +70,9 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
   const transaksi: TransaksiDonasi[] = Array.isArray(raw?.transaksi)
     ? raw!.transaksi.map((t) => ({
         ...t,
+        bankTujuan: t.bankTujuan || '',
+        linkBuktiDrive: t.linkBuktiDrive || '',
+        keterangan: t.keterangan || '',
         statusPenyaluran: (t.statusPenyaluran === 'Sudah Disalurkan'
           ? 'Sudah Disalurkan'
           : 'Belum Disalurkan') as StatusPenyaluran,
@@ -102,7 +106,7 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
     ? {
         ...DEFAULT_CONFIG,
         ...rawCfg,
-        logoUrl: rawCfg.logoUrl || '',
+        logoUrl: rawCfg.logoUrl || DEFAULT_LOGO_URL,
         qrisUrl: rawCfg.qrisUrl || '',
         qrisMerchantName: rawCfg.qrisMerchantName || DEFAULT_CONFIG.qrisMerchantName,
         showQris: typeof rawCfg.showQris === 'boolean' ? rawCfg.showQris : DEFAULT_CONFIG.showQris,
@@ -373,11 +377,21 @@ export async function registerDonatur(
 export async function submitPembayaran(
   gasUrl: string,
   payload: SubmitPembayaranPayload
-): Promise<ApiResult<{ transaksi?: TransaksiDonasi; savedFileName?: string }>> {
+): Promise<
+  ApiResult<{
+    transaksi?: TransaksiDonasi;
+    transaksiList?: TransaksiDonasi[];
+    savedFileName?: string;
+  }>
+> {
   const url = gasUrl.trim();
   if (url) {
     try {
-      return await callGasPost<{ transaksi?: TransaksiDonasi; savedFileName?: string }>(url, {
+      return await callGasPost<{
+        transaksi?: TransaksiDonasi;
+        transaksiList?: TransaksiDonasi[];
+        savedFileName?: string;
+      }>(url, {
         action: 'submitPembayaran',
         ...payload,
       });
@@ -395,40 +409,74 @@ export async function submitPembayaran(
     return { status: 'error', message: waCheck.error };
   }
 
-  const ext = payload.fileMimeType.includes('pdf') ? 'pdf' : 'jpg';
-  const savedFileName = previewAutoRenameFile({
-    bulanTagihan: payload.bulanTagihan,
-    namaDonatur: payload.namaDonatur,
-    nominalTransfer: payload.nominalTransfer,
-    extension: ext,
-  });
+  const rawMonths =
+    Array.isArray(payload.bulanTagihanList) && payload.bulanTagihanList.length > 0
+      ? payload.bulanTagihanList
+      : [payload.bulanTagihan];
+  const months = Array.from(new Set(rawMonths.filter((m) => /^\d{4}-\d{2}$/.test(m)))).sort();
+  if (months.length === 0) {
+    return { status: 'error', message: 'Pilih minimal 1 bulan tagihan yang valid.' };
+  }
+
+  const hasFile = Boolean(payload.fileBase64);
+  const ext = payload.fileMimeType?.includes('pdf') ? 'pdf' : 'jpg';
+  const savedFileName = hasFile
+    ? previewAutoRenameFile({
+        bulanTagihan: months[0],
+        bulanList: months,
+        namaDonatur: payload.namaDonatur,
+        nominalTransfer: payload.nominalTransfer,
+        extension: ext,
+      })
+    : undefined;
 
   const now = new Date();
   const ymd = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-  const seq = String(state.transaksi.length + 1).padStart(3, '0');
+  const baseSeq = state.transaksi.length + 1;
+  const totalRp = Math.round(payload.nominalTransfer);
+  const basePerMonth = Math.floor(totalRp / months.length);
+  const remainder = totalRp % months.length;
+  const userNote = (payload.keterangan || '').trim();
+  const batchNote =
+    months.length > 1
+      ? `Bayar sekaligus ${months.length} bln (Total Rp ${totalRp.toLocaleString('id-ID')})`
+      : '';
+  const finalKeterangan = [userNote, batchNote].filter(Boolean).join(' · ');
 
-  const newTrx: TransaksiDonasi = {
-    idTransaksi: `TRX-${ymd}-${seq}`,
-    waktuInput: formatNowLocal(),
-    idDonatur: payload.idDonatur || '-',
-    namaDonatur: payload.namaDonatur.trim(),
-    noWa: waCheck.normalized,
-    bulanTagihan: payload.bulanTagihan,
-    nominalTransfer: payload.nominalTransfer,
-    bankTujuan: payload.bankTujuan,
-    linkBuktiDrive: payload.fileBase64,
-    statusVerifikasi: 'Pending',
-    diinputOleh: payload.diinputOleh || 'Donatur (Mandiri)',
-    statusPenyaluran: 'Belum Disalurkan',
-  };
+  const createdRows: TransaksiDonasi[] = months.map((bulan, idx) => {
+    const seq = String(baseSeq + idx).padStart(3, '0');
+    const nominalBulan = basePerMonth + (idx < remainder ? 1 : 0);
+    return {
+      idTransaksi: `TRX-${ymd}-${seq}`,
+      waktuInput: formatNowLocal(),
+      idDonatur: payload.idDonatur || '-',
+      namaDonatur: payload.namaDonatur.trim(),
+      noWa: waCheck.normalized,
+      bulanTagihan: bulan,
+      nominalTransfer: nominalBulan,
+      bankTujuan: payload.bankTujuan || '',
+      linkBuktiDrive: payload.fileBase64 || '',
+      statusVerifikasi: 'Pending',
+      diinputOleh: payload.diinputOleh || 'Donatur (Mandiri)',
+      statusPenyaluran: 'Belum Disalurkan',
+      keterangan: finalKeterangan,
+    };
+  });
 
-  state.transaksi.push(newTrx);
+  state.transaksi.push(...createdRows);
   saveLocalState(state);
 
   return {
     status: 'success',
-    message: 'Konfirmasi pembayaran berhasil dicatat (Mode Lokal) dan menunggu verifikasi.',
-    data: { transaksi: newTrx, savedFileName },
+    message:
+      createdRows.length > 1
+        ? `Konfirmasi pembayaran untuk ${createdRows.length} bulan berhasil dicatat (Mode Lokal) dan menunggu verifikasi.`
+        : 'Konfirmasi pembayaran berhasil dicatat (Mode Lokal) dan menunggu verifikasi.',
+    data: {
+      transaksi: createdRows[0],
+      transaksiList: createdRows,
+      savedFileName,
+    },
   };
 }
 

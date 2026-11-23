@@ -198,6 +198,37 @@ export function getTodayIsoDate(): string {
   return `${y}-${m}-${d}`;
 }
 
+export function extractYearMonthFromDateStr(raw?: string): string {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  const isoMatch = s.match(/^(\d{4})[-/](\d{1,2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}`;
+  }
+  const dmyMatch = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (dmyMatch) {
+    return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}`;
+  }
+  const parsed = new Date(s);
+  if (!Number.isNaN(parsed.getTime())) {
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+  }
+  return '';
+}
+
+export function getAdjacentYearMonth(ym: string, offsetMonths: number): string {
+  const match = String(ym || '').match(/^(\d{4})-(\d{2})$/);
+  const baseYear = match ? Number(match[1]) : new Date().getFullYear();
+  const baseMonthIdx = match ? Number(match[2]) - 1 : new Date().getMonth();
+  const d = new Date(baseYear, baseMonthIdx + offsetMonths, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export function buildMonthSequence(startYm: string, count: number): string[] {
+  const safeCount = Math.max(1, Math.min(24, Math.floor(count)));
+  return Array.from({ length: safeCount }, (_, i) => getAdjacentYearMonth(startYm, i));
+}
+
 export function formatBulanLabel(ym: string): string {
   const match = String(ym || '').match(/^(\d{4})-(\d{2})$/);
   if (!match) return ym || '-';
@@ -205,6 +236,14 @@ export function formatBulanLabel(ym: string): string {
   const monthIdx = Number(match[2]) - 1;
   const monthName = BULAN_INDO[monthIdx] || match[2];
   return `${monthName} ${year}`;
+}
+
+export function formatBulanShortLabel(ym: string): string {
+  const match = String(ym || '').match(/^(\d{4})-(\d{2})$/);
+  if (!match) return ym || '-';
+  const monthIdx = Number(match[2]) - 1;
+  const monthName = BULAN_INDO[monthIdx] || match[2];
+  return `${monthName.slice(0, 3)} ${match[1].slice(-2)}`;
 }
 
 export function sanitizeDonorNameForFile(name: string): string {
@@ -221,12 +260,17 @@ export function sanitizeDonorNameForFile(name: string): string {
 
 export function previewAutoRenameFile(params: {
   bulanTagihan: string;
+  bulanList?: string[];
   namaDonatur: string;
   nominalTransfer: number;
   extension: string;
 }): string {
   const datePart = getTodayIsoDate();
-  const bulan = params.bulanTagihan || getCurrentYearMonth();
+  const list = Array.isArray(params.bulanList) ? params.bulanList.filter(Boolean) : [];
+  const bulan =
+    list.length > 1
+      ? `${list[0]}-sd-${list[list.length - 1]}`
+      : list[0] || params.bulanTagihan || getCurrentYearMonth();
   const nama = sanitizeDonorNameForFile(params.namaDonatur || 'Nama-Donatur');
   const nominal = Math.round(params.nominalTransfer || 0);
   const ext = params.extension || 'jpg';
@@ -312,7 +356,7 @@ export function buildReceiptWaLink(
   const wa = normalizeWA(trx.noWa) || String(trx.noWa || '').replace(/\D/g, '');
   const bulanLabel = formatBulanLabel(trx.bulanTagihan);
 
-  const message = [
+  const lines = [
     `Assalamu'alaikum Warahmatullahi Wabarakatuh,`,
     ``,
     `Alhamdulillah, terima kasih Bapak/Ibu *${trx.namaDonatur}*.`,
@@ -322,14 +366,20 @@ export function buildReceiptWaLink(
     `• No. Transaksi: ${trx.idTransaksi}`,
     `• Periode Amanah: ${bulanLabel}`,
     `• Nominal Diterima: *${formatRupiah(trx.nominalTransfer)}*`,
-    `• Tujuan Transfer: ${trx.bankTujuan}`,
+    trx.bankTujuan && trx.bankTujuan !== '-' ? `• Tujuan Transfer: ${trx.bankTujuan}` : '',
+    trx.keterangan ? `• Keterangan: ${trx.keterangan}` : '',
     `• Status Verifikasi: Valid / Lunas`,
     `• Status Penyaluran: ${trx.statusPenyaluran || 'Belum Disalurkan'}`,
     ``,
     `Semoga Allah SWT membalas kebaikan Bapak/Ibu dengan pahala yang berlipat, rezeki yang berkah, dan kesehatan sekeluarga. Aamiin.`,
     ``,
     `Wassalamu'alaikum Warahmatullahi Wabarakatuh.`,
-  ].join('\n');
+  ].filter((line, idx, arr) => {
+    if (line === '' && arr[idx - 1] === '') return false;
+    return line !== '' || arr[idx - 1] !== undefined;
+  });
+
+  const message = lines.join('\n');
 
   return `https://wa.me/${wa}?text=${encodeURIComponent(message)}`;
 }

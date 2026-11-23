@@ -125,6 +125,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [preselectedDonatur, setPreselectedDonatur] = useState<Donatur | null>(null);
+  const [preselectedMonth, setPreselectedMonth] = useState<string | null>(null);
 
   const [data, setData] = useState<AppDataState>({
     config: DEFAULT_CONFIG,
@@ -353,21 +354,37 @@ export default function App() {
     ok: boolean;
     message: string;
     transaksi?: TransaksiDonasi;
+    transaksiList?: TransaksiDonasi[];
     savedFileName?: string;
   }> => {
     const res = await submitPembayaran(gasUrl, payload);
-    if (res.status === 'success' && res.data?.transaksi) {
-      const created = res.data.transaksi;
+    const createdList =
+      res.data?.transaksiList && res.data.transaksiList.length > 0
+        ? res.data.transaksiList
+        : res.data?.transaksi
+        ? [res.data.transaksi]
+        : [];
+    if (res.status === 'success' && createdList.length > 0) {
       setData((prev) => ({
         ...prev,
-        transaksi: [...prev.transaksi, created],
+        transaksi: [...prev.transaksi, ...createdList],
       }));
-      notify('success', 'Konfirmasi terkirim', `ID ${created.idTransaksi} menunggu verifikasi.`);
+      const first = createdList[0];
+      notify(
+        'success',
+        createdList.length > 1
+          ? `Konfirmasi ${createdList.length} bulan terkirim`
+          : 'Konfirmasi terkirim',
+        createdList.length > 1
+          ? `${createdList.length} periode atas nama ${first.namaDonatur} menunggu verifikasi.`
+          : `ID ${first.idTransaksi} menunggu verifikasi.`
+      );
       return {
         ok: true,
         message: res.message,
-        transaksi: created,
-        savedFileName: res.data.savedFileName,
+        transaksi: first,
+        transaksiList: createdList,
+        savedFileName: res.data?.savedFileName,
       };
     }
     notify('error', 'Gagal mengirim konfirmasi', res.message);
@@ -439,13 +456,15 @@ export default function App() {
     [data.transaksi]
   );
 
-  const handleGoToKonfirmasi = useCallback((donatur: Donatur) => {
+  const handleGoToKonfirmasi = useCallback((donatur: Donatur, targetMonth?: string) => {
     setPreselectedDonatur(donatur);
+    setPreselectedMonth(targetMonth || null);
     setActiveTab('konfirmasi');
   }, []);
 
   const handleClearPreselected = useCallback(() => {
     setPreselectedDonatur(null);
+    setPreselectedMonth(null);
   }, []);
 
   const containerWidthStyle = useMemo<React.CSSProperties>(
@@ -789,10 +808,14 @@ export default function App() {
           <TabKonfirmasi
             config={data.config}
             donaturList={data.donatur}
+            transaksiList={data.transaksi}
             panitia={data.panitia}
+            referralCode={referralCode}
             preselectedDonatur={preselectedDonatur}
+            preselectedMonth={preselectedMonth}
             onClearPreselected={handleClearPreselected}
             onSubmitPembayaran={handleSubmitPembayaran}
+            onGoToPendaftaran={() => setActiveTab('pendaftaran')}
             onNotify={notify}
           />
         )}
@@ -807,6 +830,7 @@ export default function App() {
             onUpdateStatusDonatur={handleUpdateStatusDonatur}
             onUpdateStatusPenyaluran={handleUpdateStatusPenyaluran}
             onGoToPendaftaran={() => setActiveTab('pendaftaran')}
+            onGoToKonfirmasiBulan={handleGoToKonfirmasi}
             onNotify={notify}
           />
         )}

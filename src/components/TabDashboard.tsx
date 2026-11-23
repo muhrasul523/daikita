@@ -1,12 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
+  ArrowDown,
   ArrowDownAZ,
+  ArrowUp,
   ArrowUpAZ,
+  ArrowUpDown,
   Calendar,
   Check,
   CheckCircle2,
   Clock,
   Copy,
+  History,
   MessageCircle,
   PauseCircle,
   PlayCircle,
@@ -28,6 +32,7 @@ import {
 import {
   buildReferralUrl,
   buildReminderWaLink,
+  extractYearMonthFromDateStr,
   formatBulanLabel,
   formatRupiah,
   formatWADisplay,
@@ -35,6 +40,8 @@ import {
   normalizeRoleLabel,
   normalizeWA,
 } from '../utils/formatters';
+import { DashboardCharts } from './DashboardCharts';
+import { DonorHistorySection } from './DonorHistorySection';
 import { SearchableOption, SearchableSelect } from './SearchableSelect';
 
 interface TabDashboardProps {
@@ -49,6 +56,7 @@ interface TabDashboardProps {
     statusPenyaluran: StatusPenyaluran
   ) => Promise<boolean>;
   onGoToPendaftaran: () => void;
+  onGoToKonfirmasiBulan: (donatur: Donatur, targetMonth?: string) => void;
   onNotify: (type: 'success' | 'error' | 'info', title: string, description?: string) => void;
 }
 
@@ -65,8 +73,22 @@ interface DonorWithMonthlyStatus {
     | 'Belum Ada Donasi';
 }
 
-type SortField = 'nama' | 'nominal' | 'tanggal' | 'statusBayar' | 'statusSalur' | 'terdaftar';
+type SortField =
+  | 'nama'
+  | 'terdaftar'
+  | 'wilayah'
+  | 'nominal'
+  | 'tanggal'
+  | 'statusBayar'
+  | 'statusSalur';
 type SummaryTab = 'pulau' | 'provinsi' | 'kabupaten' | 'panitia' | 'metode';
+type SummarySortField =
+  | 'label'
+  | 'activeCount'
+  | 'lunasBulanIni'
+  | 'validBulanRp'
+  | 'salurBulanRp'
+  | 'validSemuaRp';
 
 const PENYALURAN_OPTIONS: SearchableOption[] = [
   { value: 'Semua', label: 'Penyaluran: Semua', keywords: 'semua' },
@@ -82,11 +104,12 @@ const AKTIF_OPTIONS: SearchableOption[] = [
 
 const SORT_OPTIONS: SearchableOption[] = [
   { value: 'nama', label: 'Urut: Nama Donatur', keywords: 'nama' },
+  { value: 'terdaftar', label: 'Urut: Tgl Terdaftar', keywords: 'terdaftar daftar' },
+  { value: 'wilayah', label: 'Urut: Wilayah', keywords: 'wilayah domisili kota' },
   { value: 'nominal', label: 'Urut: Nominal Komitmen', keywords: 'nominal komitmen' },
   { value: 'tanggal', label: 'Urut: Tgl Pengingat', keywords: 'tanggal pengingat' },
   { value: 'statusBayar', label: 'Urut: Status Pembayaran', keywords: 'status bayar valid' },
   { value: 'statusSalur', label: 'Urut: Status Penyaluran', keywords: 'status salur' },
-  { value: 'terdaftar', label: 'Urut: Tgl Pendaftaran', keywords: 'terdaftar daftar' },
 ];
 
 export const TabDashboard: React.FC<TabDashboardProps> = ({
@@ -98,6 +121,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
   onUpdateStatusDonatur,
   onUpdateStatusPenyaluran,
   onGoToPendaftaran,
+  onGoToKonfirmasiBulan,
   onNotify,
 }) => {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentYearMonth());
@@ -117,6 +141,15 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const [summaryTab, setSummaryTab] = useState<SummaryTab>('pulau');
+  const [summarySortField, setSummarySortField] = useState<SummarySortField>('validBulanRp');
+  const [summarySortDir, setSummarySortDir] = useState<'asc' | 'desc'>('desc');
+
+  const [historyDonaturId, setHistoryDonaturId] = useState('');
+  const [historyYear, setHistoryYear] = useState<number>(() =>
+    Number(getCurrentYearMonth().slice(0, 4))
+  );
+  const historySectionRef = useRef<HTMLElement | null>(null);
+
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [updatingSalurDonorId, setUpdatingSalurDonorId] = useState<string | null>(null);
   const [copiedKode, setCopiedKode] = useState<string | null>(null);
@@ -304,6 +337,10 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
 
     const activeDonors = donorRows.filter((r) => r.donatur.statusAktif === 'Aktif');
     const lunasActiveCount = activeDonors.filter((r) => r.statusBulan === 'Lunas').length;
+    const komitmenBulanIniRp = activeDonors.reduce((sum, r) => sum + r.donatur.nominalKomitmen, 0);
+    const donaturBaruBulanIni = donaturList.filter(
+      (d) => extractYearMonthFromDateStr(d.tanggalDaftar) === selectedMonth
+    ).length;
     const compliancePct =
       activeDonors.length > 0
         ? Math.round((lunasActiveCount / activeDonors.length) * 1000) / 10
@@ -318,9 +355,11 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
       pendingCount: pendingMonthTrx.length,
       activeCount: activeDonors.length,
       lunasActiveCount,
+      komitmenBulanIniRp,
+      donaturBaruBulanIni,
       compliancePct,
     };
-  }, [monthTransaksi, donorRows]);
+  }, [monthTransaksi, donorRows, donaturList, selectedMonth]);
 
   const filterCounts = useMemo(() => {
     return {
@@ -384,6 +423,12 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         case 'nama':
           cmp = a.donatur.namaLengkap.localeCompare(b.donatur.namaLengkap, 'id');
           break;
+        case 'wilayah': {
+          const wa = resolveDonorWilayah(a.donatur).kab || a.donatur.namaPerantara;
+          const wb = resolveDonorWilayah(b.donatur).kab || b.donatur.namaPerantara;
+          cmp = wa.localeCompare(wb, 'id');
+          break;
+        }
         case 'nominal':
           cmp = a.donatur.nominalKomitmen - b.donatur.nominalKomitmen;
           break;
@@ -396,9 +441,12 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         case 'statusSalur':
           cmp = salurRank[a.statusPenyaluranBulan] - salurRank[b.statusPenyaluranBulan];
           break;
-        case 'terdaftar':
-          cmp = a.donatur.tanggalDaftar.localeCompare(b.donatur.tanggalDaftar);
+        case 'terdaftar': {
+          const ymA = extractYearMonthFromDateStr(a.donatur.tanggalDaftar);
+          const ymB = extractYearMonthFromDateStr(b.donatur.tanggalDaftar);
+          cmp = (ymA || a.donatur.tanggalDaftar).localeCompare(ymB || b.donatur.tanggalDaftar);
           break;
+        }
       }
       if (cmp === 0) {
         return a.donatur.namaLengkap.localeCompare(b.donatur.namaLengkap, 'id');
@@ -494,13 +542,78 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
       };
     });
 
-    return rows.sort(
-      (a, b) =>
-        b.validBulanRp - a.validBulanRp ||
-        b.validSemuaRp - a.validSemuaRp ||
-        b.activeCount - a.activeCount
+    const dir = summarySortDir === 'asc' ? 1 : -1;
+    return rows.sort((a, b) => {
+      let cmp = 0;
+      switch (summarySortField) {
+        case 'label':
+          cmp = a.label.localeCompare(b.label, 'id');
+          break;
+        case 'activeCount':
+          cmp = a.activeCount - b.activeCount;
+          break;
+        case 'lunasBulanIni':
+          cmp = a.lunasBulanIni - b.lunasBulanIni;
+          break;
+        case 'validBulanRp':
+          cmp = a.validBulanRp - b.validBulanRp;
+          break;
+        case 'salurBulanRp':
+          cmp = a.salurBulanRp - b.salurBulanRp;
+          break;
+        case 'validSemuaRp':
+          cmp = a.validSemuaRp - b.validSemuaRp;
+          break;
+      }
+      if (cmp === 0) return a.label.localeCompare(b.label, 'id');
+      return cmp * dir;
+    });
+  }, [
+    summaryTab,
+    panitiaList,
+    donaturList,
+    donorRows,
+    transaksiList,
+    selectedMonth,
+    summarySortField,
+    summarySortDir,
+  ]);
+
+  const handleSortHeader = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir(field === 'nominal' || field === 'terdaftar' ? 'desc' : 'asc');
+    }
+  };
+
+  const handleSummarySortHeader = (field: SummarySortField) => {
+    if (summarySortField === field) {
+      setSummarySortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSummarySortField(field);
+      setSummarySortDir(field === 'label' ? 'asc' : 'desc');
+    }
+  };
+
+  const renderSortIcon = (active: boolean, dir: 'asc' | 'desc') => {
+    if (!active) return <ArrowUpDown className="h-3.5 w-3.5 opacity-60 shrink-0" />;
+    return dir === 'asc' ? (
+      <ArrowUp className="h-3.5 w-3.5 shrink-0" />
+    ) : (
+      <ArrowDown className="h-3.5 w-3.5 shrink-0" />
     );
-  }, [summaryTab, panitiaList, donaturList, donorRows, transaksiList, selectedMonth]);
+  };
+
+  const handleInspectDonorHistory = (donaturId: string) => {
+    setHistoryDonaturId(donaturId);
+    const yr = Number(selectedMonth.slice(0, 4));
+    if (Number.isFinite(yr)) setHistoryYear(yr);
+    window.setTimeout(() => {
+      historySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  };
 
   const handleToggleStatus = async (donatur: Donatur) => {
     const nextStatus: StatusAktif = donatur.statusAktif === 'Aktif' ? 'Cuti' : 'Aktif';
@@ -647,7 +760,10 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
               {overallMetrics.totalDonatur}
             </p>
             <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-              {overallMetrics.activeCount} Aktif · {overallMetrics.cutiCount} Cuti
+              {overallMetrics.activeCount} Aktif · {overallMetrics.cutiCount} Cuti ·{' '}
+              <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                +{monthlyMetrics.donaturBaruBulanIni} baru bulan ini
+              </span>
             </p>
           </div>
         </div>
@@ -663,7 +779,8 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
             {formatRupiah(monthlyMetrics.totalValidRp)}
           </p>
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-            {monthlyMetrics.validCount} transaksi terkonfirmasi valid
+            {monthlyMetrics.validCount} valid · Target komitmen{' '}
+            {formatRupiah(monthlyMetrics.komitmenBulanIniRp)}
           </p>
         </div>
 
@@ -694,7 +811,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         <div className="glass-surface rounded-3xl p-5 min-w-0">
           <div className="flex items-baseline justify-between gap-2">
             <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              Kepatuhan Bulan Ini
+              Kepatuhan &amp; Pertumbuhan
             </p>
             <span className="text-xs font-semibold text-teal-700 dark:text-teal-300 tabular-nums">
               {monthlyMetrics.lunasActiveCount}/{monthlyMetrics.activeCount}
@@ -703,14 +820,25 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
           <p className="mt-2 text-2xl font-bold tracking-tight text-teal-800 dark:text-teal-300 tabular-nums">
             {monthlyMetrics.compliancePct.toFixed(1)}%
           </p>
-          <div className="mt-2.5 h-1.5 w-full rounded-full bg-slate-200/80 dark:bg-slate-700/80 overflow-hidden">
+          <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200/80 dark:bg-slate-700/80 overflow-hidden">
             <div
               className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-sky-500 transition-all duration-300"
               style={{ width: `${Math.min(100, monthlyMetrics.compliancePct)}%` }}
             />
           </div>
+          <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+            +{monthlyMetrics.donaturBaruBulanIni} donatur baru pada {formatBulanLabel(selectedMonth)}
+          </p>
         </div>
       </section>
+
+      {/* Grafik Komprehensif: Arus Dana & Pertambahan Donatur */}
+      <DashboardCharts
+        donaturList={donaturList}
+        transaksiList={transaksiList}
+        selectedMonth={selectedMonth}
+        onSelectMonth={setSelectedMonth}
+      />
 
       {/* Donor Table & Multi-Level Wilayah + Status Filters */}
       <section className="glass-surface rounded-3xl overflow-hidden">
@@ -935,15 +1063,70 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
           </div>
         ) : (
           <div className="overflow-x-auto clean-scroll">
-            <table className="w-full min-w-[960px] text-left border-collapse">
+            <table className="w-full min-w-[1040px] text-left border-collapse">
               <thead>
                 <tr className="bg-emerald-800 dark:bg-emerald-950 text-white dark:text-emerald-100 text-[11px] font-semibold">
                   <th className="py-3.5 pl-5 pr-3 w-12 text-center">No</th>
-                  <th className="py-3.5 px-4">Donatur &amp; Kontak</th>
-                  <th className="py-3.5 px-4">Wilayah &amp; Perantara</th>
-                  <th className="py-3.5 px-4 text-right">Komitmen</th>
-                  <th className="py-3.5 px-4">Konfirmasi / Valid</th>
-                  <th className="py-3.5 px-4">Penyaluran</th>
+                  <th className="py-3.5 px-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSortHeader('nama')}
+                      className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
+                    >
+                      <span>Donatur &amp; Kontak</span>
+                      {renderSortIcon(sortField === 'nama', sortDir)}
+                    </button>
+                  </th>
+                  <th className="py-3.5 px-4 whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={() => handleSortHeader('terdaftar')}
+                      className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
+                    >
+                      <span>Tgl Terdaftar</span>
+                      {renderSortIcon(sortField === 'terdaftar', sortDir)}
+                    </button>
+                  </th>
+                  <th className="py-3.5 px-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSortHeader('wilayah')}
+                      className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
+                    >
+                      <span>Wilayah &amp; Perantara</span>
+                      {renderSortIcon(sortField === 'wilayah', sortDir)}
+                    </button>
+                  </th>
+                  <th className="py-3.5 px-4 text-right">
+                    <button
+                      type="button"
+                      onClick={() => handleSortHeader('nominal')}
+                      className="inline-flex items-center justify-end gap-1 hover:text-emerald-200 cursor-pointer ml-auto"
+                    >
+                      <span>Komitmen</span>
+                      {renderSortIcon(sortField === 'nominal', sortDir)}
+                    </button>
+                  </th>
+                  <th className="py-3.5 px-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSortHeader('statusBayar')}
+                      className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
+                    >
+                      <span>Konfirmasi / Valid</span>
+                      {renderSortIcon(sortField === 'statusBayar', sortDir)}
+                    </button>
+                  </th>
+                  <th className="py-3.5 px-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSortHeader('statusSalur')}
+                      className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
+                    >
+                      <span>Penyaluran</span>
+                      {renderSortIcon(sortField === 'statusSalur', sortDir)}
+                    </button>
+                  </th>
                   <th className="py-3.5 pl-4 pr-5 text-right">Tindakan</th>
                 </tr>
               </thead>
@@ -961,6 +1144,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                   const isUpdating = updatingId === donatur.idDonatur;
                   const isUpdatingSalur = updatingSalurDonorId === donatur.idDonatur;
                   const waLink = buildReminderWaLink(donatur, selectedMonth, config);
+                  const regYm = extractYearMonthFromDateStr(donatur.tanggalDaftar);
 
                   return (
                     <tr
@@ -987,6 +1171,17 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                         <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500 font-mono">
                           {donatur.idDonatur} · {donatur.statusAktif}
                         </p>
+                      </td>
+
+                      <td className="py-4 px-4 whitespace-nowrap">
+                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
+                          {donatur.tanggalDaftar ? donatur.tanggalDaftar.split(',')[0] : '-'}
+                        </p>
+                        {regYm && (
+                          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                            {formatBulanLabel(regYm)}
+                          </p>
+                        )}
                       </td>
 
                       <td className="py-4 px-4 min-w-0 max-w-[230px]">
@@ -1074,6 +1269,16 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
 
                       <td className="py-4 pl-4 pr-5 text-right">
                         <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleInspectDonorHistory(donatur.idDonatur)}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-teal-200 dark:border-teal-800 bg-teal-50/70 dark:bg-teal-950/50 px-3 py-2 text-xs font-semibold text-teal-800 dark:text-teal-200 hover:bg-teal-100 dark:hover:bg-teal-900/60 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                            title="Lihat riwayat pembayaran donatur per bulan"
+                          >
+                            <History className="h-3.5 w-3.5 shrink-0" />
+                            <span>Riwayat</span>
+                          </button>
+
                           {statusBulan === 'Belum Bayar' && !isCuti && (
                             <a
                               href={waLink}
@@ -1114,6 +1319,19 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
           </div>
         )}
       </section>
+
+      {/* Pengecekan Riwayat Pembayaran Per Donatur */}
+      <DonorHistorySection
+        config={config}
+        donaturList={donaturList}
+        transaksiList={transaksiList}
+        selectedDonaturId={historyDonaturId}
+        onSelectDonaturId={setHistoryDonaturId}
+        selectedYear={historyYear}
+        onSelectYear={setHistoryYear}
+        onGoToKonfirmasiBulan={onGoToKonfirmasiBulan}
+        sectionRef={historySectionRef}
+      />
 
       {/* Rekap Berdasarkan Wilayah & Pengurus */}
       <section className="glass-surface rounded-3xl overflow-hidden">
@@ -1162,12 +1380,66 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
             <thead>
               <tr className="bg-teal-800 dark:bg-teal-950 text-white dark:text-teal-100 text-[11px] font-semibold">
                 <th className="py-3.5 pl-5 pr-3 w-12 text-center">No</th>
-                <th className="py-3.5 px-4">Kelompok</th>
-                <th className="py-3.5 px-4 text-right">Donatur Aktif</th>
-                <th className="py-3.5 px-4 text-right">Lunas Bulan Ini</th>
-                <th className="py-3.5 px-4 text-right">Valid Bulan Ini</th>
-                <th className="py-3.5 px-4 text-right">Disalurkan Bulan Ini</th>
-                <th className="py-3.5 px-4 text-right">Total Valid Keseluruhan</th>
+                <th className="py-3.5 px-4">
+                  <button
+                    type="button"
+                    onClick={() => handleSummarySortHeader('label')}
+                    className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
+                  >
+                    <span>Kelompok</span>
+                    {renderSortIcon(summarySortField === 'label', summarySortDir)}
+                  </button>
+                </th>
+                <th className="py-3.5 px-4 text-right">
+                  <button
+                    type="button"
+                    onClick={() => handleSummarySortHeader('activeCount')}
+                    className="inline-flex items-center justify-end gap-1 hover:text-emerald-200 cursor-pointer ml-auto"
+                  >
+                    <span>Donatur Aktif</span>
+                    {renderSortIcon(summarySortField === 'activeCount', summarySortDir)}
+                  </button>
+                </th>
+                <th className="py-3.5 px-4 text-right">
+                  <button
+                    type="button"
+                    onClick={() => handleSummarySortHeader('lunasBulanIni')}
+                    className="inline-flex items-center justify-end gap-1 hover:text-emerald-200 cursor-pointer ml-auto"
+                  >
+                    <span>Lunas Bulan Ini</span>
+                    {renderSortIcon(summarySortField === 'lunasBulanIni', summarySortDir)}
+                  </button>
+                </th>
+                <th className="py-3.5 px-4 text-right">
+                  <button
+                    type="button"
+                    onClick={() => handleSummarySortHeader('validBulanRp')}
+                    className="inline-flex items-center justify-end gap-1 hover:text-emerald-200 cursor-pointer ml-auto"
+                  >
+                    <span>Valid Bulan Ini</span>
+                    {renderSortIcon(summarySortField === 'validBulanRp', summarySortDir)}
+                  </button>
+                </th>
+                <th className="py-3.5 px-4 text-right">
+                  <button
+                    type="button"
+                    onClick={() => handleSummarySortHeader('salurBulanRp')}
+                    className="inline-flex items-center justify-end gap-1 hover:text-emerald-200 cursor-pointer ml-auto"
+                  >
+                    <span>Disalurkan Bulan Ini</span>
+                    {renderSortIcon(summarySortField === 'salurBulanRp', summarySortDir)}
+                  </button>
+                </th>
+                <th className="py-3.5 px-4 text-right">
+                  <button
+                    type="button"
+                    onClick={() => handleSummarySortHeader('validSemuaRp')}
+                    className="inline-flex items-center justify-end gap-1 hover:text-emerald-200 cursor-pointer ml-auto"
+                  >
+                    <span>Total Valid Keseluruhan</span>
+                    {renderSortIcon(summarySortField === 'validSemuaRp', summarySortDir)}
+                  </button>
+                </th>
                 {summaryTab === 'panitia' && (
                   <th className="py-3.5 pl-4 pr-5 text-right">Link Referral</th>
                 )}

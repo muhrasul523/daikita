@@ -1,7 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import {
+  ArrowDown,
   ArrowDownAZ,
+  ArrowUp,
   ArrowUpAZ,
+  ArrowUpDown,
+  Calendar,
   CheckCircle2,
   Clock,
   ExternalLink,
@@ -24,6 +28,7 @@ import {
   formatBulanLabel,
   formatRupiah,
   formatWADisplay,
+  getCurrentYearMonth,
 } from '../utils/formatters';
 import { SearchableOption, SearchableSelect } from './SearchableSelect';
 
@@ -38,7 +43,13 @@ interface TabVerifikasiProps {
   ) => Promise<boolean>;
 }
 
-type TrxSortField = 'waktu' | 'nominal' | 'bulan' | 'nama';
+type TrxSortField =
+  | 'waktu'
+  | 'nominal'
+  | 'bulan'
+  | 'nama'
+  | 'statusVerifikasi'
+  | 'statusPenyaluran';
 
 const SALUR_FILTER_OPTIONS: SearchableOption[] = [
   { value: 'Semua', label: 'Penyaluran: Semua', keywords: 'semua' },
@@ -48,9 +59,11 @@ const SALUR_FILTER_OPTIONS: SearchableOption[] = [
 
 const SORT_OPTIONS: SearchableOption[] = [
   { value: 'waktu', label: 'Urut: Waktu Input', keywords: 'waktu tanggal input' },
+  { value: 'nama', label: 'Urut: Nama Donatur', keywords: 'nama donatur' },
   { value: 'nominal', label: 'Urut: Nominal', keywords: 'nominal rupiah' },
   { value: 'bulan', label: 'Urut: Bulan Amanah', keywords: 'bulan periode' },
-  { value: 'nama', label: 'Urut: Nama Donatur', keywords: 'nama donatur' },
+  { value: 'statusVerifikasi', label: 'Urut: Status Verifikasi', keywords: 'status verifikasi' },
+  { value: 'statusPenyaluran', label: 'Urut: Status Penyaluran', keywords: 'status penyaluran' },
 ];
 
 export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
@@ -60,7 +73,11 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
   onVerifikasi,
   onUpdateStatusPenyaluran,
 }) => {
-  const [filterStatus, setFilterStatus] = useState<'Pending' | 'Valid' | 'Ditolak' | 'Semua'>('Pending');
+  const [filterMonthMode, setFilterMonthMode] = useState<'semua' | 'bulan'>('semua');
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentYearMonth());
+  const [filterStatus, setFilterStatus] = useState<'Pending' | 'Valid' | 'Ditolak' | 'Semua'>(
+    'Pending'
+  );
   const [filterSalur, setFilterSalur] = useState<'Semua' | StatusPenyaluran>('Semua');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<TrxSortField>('waktu');
@@ -72,18 +89,25 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
   const [recentlyValidated, setRecentlyValidated] = useState<TransaksiDonasi | null>(null);
   const [previewModalTrx, setPreviewModalTrx] = useState<TransaksiDonasi | null>(null);
 
+  const monthScopedTransaksi = useMemo(() => {
+    if (filterMonthMode === 'bulan' && /^\d{4}-\d{2}$/.test(selectedMonth)) {
+      return transaksiList.filter((t) => t.bulanTagihan === selectedMonth);
+    }
+    return transaksiList;
+  }, [transaksiList, filterMonthMode, selectedMonth]);
+
   const counts = useMemo(() => {
     return {
-      Pending: transaksiList.filter((t) => t.statusVerifikasi === 'Pending').length,
-      Valid: transaksiList.filter((t) => t.statusVerifikasi === 'Valid').length,
-      Ditolak: transaksiList.filter((t) => t.statusVerifikasi === 'Ditolak').length,
-      Semua: transaksiList.length,
+      Pending: monthScopedTransaksi.filter((t) => t.statusVerifikasi === 'Pending').length,
+      Valid: monthScopedTransaksi.filter((t) => t.statusVerifikasi === 'Valid').length,
+      Ditolak: monthScopedTransaksi.filter((t) => t.statusVerifikasi === 'Ditolak').length,
+      Semua: monthScopedTransaksi.length,
     };
-  }, [transaksiList]);
+  }, [monthScopedTransaksi]);
 
   const filteredTransaksi = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const filtered = transaksiList.filter((t) => {
+    const filtered = monthScopedTransaksi.filter((t) => {
       if (filterStatus !== 'Semua' && t.statusVerifikasi !== filterStatus) return false;
       if (filterSalur !== 'Semua' && t.statusPenyaluran !== filterSalur) return false;
       if (!q) return true;
@@ -93,9 +117,16 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
         t.noWa.toLowerCase().includes(q) ||
         t.bulanTagihan.toLowerCase().includes(q) ||
         t.bankTujuan.toLowerCase().includes(q) ||
+        (t.keterangan || '').toLowerCase().includes(q) ||
         t.diinputOleh.toLowerCase().includes(q)
       );
     });
+
+    const verifRank: Record<StatusVerifikasi, number> = {
+      Pending: 1,
+      Valid: 2,
+      Ditolak: 3,
+    };
 
     const dir = sortDir === 'asc' ? 1 : -1;
     return [...filtered].sort((a, b) => {
@@ -113,10 +144,37 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
         case 'nama':
           cmp = a.namaDonatur.localeCompare(b.namaDonatur, 'id');
           break;
+        case 'statusVerifikasi':
+          cmp = verifRank[a.statusVerifikasi] - verifRank[b.statusVerifikasi];
+          break;
+        case 'statusPenyaluran':
+          cmp = a.statusPenyaluran.localeCompare(b.statusPenyaluran, 'id');
+          break;
+      }
+      if (cmp === 0) {
+        return a.idTransaksi.localeCompare(b.idTransaksi);
       }
       return cmp * dir;
     });
-  }, [transaksiList, filterStatus, filterSalur, searchQuery, sortField, sortDir]);
+  }, [monthScopedTransaksi, filterStatus, filterSalur, searchQuery, sortField, sortDir]);
+
+  const handleSortHeader = (field: TrxSortField) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir(field === 'nominal' || field === 'waktu' ? 'desc' : 'asc');
+    }
+  };
+
+  const renderSortIcon = (active: boolean) => {
+    if (!active) return <ArrowUpDown className="h-3.5 w-3.5 opacity-60 shrink-0" />;
+    return sortDir === 'asc' ? (
+      <ArrowUp className="h-3.5 w-3.5 shrink-0" />
+    ) : (
+      <ArrowDown className="h-3.5 w-3.5 shrink-0" />
+    );
+  };
 
   const handleAction = async (trx: TransaksiDonasi, status: StatusVerifikasi) => {
     setProcessingId(trx.idTransaksi);
@@ -232,17 +290,63 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-w-2xl">
-            <SearchableSelect
-              ariaLabel="Filter status penyaluran transaksi"
-              options={SALUR_FILTER_OPTIONS}
-              value={filterSalur}
-              onChange={(val) => setFilterSalur((val || 'Semua') as 'Semua' | StatusPenyaluran)}
-              compact
-              searchPlaceholder="Filter penyaluran..."
-            />
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Filter Periode Bulan */}
+            <div className="inline-flex items-center gap-1 rounded-2xl bg-slate-100/85 dark:bg-slate-800/80 p-1">
+              <button
+                type="button"
+                onClick={() => setFilterMonthMode('semua')}
+                className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  filterMonthMode === 'semua'
+                    ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Semua Bulan
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterMonthMode('bulan')}
+                className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  filterMonthMode === 'bulan'
+                    ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Per Bulan
+              </button>
+            </div>
 
-            <div className="flex items-center gap-1.5">
+            <div className="relative flex items-center">
+              <Calendar className="pointer-events-none absolute left-3 h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400" />
+              <input
+                type="month"
+                aria-label="Filter transaksi berdasarkan bulan"
+                value={selectedMonth}
+                onChange={(e) => {
+                  setSelectedMonth(e.target.value);
+                  setFilterMonthMode('bulan');
+                }}
+                className={`rounded-xl border px-3 pl-9 py-1.5 text-xs font-semibold tabular-nums focus:border-emerald-500 focus:outline-none ${
+                  filterMonthMode === 'bulan'
+                    ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50/70 dark:bg-emerald-950/50 text-emerald-900 dark:text-emerald-100'
+                    : 'border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 text-slate-600 dark:text-slate-300'
+                }`}
+              />
+            </div>
+
+            <div className="w-full sm:w-48">
+              <SearchableSelect
+                ariaLabel="Filter status penyaluran transaksi"
+                options={SALUR_FILTER_OPTIONS}
+                value={filterSalur}
+                onChange={(val) => setFilterSalur((val || 'Semua') as 'Semua' | StatusPenyaluran)}
+                compact
+                searchPlaceholder="Filter penyaluran..."
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 w-full sm:w-56">
               <div className="flex-1 min-w-0">
                 <SearchableSelect
                   ariaLabel="Urutkan transaksi"
@@ -301,11 +405,56 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
               <thead>
                 <tr className="bg-emerald-800 dark:bg-emerald-950 text-white dark:text-emerald-100 text-[11px] font-semibold">
                   <th className="py-3.5 pl-5 pr-3 w-12 text-center">No</th>
-                  <th className="py-3.5 px-4">Transaksi &amp; Periode</th>
-                  <th className="py-3.5 px-4">Donatur &amp; Tujuan</th>
-                  <th className="py-3.5 px-4 text-right">Nominal</th>
-                  <th className="py-3.5 px-4">Verifikasi &amp; Bukti</th>
-                  <th className="py-3.5 px-4">Penyaluran</th>
+                  <th className="py-3.5 px-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSortHeader('waktu')}
+                      className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
+                    >
+                      <span>Transaksi &amp; Periode</span>
+                      {renderSortIcon(sortField === 'waktu')}
+                    </button>
+                  </th>
+                  <th className="py-3.5 px-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSortHeader('nama')}
+                      className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
+                    >
+                      <span>Donatur &amp; Catatan</span>
+                      {renderSortIcon(sortField === 'nama')}
+                    </button>
+                  </th>
+                  <th className="py-3.5 px-4 text-right">
+                    <button
+                      type="button"
+                      onClick={() => handleSortHeader('nominal')}
+                      className="inline-flex items-center justify-end gap-1 hover:text-emerald-200 cursor-pointer ml-auto"
+                    >
+                      <span>Nominal</span>
+                      {renderSortIcon(sortField === 'nominal')}
+                    </button>
+                  </th>
+                  <th className="py-3.5 px-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSortHeader('statusVerifikasi')}
+                      className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
+                    >
+                      <span>Verifikasi &amp; Bukti</span>
+                      {renderSortIcon(sortField === 'statusVerifikasi')}
+                    </button>
+                  </th>
+                  <th className="py-3.5 px-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSortHeader('statusPenyaluran')}
+                      className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
+                    >
+                      <span>Penyaluran</span>
+                      {renderSortIcon(sortField === 'statusPenyaluran')}
+                    </button>
+                  </th>
                   <th className="py-3.5 pl-4 pr-5 text-right">Tindakan</th>
                 </tr>
               </thead>
@@ -339,20 +488,27 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                           {trx.waktuInput}
                         </p>
                         <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
-                          Input: {trx.diinputOleh || 'Donatur'}
+                          Input: {trx.diinputOleh || 'Donatur (Mandiri)'}
                         </p>
                       </td>
 
-                      <td className="py-4 px-4 min-w-0 max-w-[220px]">
+                      <td className="py-4 px-4 min-w-0 max-w-[230px]">
                         <p className="font-semibold text-slate-900 dark:text-slate-100 safe-wrap">
                           {trx.namaDonatur}
                         </p>
                         <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 tabular-nums">
                           {formatWADisplay(trx.noWa)}
                         </p>
-                        <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
-                          {trx.bankTujuan}
-                        </p>
+                        {trx.bankTujuan && trx.bankTujuan !== '-' && (
+                          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
+                            {trx.bankTujuan}
+                          </p>
+                        )}
+                        {trx.keterangan && (
+                          <p className="mt-1 text-[11px] text-teal-800 dark:text-teal-300 bg-teal-50/70 dark:bg-teal-950/40 rounded-lg px-2 py-1 safe-wrap">
+                            Ket: {trx.keterangan}
+                          </p>
+                        )}
                       </td>
 
                       <td className="py-4 px-4 text-right whitespace-nowrap">
@@ -403,6 +559,11 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                             <Eye className="h-3.5 w-3.5 shrink-0" />
                             <span>Lihat Pratinjau</span>
                           </button>
+                        )}
+                        {!hasExternalUrl && !hasLocalDataUrl && (
+                          <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                            Tanpa bukti upload
+                          </p>
                         )}
                       </td>
 

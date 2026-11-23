@@ -1,0 +1,456 @@
+import { DEFAULT_CONFIG, DEFAULT_GAS_URL, DEFAULT_PANITIA, STORAGE_KEYS } from '../config';
+import {
+  ApiResult,
+  AppDataState,
+  Donatur,
+  RegisterDonaturPayload,
+  StatusAktif,
+  StatusPenyaluran,
+  StatusVerifikasi,
+  SubmitPembayaranPayload,
+  TransaksiDonasi,
+} from '../types';
+import { previewAutoRenameFile, validateAndNormalizeWA } from '../utils/formatters';
+
+export function getSavedGasUrl(): string {
+  try {
+    const saved = window.localStorage.getItem(STORAGE_KEYS.GAS_URL);
+    if (saved !== null) {
+      return saved.trim();
+    }
+  } catch {
+    // Ignore storage access restrictions
+  }
+  return DEFAULT_GAS_URL.trim();
+}
+
+export function saveGasUrl(url: string): void {
+  try {
+    const cleaned = url.trim();
+    if (!cleaned) {
+      window.localStorage.removeItem(STORAGE_KEYS.GAS_URL);
+    } else {
+      window.localStorage.setItem(STORAGE_KEYS.GAS_URL, cleaned);
+    }
+  } catch {
+    // Ignore storage access restrictions
+  }
+}
+
+export function isValidGasUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'https:' && parsed.hostname.includes('script.google.com');
+  } catch {
+    return false;
+  }
+}
+
+function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
+  const transaksi: TransaksiDonasi[] = Array.isArray(raw?.transaksi)
+    ? raw!.transaksi.map((t) => ({
+        ...t,
+        statusPenyaluran: (t.statusPenyaluran === 'Sudah Disalurkan'
+          ? 'Sudah Disalurkan'
+          : 'Belum Disalurkan') as StatusPenyaluran,
+      }))
+    : [];
+
+  const donatur = Array.isArray(raw?.donatur)
+    ? raw!.donatur.map((d) => ({
+        ...d,
+        email: d.email || '',
+        domisili: d.domisili || '',
+        programDonasi: d.programDonasi || 'Infaq Umum Rutin',
+      }))
+    : [];
+
+  return {
+    config: raw?.config
+      ? {
+          ...DEFAULT_CONFIG,
+          ...raw.config,
+          infoRekening:
+            Array.isArray(raw.config.infoRekening) && raw.config.infoRekening.length > 0
+              ? raw.config.infoRekening
+              : DEFAULT_CONFIG.infoRekening,
+          daftarProgram:
+            Array.isArray(raw.config.daftarProgram) && raw.config.daftarProgram.length > 0
+              ? raw.config.daftarProgram
+              : DEFAULT_CONFIG.daftarProgram,
+        }
+      : DEFAULT_CONFIG,
+    donatur,
+    transaksi,
+    panitia:
+      Array.isArray(raw?.panitia) && raw!.panitia.length > 0 ? raw!.panitia : DEFAULT_PANITIA,
+  };
+}
+
+function getLocalState(): AppDataState {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEYS.LOCAL_DATA);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<AppDataState>;
+      return normalizeLoadedState(parsed);
+    }
+  } catch {
+    // Ignore malformed local state
+  }
+  return normalizeLoadedState();
+}
+
+function saveLocalState(state: AppDataState): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEYS.LOCAL_DATA, JSON.stringify(state));
+  } catch {
+    try {
+      const slimState: AppDataState = {
+        ...state,
+        transaksi: state.transaksi.map((t) => ({
+          ...t,
+          linkBuktiDrive: t.linkBuktiDrive.startsWith('data:') ? '' : t.linkBuktiDrive,
+        })),
+      };
+      window.localStorage.setItem(STORAGE_KEYS.LOCAL_DATA, JSON.stringify(slimState));
+    } catch {
+      // Ignore if still full
+    }
+  }
+}
+
+function formatNowLocal(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
+async function callGasPost<T>(gasUrl: string, body: Record<string, unknown>): Promise<ApiResult<T>> {
+  const response = await fetch(gasUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8',
+    },
+    redirect: 'follow',
+    body: JSON.stringify(body),
+  });
+
+  const text = await response.text();
+  let parsed: ApiResult<T>;
+  try {
+    parsed = JSON.parse(text) as ApiResult<T>;
+  } catch {
+    throw new Error(
+      'Respons dari Google Apps Script bukan JSON valid. Pastikan Deployment Web App diset "Yang memiliki akses: Siapa saja (Anyone)" dan URL diakhiri /exec.'
+    );
+  }
+  return parsed;
+}
+
+export async function pingGasConnection(
+  gasUrl: string
+): Promise<ApiResult<{ namaLembaga?: string; serverTime?: string }>> {
+  const url = gasUrl.trim();
+  if (!isValidGasUrl(url)) {
+    return {
+      status: 'error',
+      message: 'URL harus berupa tautan https://script.google.com/macros/s/.../exec yang valid.',
+    };
+  }
+  try {
+    const separator = url.includes('?') ? '&' : '?';
+    const response = await fetch(`${url}${separator}action=ping`, {
+      method: 'GET',
+      redirect: 'follow',
+    });
+    const text = await response.text();
+    return JSON.parse(text) as ApiResult<{ namaLembaga?: string; serverTime?: string }>;
+  } catch (err) {
+    return {
+      status: 'error',
+      message:
+        err instanceof Error
+          ? `Gagal menghubungi Apps Script: ${err.message}`
+          : 'Gagal menghubungi server Google Apps Script.',
+    };
+  }
+}
+
+export async function fetchInitialData(gasUrl: string): Promise<ApiResult<AppDataState>> {
+  const url = gasUrl.trim();
+  if (!url) {
+    return {
+      status: 'success',
+      message: 'Menggunakan penyimpanan lokal browser.',
+      data: getLocalState(),
+    };
+  }
+
+  try {
+    const separator = url.includes('?') ? '&' : '?';
+    const response = await fetch(`${url}${separator}action=getInitialData`, {
+      method: 'GET',
+      redirect: 'follow',
+    });
+    const text = await response.text();
+    const parsed = JSON.parse(text) as ApiResult<AppDataState>;
+    if (parsed.status === 'success' && parsed.data) {
+      return {
+        status: 'success',
+        message: parsed.message || 'Data berhasil dimuat.',
+        data: normalizeLoadedState(parsed.data),
+      };
+    }
+    return parsed;
+  } catch (err) {
+    return {
+      status: 'error',
+      message:
+        err instanceof Error
+          ? `Gagal memuat data dari Apps Script: ${err.message}`
+          : 'Gagal memuat data dari Google Apps Script.',
+    };
+  }
+}
+
+export async function registerDonatur(
+  gasUrl: string,
+  payload: RegisterDonaturPayload
+): Promise<ApiResult<{ donatur?: Donatur; existingDonatur?: Partial<Donatur> }>> {
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ donatur?: Donatur; existingDonatur?: Partial<Donatur> }>(url, {
+        action: 'registerDonatur',
+        ...payload,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal mendaftarkan donatur ke Apps Script.',
+      };
+    }
+  }
+
+  // Mode Lokal (Browser Storage)
+  const state = getLocalState();
+  const waCheck = validateAndNormalizeWA(payload.noWa);
+  if (!waCheck.valid) {
+    return { status: 'error', message: waCheck.error };
+  }
+
+  const normalizedWa = waCheck.normalized;
+  const duplicate = state.donatur.find(
+    (d) => (validateAndNormalizeWA(d.noWa).normalized || d.noWa) === normalizedWa
+  );
+  if (duplicate) {
+    return {
+      status: 'error',
+      code: 'DUPLICATE_WA',
+      message: `Nomor WA ${normalizedWa} sudah terdaftar atas nama ${duplicate.namaLengkap} (ID: ${duplicate.idDonatur}).`,
+      data: { existingDonatur: duplicate },
+    };
+  }
+
+  const now = new Date();
+  const ym = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const seq = String(state.donatur.length + 1).padStart(4, '0');
+  const newDonatur: Donatur = {
+    idDonatur: `DNR-${ym}-${seq}`,
+    tanggalDaftar: formatNowLocal(),
+    namaLengkap: payload.namaLengkap.trim(),
+    noWa: normalizedWa,
+    email: (payload.email || '').trim(),
+    domisili: (payload.domisili || '').trim(),
+    programDonasi: payload.programDonasi.trim() || 'Infaq Umum Rutin',
+    nominalKomitmen: payload.nominalKomitmen,
+    tglJatuhTempo: payload.tglJatuhTempo,
+    metodeDaftar: payload.metodeDaftar,
+    namaPerantara: payload.namaPerantara,
+    statusAktif: 'Aktif',
+  };
+
+  state.donatur.push(newDonatur);
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: `Donatur ${newDonatur.namaLengkap} berhasil disimpan (Mode Lokal).`,
+    data: { donatur: newDonatur },
+  };
+}
+
+export async function submitPembayaran(
+  gasUrl: string,
+  payload: SubmitPembayaranPayload
+): Promise<ApiResult<{ transaksi?: TransaksiDonasi; savedFileName?: string }>> {
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ transaksi?: TransaksiDonasi; savedFileName?: string }>(url, {
+        action: 'submitPembayaran',
+        ...payload,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal mengirim konfirmasi pembayaran ke Apps Script.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  const waCheck = validateAndNormalizeWA(payload.noWa);
+  if (!waCheck.valid) {
+    return { status: 'error', message: waCheck.error };
+  }
+
+  const ext = payload.fileMimeType.includes('pdf') ? 'pdf' : 'jpg';
+  const savedFileName = previewAutoRenameFile({
+    bulanTagihan: payload.bulanTagihan,
+    namaDonatur: payload.namaDonatur,
+    nominalTransfer: payload.nominalTransfer,
+    extension: ext,
+  });
+
+  const now = new Date();
+  const ymd = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const seq = String(state.transaksi.length + 1).padStart(3, '0');
+
+  const newTrx: TransaksiDonasi = {
+    idTransaksi: `TRX-${ymd}-${seq}`,
+    waktuInput: formatNowLocal(),
+    idDonatur: payload.idDonatur || '-',
+    namaDonatur: payload.namaDonatur.trim(),
+    noWa: waCheck.normalized,
+    bulanTagihan: payload.bulanTagihan,
+    nominalTransfer: payload.nominalTransfer,
+    bankTujuan: payload.bankTujuan,
+    linkBuktiDrive: payload.fileBase64,
+    statusVerifikasi: 'Pending',
+    diinputOleh: payload.diinputOleh || 'Donatur (Mandiri)',
+    statusPenyaluran: 'Belum Disalurkan',
+  };
+
+  state.transaksi.push(newTrx);
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: 'Konfirmasi pembayaran berhasil dicatat (Mode Lokal) dan menunggu verifikasi admin.',
+    data: { transaksi: newTrx, savedFileName },
+  };
+}
+
+export async function verifikasiTransaksi(
+  gasUrl: string,
+  idTransaksi: string,
+  status: StatusVerifikasi
+): Promise<ApiResult<{ idTransaksi: string; statusVerifikasi: StatusVerifikasi }>> {
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ idTransaksi: string; statusVerifikasi: StatusVerifikasi }>(url, {
+        action: 'verifikasiTransaksi',
+        idTransaksi,
+        status,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal memperbarui verifikasi transaksi.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  const idx = state.transaksi.findIndex((t) => t.idTransaksi === idTransaksi);
+  if (idx === -1) {
+    return { status: 'error', message: `Transaksi ${idTransaksi} tidak ditemukan.` };
+  }
+  state.transaksi[idx].statusVerifikasi = status;
+  if (status === 'Ditolak') {
+    state.transaksi[idx].statusPenyaluran = 'Belum Disalurkan';
+  }
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: `Transaksi ${idTransaksi} berhasil diubah menjadi ${status}.`,
+    data: { idTransaksi, statusVerifikasi: status },
+  };
+}
+
+export async function updateStatusPenyaluran(
+  gasUrl: string,
+  idTransaksi: string,
+  statusPenyaluran: StatusPenyaluran
+): Promise<ApiResult<{ idTransaksi: string; statusPenyaluran: StatusPenyaluran }>> {
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ idTransaksi: string; statusPenyaluran: StatusPenyaluran }>(url, {
+        action: 'updateStatusPenyaluran',
+        idTransaksi,
+        statusPenyaluran,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal memperbarui status penyaluran.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  const idx = state.transaksi.findIndex((t) => t.idTransaksi === idTransaksi);
+  if (idx === -1) {
+    return { status: 'error', message: `Transaksi ${idTransaksi} tidak ditemukan.` };
+  }
+  state.transaksi[idx].statusPenyaluran = statusPenyaluran;
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: `Status penyaluran ${idTransaksi} diubah menjadi ${statusPenyaluran}.`,
+    data: { idTransaksi, statusPenyaluran },
+  };
+}
+
+export async function updateStatusDonatur(
+  gasUrl: string,
+  idDonatur: string,
+  status: StatusAktif
+): Promise<ApiResult<{ idDonatur: string; statusAktif: StatusAktif }>> {
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ idDonatur: string; statusAktif: StatusAktif }>(url, {
+        action: 'updateStatusDonatur',
+        idDonatur,
+        status,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal memperbarui status donatur.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  const idx = state.donatur.findIndex((d) => d.idDonatur === idDonatur);
+  if (idx === -1) {
+    return { status: 'error', message: `Donatur ${idDonatur} tidak ditemukan.` };
+  }
+  state.donatur[idx].statusAktif = status;
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: `Status donatur ${idDonatur} diubah menjadi ${status}.`,
+    data: { idDonatur, statusAktif: status },
+  };
+}

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DAIKITA — Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah</title>
+    <meta
+      name="description"
+      content="DAIKITA: Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah. Aplikasi manajemen donatur rutin serverless terhubung Google Sheets & Google Drive."
+    />
+    <meta property="og:title" content="DAIKITA — Sistem Manajemen Donatur Rutin" />
+    <meta
+      property="og:description"
+      content="Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      (function () {
+        try {
+          var pref = localStorage.getItem('daikita_theme_pref_v1') || 'system';
+          var isDark =
+            pref === 'dark' ||
+            (pref === 'system' &&
+              window.matchMedia &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="antialiased selection:bg-emerald-100 selection:text-emerald-900 dark:selection:bg-emerald-900/60 dark:selection:text-emerald-100">
+    <div id="root">
+      <div
+        style="
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 24px;
+          font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif;
+          background: linear-gradient(135deg, #f0fdf9 0%, #f0f9ff 100%);
+          color: #0f172a;
+        "
+      >
+        <div
+          style="
+            max-width: 420px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.9);
+            border-radius: 24px;
+            padding: 28px;
+            text-align: center;
+            box-shadow: 0 12px 36px rgba(15, 23, 42, 0.06);
+          "
+        >
+          <p style="font-size: 16px; font-weight: 700; margin: 0 0 6px 0; color: #065f46;">
+            Memuat DAIKITA...
+          </p>
+          <p style="font-size: 12px; margin: 0 0 10px 0; color: #0f766e;">
+            Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.
+          </p>
+          <p style="font-size: 12px; margin: 0; color: #475569; line-height: 1.6;">
+            Jika halaman ini tidak berubah, pastikan JavaScript aktif dan aplikasi di-deploy dari folder hasil build (dist).
+          </p>
+        </div>
+      </div>
+    </div>
+    <noscript>
+      <div
+        style="
+          max-width: 480px;
+          margin: 40px auto;
+          padding: 24px;
+          border-radius: 16px;
+          background: #fffbeb;
+          border: 1px solid #fde68a;
+          color: #92400e;
+          font-family: sans-serif;
+          text-align: center;
+        "
+      >
+        Aplikasi DAIKITA memerlukan JavaScript agar dapat berjalan dengan baik.
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

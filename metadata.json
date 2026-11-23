@@ -1,0 +1,6 @@
+{
+  "name": "Sistem Manajemen Donatur Rutin",
+  "description": "Aplikasi web manajemen donatur rutin serverless dengan Google Apps Script, Google Sheets, Google Drive, dan penagihan cerdas WhatsApp wa.me.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

@@ -1,8 +1,9 @@
 export type TabKey =
   | 'pendaftaran'
   | 'konfirmasi'
-  | 'dashboard'
   | 'verifikasi'
+  | 'mutasi'
+  | 'dashboard'
   | 'grup_wa'
   | 'broadcast';
 
@@ -12,8 +13,9 @@ export type RolePengurus = 'Publik' | 'Admin' | 'Super Admin';
 export type JenisKelamin = 'Laki-laki' | 'Perempuan' | '';
 export type MinatGrupWa = 'Ya' | 'Tidak';
 export type StatusGrupWa = 'Sudah Bergabung' | 'Belum Bergabung';
+export type JenisDonatur = 'Rutin' | 'Umum';
 
-export type StatusAktif = 'Aktif' | 'Cuti';
+export type StatusAktif = 'Aktif' | 'Non Aktif';
 export type StatusVerifikasi = 'Pending' | 'Valid' | 'Ditolak';
 export type StatusPenyaluran = 'Belum Disalurkan' | 'Sudah Disalurkan';
 export type StatusBayarBulan = 'Lunas' | 'Menunggu Verifikasi' | 'Belum Bayar';
@@ -91,18 +93,19 @@ export interface TransaksiDonasi {
   idTransaksi: string;
   waktuInput: string;
   tanggalTransfer: string; // YYYY-MM-DD
+  jenisDonatur?: JenisDonatur; // 'Rutin' | 'Umum'
   idDonatur: string;
   namaDonatur: string;
   noWa: string;
   bulanTagihan: string; // YYYY-MM
-  nominalKomitmen: number; // Porsi donasi komitmen
-  donasiLainnya: number; // Kelebihan di atas komitmen
-  nominalTransfer: number; // Total = nominalKomitmen + donasiLainnya
+  nominalKomitmen: number; // Porsi donasi komitmen (0 untuk Donatur Umum)
+  donasiLainnya: number; // Kelebihan di atas komitmen (untuk Donatur Rutin)
+  nominalTransfer: number; // Total dana masuk
   bankTujuan: string;
   linkBuktiDrive: string;
   statusVerifikasi: StatusVerifikasi;
   diinputOleh: string;
-  statusPenyaluran: StatusPenyaluran;
+  statusPenyaluran?: StatusPenyaluran;
   keterangan?: string;
 }
 
@@ -170,6 +173,7 @@ export interface NotifDeliveryResult {
 }
 
 export interface SubmitPembayaranPayload {
+  jenisDonatur?: JenisDonatur;
   idDonatur: string;
   namaDonatur: string;
   noWa: string;

@@ -43,29 +43,29 @@ const INFO_REKENING_DEFAULT = [
 
 /** Pesan 1: Notifikasi Awal Pendaftaran Donatur Baru (rotasi anti-spam) */
 const DEFAULT_WA_TEMPLATES = [
-  "Assalamu'alaikum Warahmatullahi Wabarakatuh.\n\nAhlan wa sahlan {sapaan} *{nama}*,\nTerima kasih telah bergabung sebagai Donatur Rutin *Kafalah Dai* di *{lembaga}*.\n\n*Rincian Data Donatur:*\n• ID Donatur: *{id_donatur}*\n• Nama Lengkap: {nama}\n• Jenis Kelamin: {jenis_kelamin}\n• Domisili: {domisili}\n• Komitmen Bulanan: *{nominal}*\n• Jadwal Pengingat: Setiap tanggal {tgl_pengingat}\n• Perantara: {perantara}\n\nPenyaluran donasi dapat melalui rekening resmi:\n{rekening}\n\nKonfirmasi bukti transfer dapat dikirim melalui web:\n{link_konfirmasi}\natau melalui japri admin via nomor ini.\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._\n_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._\n_Aamiin._",
-  "Bismillah, Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} *{nama}*.\n\nAlhamdulillah, pendaftaran Donatur Rutin *Kafalah Dai* di *{lembaga}* telah resmi tercatat.\n\n*Rincian Data Donatur:*\n- ID Donatur: *{id_donatur}*\n- Nama: {nama}\n- Jenis Kelamin: {jenis_kelamin}\n- Wilayah: {domisili}\n- Komitmen Bulanan: *{nominal} / bulan*\n- Pengingat Rutin: Tanggal {tgl_pengingat} setiap bulan\n- Perantara: {perantara}\n\nSalurkan donasi melalui rekening resmi berikut:\n{rekening}\n\nKonfirmasi bukti transfer dapat dikirim melalui web:\n{link_konfirmasi}\natau melalui japri admin via nomor ini.\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._\n_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._\n_Aamiin._",
-  "Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} *{nama}*\n\nTerima kasih atas kepercayaan {sapaan} mendukung program *Kafalah Dai* bersama *{lembaga}*.\n\n*Detail Kepesertaan Donatur:*\n• ID Donatur: *{id_donatur}*\n• Nama Lengkap: {nama}\n• Jenis Kelamin: {jenis_kelamin}\n• Domisili: {domisili}\n• Nominal Komitmen: *{nominal}*\n• Tanggal Pengingat: Setiap tanggal {tgl_pengingat}\n• Perantara: {perantara}\n\nRekening Resmi Penyaluran:\n{rekening}\n\nKonfirmasi bukti transfer dapat dikirim melalui web:\n{link_konfirmasi}\natau melalui japri admin via nomor ini.\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._\n_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._\n_Aamiin._"
+  "Assalamu'alaikum Warahmatullahi Wabarakatuh.\n\nAhlan wa sahlan {sapaan} *{nama}*,\nTerima kasih telah bergabung sebagai Donatur Rutin *Kafalah Dai* di *{lembaga}*.\n\n*Rincian Data Donatur:*\n• ID Donatur: *{id_donatur}*\n• Nama Lengkap: {nama}\n• Jenis Kelamin: {jenis_kelamin}\n• Domisili: {domisili}\n• Komitmen Bulanan: *{nominal}*\n• Jadwal Pengingat: Setiap tanggal {tgl_pengingat}\n• Perantara: {perantara}\n\nPenyaluran donasi dapat melalui rekening resmi:\n{rekening}\n{qris_note}\n\nKonfirmasi bukti transfer dapat dikirim melalui web:\n{link_konfirmasi}\natau melalui japri admin via nomor ini.\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._\n_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._\n_Aamiin._",
+  "Bismillah, Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} *{nama}*.\n\nAlhamdulillah, pendaftaran Donatur Rutin *Kafalah Dai* di *{lembaga}* telah resmi tercatat.\n\n*Rincian Data Donatur:*\n- ID Donatur: *{id_donatur}*\n- Nama: {nama}\n- Jenis Kelamin: {jenis_kelamin}\n- Wilayah: {domisili}\n- Komitmen Bulanan: *{nominal} / bulan*\n- Pengingat Rutin: Tanggal {tgl_pengingat} setiap bulan\n- Perantara: {perantara}\n\nSalurkan donasi melalui rekening resmi berikut:\n{rekening}\n{qris_note}\n\nKonfirmasi bukti transfer dapat dikirim melalui web:\n{link_konfirmasi}\natau melalui japri admin via nomor ini.\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._\n_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._\n_Aamiin._",
+  "Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} *{nama}*\n\nTerima kasih atas kepercayaan {sapaan} mendukung program *Kafalah Dai* bersama *{lembaga}*.\n\n*Detail Kepesertaan Donatur:*\n• ID Donatur: *{id_donatur}*\n• Nama Lengkap: {nama}\n• Jenis Kelamin: {jenis_kelamin}\n• Domisili: {domisili}\n• Nominal Komitmen: *{nominal}*\n• Tanggal Pengingat: Setiap tanggal {tgl_pengingat}\n• Perantara: {perantara}\n\nRekening Resmi:\n{rekening}\n{qris_note}\n\nKonfirmasi bukti transfer dapat dikirim melalui web:\n{link_konfirmasi}\natau melalui japri admin via nomor ini.\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._\n_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._\n_Aamiin._"
 ];
 
-/** Pesan 2: Arahan Save Nomor (jeda 1 menit setelah daftar) */
+/** Pesan 2: Arahan Save Nomor + Tautan Grup WA (jeda 1 menit setelah daftar) */
 const DEFAULT_WA_FOLLOWUP_TEMPLATES = [
-  "Assalamu'alaikum {sapaan} *{nama}*,\n\nMohon berkenan untuk *menyimpan (save) nomor WhatsApp ini* di kontak {sapaan} dengan nama *{lembaga}*.\n\nDengan menyimpan nomor ini:\n• Tautan konfirmasi & tautan grup di pesan sebelumnya dapat langsung diklik\n• Notifikasi pengingat rutin & informasi penyaluran *Kafalah Dai* dapat diterima dengan lancar\n• {sapaan} dapat langsung japri admin di nomor ini kapan saja\n\n_Syukran wa jazakumullahu khairan._",
-  "Bismillah, izin mengingatkan kembali {sapaan} *{nama}* 😊\n\nAgar tautan web konfirmasi dapat diklik dan {sapaan} selalu menerima notifikasi pengingat rutin serta laporan penyaluran *Kafalah Dai*, silakan *simpan nomor ini* di buku kontak HP {sapaan} (contoh: *DAIKITA Lajnah Dai*).\n\nJika ada pertanyaan atau konfirmasi transfer, silakan balas langsung pesan ini ya {sapaan}.\n_Jazakumullahu khairan._",
-  "Halo {sapaan} *{nama}*, satu langkah kecil agar komunikasi kita semakin lancar:\n\nSilakan *save nomor resmi {lembaga}* ini di kontak HP {sapaan}. Dengan begitu, gambar QRIS, pengingat bulanan, serta update program *Kafalah Dai* akan tampil utuh dan tautannya langsung bisa dibuka.\n\n_Barakallahu fiikum, terima kasih banyak {sapaan}._"
+  "Assalamu'alaikum {sapaan} *{nama}*,\n\nMohon berkenan untuk *menyimpan (save) nomor WhatsApp ini* di kontak {sapaan} dengan nama *{lembaga}*.\n\nDengan menyimpan nomor ini:\n• Tautan konfirmasi & tautan grup di pesan ini dapat langsung diklik\n• Notifikasi pengingat rutin & informasi program *Kafalah Dai* dapat diterima dengan lancar\n• {sapaan} dapat langsung japri admin di nomor ini kapan saja\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._",
+  "Bismillah, izin mengingatkan kembali {sapaan} *{nama}* 😊\n\nAgar tautan web konfirmasi & tautan grup dapat diklik dan {sapaan} selalu menerima notifikasi pengingat rutin serta info program *Kafalah Dai*, silakan *simpan nomor ini* di buku kontak HP {sapaan} (contoh: *DAIKITA Lajnah Dai*).\n{link_grup_section}\nJika ada pertanyaan atau konfirmasi transfer, silakan balas langsung pesan ini ya {sapaan}.\n_Jazakumullahu khairan._",
+  "Halo {sapaan} *{nama}*, satu langkah kecil agar komunikasi kita semakin lancar:\n\nSilakan *save nomor resmi {lembaga}* ini di kontak HP {sapaan}. Dengan begitu, gambar QRIS, pengingat bulanan, serta update program *Kafalah Dai* akan tampil utuh dan tautannya langsung bisa dibuka.\n{link_grup_section}\n_Barakallahu fiikum, terima kasih banyak {sapaan}._"
 ];
 
 /** Template WA Reminder Bulanan (ringkas tanpa rincian data daftar + otomatis lampirkan QRIS bila ada) */
 const DEFAULT_WA_REMINDER_TEMPLATES = [
   "Assalamu'alaikum Warahmatullahi Wabarakatuh, {sapaan} *{nama}*.\n\nSemoga {sapaan} sekeluarga senantiasa dalam kesehatan dan lindungan Allah.\n\nIzin menyampaikan pengingat rutin donasi *Kafalah Dai* untuk periode *{bulan}* sebesar *{nominal}* melalui *{lembaga}*.\n\nPenyaluran dapat melalui rekening resmi:\n{rekening}\n{qris_note}\n\nKonfirmasi bukti transfer dapat dikirim melalui web:\n{link_konfirmasi}\natau melalui japri admin via nomor ini.\n\n_Syukran wa jazakumullahu khairan._\n_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._\n_Aamiin._",
   "Bismillah, Assalamu'alaikum {sapaan} *{nama}*.\n\nMengingatkan dengan penuh hormat untuk jadwal donasi rutin *Kafalah Dai* periode *{bulan}* (Komitmen: *{nominal}*).\n\nSalurkan melalui rekening resmi berikut:\n{rekening}\n{qris_note}\n\nKonfirmasi bukti transfer dapat dikirim melalui web:\n{link_konfirmasi}\natau melalui japri admin via nomor ini.\n\n_Syukran wa jazakumullahu khairan._\n_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._\n_Aamiin._",
-  "Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} *{nama}*.\n\nWaktu kebaikan bulan *{bulan}* telah tiba. Izin mengingatkan komitmen donasi *Kafalah Dai* sebesar *{nominal}* bersama *{lembaga}*.\n\nRekening resmi penyaluran:\n{rekening}\n{qris_note}\n\nKonfirmasi bukti transfer dapat dikirim melalui web:\n{link_konfirmasi}\natau melalui japri admin via nomor ini.\n\n_Syukran wa jazakumullahu khairan._\n_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._\n_Aamiin._"
+  "Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} *{nama}*.\n\nWaktu kebaikan bulan *{bulan}* telah tiba. Izin mengingatkan komitmen donasi *Kafalah Dai* sebesar *{nominal}* bersama *{lembaga}*.\n\nRekening resmi:\n{rekening}\n{qris_note}\n\nKonfirmasi bukti transfer dapat dikirim melalui web:\n{link_konfirmasi}\natau melalui japri admin via nomor ini.\n\n_Syukran wa jazakumullahu khairan._\n_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._\n_Aamiin._"
 ];
 
 /** 1 Template Email Pendaftaran Awal */
 const DEFAULT_EMAIL_TEMPLATE_DAFTAR = {
   subject: 'Selamat Bergabung di {lembaga} — Donatur Rutin Kafalah Dai ({id_donatur})',
-  body: "Assalamu'alaikum Warahmatullahi Wabarakatuh,\n\nYth. {sapaan} {nama},\n\nTerima kasih telah bergabung sebagai Donatur Rutin Program Kafalah Dai bersama {lembaga}.\n\nRincian Data Donatur:\n• ID Donatur: {id_donatur}\n• Nama Lengkap: {nama}\n• Jenis Kelamin: {jenis_kelamin}\n• Domisili: {domisili}\n• Nominal Komitmen: {nominal} / bulan\n• Jadwal Pengingat Rutin: Setiap tanggal {tgl_pengingat}\n• Perantara / Pengurus: {perantara}\n\nPenyaluran donasi dapat melalui rekening resmi berikut:\n{rekening}\n\nKonfirmasi bukti transfer dapat dikirim melalui web:\n{link_konfirmasi}\natau melalui japri admin via nomor WhatsApp resmi kami.\n{link_grup_section}\nSyukran wa jazakumullahu khairan.\nSemoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir.\nAamiin.\n\nWassalamu'alaikum Warahmatullahi Wabarakatuh,\n{lembaga}"
+  body: "Assalamu'alaikum Warahmatullahi Wabarakatuh,\n\nYth. {sapaan} {nama},\n\nTerima kasih telah bergabung sebagai Donatur Rutin Program Kafalah Dai bersama {lembaga}.\n\nRincian Data Donatur:\n• ID Donatur: {id_donatur}\n• Nama Lengkap: {nama}\n• Jenis Kelamin: {jenis_kelamin}\n• Domisili: {domisili}\n• Nominal Komitmen: {nominal} / bulan\n• Jadwal Pengingat Rutin: Setiap tanggal {tgl_pengingat}\n• Perantara / Pengurus: {perantara}\n\nPenyaluran donasi dapat melalui rekening resmi berikut:\n{rekening}\n{qris_note}\n\nKonfirmasi bukti transfer dapat dikirim melalui web:\n{link_konfirmasi}\natau melalui japri admin via nomor WhatsApp resmi kami.\n{link_grup_section}\nSyukran wa jazakumullahu khairan.\nSemoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir.\nAamiin.\n\nWassalamu'alaikum Warahmatullahi Wabarakatuh,\n{lembaga}"
 };
 
 /** 1 Template Email Pengingat / Reminder Bulanan */
@@ -84,6 +84,7 @@ const BULAN_INDO_SERVER = [
 const SHEET_NAMES = {
   DONATUR: 'Master_Donatur',
   TRANSAKSI: 'Transaksi_Donasi',
+  DONASI_LAINNYA: 'Donasi_Lainnya',
   PANITIA: 'Data_Panitia',
   PENGATURAN: 'Pengaturan',
   ANTREAN: 'Antrean_Pesan'
@@ -114,6 +115,7 @@ const HEADERS = {
     'ID_Transaksi',
     'Waktu_Input',
     'Tanggal_Transfer',
+    'Jenis_Donatur',
     'ID_Donatur',
     'Nama_Donatur',
     'No_WA',
@@ -127,6 +129,21 @@ const HEADERS = {
     'Diinput_Oleh',
     'Status_Penyaluran',
     'Keterangan'
+  ],
+  Donasi_Lainnya: [
+    'ID_Transaksi',
+    'Tanggal_Transfer',
+    'Bulan_Tagihan',
+    'Jenis_Sumber',
+    'ID_Donatur',
+    'Nama_Donatur',
+    'No_WA',
+    'Nominal_Komitmen',
+    'Nominal_Donasi_Lainnya',
+    'Total_Transfer',
+    'Status_Verifikasi',
+    'Keterangan',
+    'Link_Bukti_Drive'
   ],
   Data_Panitia: [
     'Kode_Panitia',
@@ -203,6 +220,7 @@ function setupDatabase() {
       'ID_Transaksi',
       'Waktu_Input',
       'Tanggal_Transfer',
+      'Jenis_Donatur',
       'ID_Donatur',
       'No_WA',
       'Bulan_Tagihan',
@@ -215,6 +233,7 @@ function setupDatabase() {
       ID_Transaksi: 165,
       Waktu_Input: 165,
       Tanggal_Transfer: 135,
+      Jenis_Donatur: 120,
       ID_Donatur: 145,
       Nama_Donatur: 210,
       No_WA: 155,
@@ -228,6 +247,35 @@ function setupDatabase() {
       Diinput_Oleh: 185,
       Status_Penyaluran: 165,
       Keterangan: 240
+    }
+  });
+
+  ensureSheetWithHeaders_(ss, SHEET_NAMES.DONASI_LAINNYA, HEADERS.Donasi_Lainnya, {
+    textHeaders: [
+      'ID_Transaksi',
+      'Tanggal_Transfer',
+      'Bulan_Tagihan',
+      'Jenis_Sumber',
+      'ID_Donatur',
+      'No_WA',
+      'Status_Verifikasi',
+      'Keterangan'
+    ],
+    currencyHeaders: ['Nominal_Komitmen', 'Nominal_Donasi_Lainnya', 'Total_Transfer'],
+    widthByHeader: {
+      ID_Transaksi: 165,
+      Tanggal_Transfer: 135,
+      Bulan_Tagihan: 125,
+      Jenis_Sumber: 165,
+      ID_Donatur: 145,
+      Nama_Donatur: 210,
+      No_WA: 155,
+      Nominal_Komitmen: 150,
+      Nominal_Donasi_Lainnya: 170,
+      Total_Transfer: 155,
+      Status_Verifikasi: 140,
+      Keterangan: 240,
+      Link_Bukti_Drive: 240
     }
   });
 
@@ -295,6 +343,8 @@ function setupDatabase() {
 
   ensureMigratedDefaultLogo_(ss);
   ensureMigratedDefaultRekeningAndTemplates_(ss);
+  ensureMigratedV3GrupFollowupAndNonAktif_(ss);
+  backfillDonasiLainnyaSheet_(ss);
 
   // Pasang trigger berkala 5 menit untuk mengirim antrean terjadwal & follow-up 1 menit
   let triggerStatus = '';
@@ -960,11 +1010,147 @@ function ensureMigratedDefaultRekeningAndTemplates_(ss) {
   }
 }
 
+function ensureMigratedV3GrupFollowupAndNonAktif_(ss) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    if (props.getProperty('MIGRATED_V3_GRUP_FOLLOWUP_NONAKTIF') === '1') return;
+
+    // 1. Pastikan template WA Pesan 2 (Save Nomor) memuat {link_grup_section}
+    const cfgSheet = ss.getSheetByName(SHEET_NAMES.PENGATURAN);
+    if (cfgSheet && cfgSheet.getLastRow() > 1) {
+      const cfg = loadConfigObject_(ss);
+      const updatedFollowups = (cfg.waFollowupTemplates || DEFAULT_WA_FOLLOWUP_TEMPLATES).map(function (t) {
+        const s = String(t || '').trim();
+        if (!s) return s;
+        if (s.indexOf('{link_grup') === -1) {
+          return s + '\n{link_grup_section}';
+        }
+        return s;
+      });
+      upsertSettingKey_(cfgSheet, 'waFollowupTemplates', JSON.stringify(updatedFollowups));
+    }
+
+    // 2. Migrasi aman status 'Cuti' -> 'Non Aktif' pada Master_Donatur
+    const donorSheet = ss.getSheetByName(SHEET_NAMES.DONATUR);
+    if (donorSheet && donorSheet.getLastRow() > 1) {
+      const idxMap = getHeaderIndexMap_(donorSheet);
+      const statusCol = idxMap.Status_Aktif;
+      if (statusCol) {
+        const numRows = donorSheet.getLastRow() - 1;
+        const vals = donorSheet.getRange(2, statusCol, numRows, 1).getValues();
+        let changed = false;
+        for (let i = 0; i < vals.length; i++) {
+          const cur = String(vals[i][0] || '').trim().toLowerCase();
+          if (cur === 'cuti') {
+            vals[i][0] = 'Non Aktif';
+            changed = true;
+          }
+        }
+        if (changed) {
+          donorSheet.getRange(2, statusCol, numRows, 1).setNumberFormat('@').setValues(vals);
+        }
+      }
+    }
+
+    props.setProperty('MIGRATED_V3_GRUP_FOLLOWUP_NONAKTIF', '1');
+  } catch (err) {
+    Logger.log('Info migrasi V3: ' + err);
+  }
+}
+
+function backfillDonasiLainnyaSheet_(ss) {
+  try {
+    const trxSheet = ss.getSheetByName(SHEET_NAMES.TRANSAKSI);
+    const otherSheet = ss.getSheetByName(SHEET_NAMES.DONASI_LAINNYA);
+    if (!trxSheet || !otherSheet) return;
+
+    const existingOtherIds = {};
+    readSheetAsObjects_(otherSheet).forEach(function (row) {
+      const id = String(row.ID_Transaksi || '').trim();
+      if (id) existingOtherIds[id] = true;
+    });
+
+    const allTrx = readSheetAsObjects_(trxSheet);
+    allTrx.forEach(function (row) {
+      const idTrx = String(row.ID_Transaksi || '').trim();
+      if (!idTrx || existingOtherIds[idTrx]) return;
+      const jenis = normalizeJenisDonatur_(row.Jenis_Donatur, row.ID_Donatur);
+      const donasiLainnya = Math.max(0, parseNumber_(row.Donasi_Lainnya));
+      const nominalTransfer = parseNumber_(row.Nominal_Transfer);
+      const nominalKomitmen = parseNumber_(row.Nominal_Komitmen);
+      if (jenis === 'Umum' || donasiLainnya > 0) {
+        appendDonasiLainnyaRow_(ss, {
+          idTransaksi: idTrx,
+          tanggalTransfer: formatIsoDateCell_(row.Tanggal_Transfer) || formatCellDateString_(row.Waktu_Input).substring(0, 10),
+          bulanTagihan: formatBulanTagihan_(row.Bulan_Tagihan),
+          jenisSumber: jenis === 'Umum' ? 'Donatur Umum' : 'Kelebihan Komitmen',
+          idDonatur: String(row.ID_Donatur || (jenis === 'Umum' ? 'UMUM' : '-')).trim(),
+          namaDonatur: String(row.Nama_Donatur || 'Hamba Allah').trim(),
+          noWa: safeNormalizeOrKeep_(row.No_WA),
+          nominalKomitmen: jenis === 'Umum' ? 0 : nominalKomitmen,
+          nominalDonasiLainnya: jenis === 'Umum' ? nominalTransfer : donasiLainnya,
+          totalTransfer: nominalTransfer,
+          statusVerifikasi: String(row.Status_Verifikasi || 'Pending').trim(),
+          keterangan: String(row.Keterangan || '').trim(),
+          linkBuktiDrive: String(row.Link_Bukti_Drive || '').trim()
+        });
+        existingOtherIds[idTrx] = true;
+      }
+    });
+  } catch (err) {
+    Logger.log('Info backfill Donasi_Lainnya: ' + err);
+  }
+}
+
+function appendDonasiLainnyaRow_(ss, item) {
+  let otherSheet = ss.getSheetByName(SHEET_NAMES.DONASI_LAINNYA);
+  if (!otherSheet) {
+    otherSheet = ensureSheetWithHeaders_(ss, SHEET_NAMES.DONASI_LAINNYA, HEADERS.Donasi_Lainnya, {
+      textHeaders: [
+        'ID_Transaksi',
+        'Tanggal_Transfer',
+        'Bulan_Tagihan',
+        'Jenis_Sumber',
+        'ID_Donatur',
+        'No_WA',
+        'Status_Verifikasi',
+        'Keterangan'
+      ],
+      currencyHeaders: ['Nominal_Komitmen', 'Nominal_Donasi_Lainnya', 'Total_Transfer']
+    });
+  }
+  appendRowByHeaderMap_(otherSheet, {
+    ID_Transaksi: String(item.idTransaksi || ''),
+    Tanggal_Transfer: String(item.tanggalTransfer || ''),
+    Bulan_Tagihan: String(item.bulanTagihan || ''),
+    Jenis_Sumber: String(item.jenisSumber || 'Kelebihan Komitmen'),
+    ID_Donatur: String(item.idDonatur || '-'),
+    Nama_Donatur: String(item.namaDonatur || 'Hamba Allah'),
+    No_WA: String(item.noWa || ''),
+    Nominal_Komitmen: Math.max(0, parseNumber_(item.nominalKomitmen)),
+    Nominal_Donasi_Lainnya: Math.max(0, parseNumber_(item.nominalDonasiLainnya)),
+    Total_Transfer: Math.max(0, parseNumber_(item.totalTransfer)),
+    Status_Verifikasi: String(item.statusVerifikasi || 'Pending'),
+    Keterangan: String(item.keterangan || ''),
+    Link_Bukti_Drive: String(item.linkBuktiDrive || '')
+  }, [
+    'ID_Transaksi',
+    'Tanggal_Transfer',
+    'Bulan_Tagihan',
+    'Jenis_Sumber',
+    'ID_Donatur',
+    'No_WA',
+    'Status_Verifikasi',
+    'Keterangan'
+  ], ['Nominal_Komitmen', 'Nominal_Donasi_Lainnya', 'Total_Transfer']);
+}
+
 // ==================== HANDLER DATA UTAMA ====================
 function getInitialData_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss.getSheetByName(SHEET_NAMES.DONATUR) ||
       !ss.getSheetByName(SHEET_NAMES.TRANSAKSI) ||
+      !ss.getSheetByName(SHEET_NAMES.DONASI_LAINNYA) ||
       !ss.getSheetByName(SHEET_NAMES.PANITIA) ||
       !ss.getSheetByName(SHEET_NAMES.PENGATURAN) ||
       !ss.getSheetByName(SHEET_NAMES.ANTREAN)) {
@@ -972,6 +1158,7 @@ function getInitialData_() {
   } else {
     ensureMigratedDefaultLogo_(ss);
     ensureMigratedDefaultRekeningAndTemplates_(ss);
+    ensureMigratedV3GrupFollowupAndNonAktif_(ss);
   }
 
   const config = loadConfigObject_(ss);
@@ -993,7 +1180,7 @@ function getInitialData_() {
       metodeDaftar: String(row.Metode_Daftar || 'Mandiri').trim(),
       kodePerantara: String(row.Kode_Perantara || '').trim(),
       namaPerantara: String(row.Nama_Perantara || 'Langsung (Tanpa Perantara)').trim(),
-      statusAktif: String(row.Status_Aktif || 'Aktif').trim(),
+      statusAktif: normalizeStatusAktif_(row.Status_Aktif),
       minatGrupWa: normalizeMinatGrup_(row.Minat_Grup_WA),
       statusGrupWa: normalizeStatusGrup_(row.Status_Grup_WA)
     };
@@ -1005,15 +1192,19 @@ function getInitialData_() {
     const rawPenyaluran = String(row.Status_Penyaluran || '').trim();
     const waktuInput = formatCellDateString_(row.Waktu_Input);
     const tanggalTransfer = formatIsoDateCell_(row.Tanggal_Transfer) || waktuInput.substring(0, 10);
+    const jenisDonatur = normalizeJenisDonatur_(row.Jenis_Donatur, row.ID_Donatur);
     const nominalTransfer = parseNumber_(row.Nominal_Transfer);
-    const donasiLainnya = Math.max(0, parseNumber_(row.Donasi_Lainnya));
+    const donasiLainnya = jenisDonatur === 'Umum' ? 0 : Math.max(0, parseNumber_(row.Donasi_Lainnya));
     const nominalKomitmenRaw = parseNumber_(row.Nominal_Komitmen);
-    const nominalKomitmen = nominalKomitmenRaw > 0 ? nominalKomitmenRaw : Math.max(0, nominalTransfer - donasiLainnya);
+    const nominalKomitmen = jenisDonatur === 'Umum'
+      ? 0
+      : (nominalKomitmenRaw > 0 ? nominalKomitmenRaw : Math.max(0, nominalTransfer - donasiLainnya));
 
     return {
       idTransaksi: String(row.ID_Transaksi || '').trim(),
       waktuInput: waktuInput,
       tanggalTransfer: tanggalTransfer,
+      jenisDonatur: jenisDonatur,
       idDonatur: String(row.ID_Donatur || '').trim(),
       namaDonatur: String(row.Nama_Donatur || '').trim(),
       noWa: safeNormalizeOrKeep_(row.No_WA),
@@ -1397,6 +1588,75 @@ function escapeHtmlServer_(str) {
     .replace(/"/g, '&quot;');
 }
 
+function extractDriveFileIdServer_(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  const pathMatch = raw.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (pathMatch) return pathMatch[1];
+  const queryMatch = raw.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (queryMatch) return queryMatch[1];
+  const lhMatch = raw.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/);
+  if (lhMatch) return lhMatch[1];
+  return '';
+}
+
+function buildDirectImageCandidatesServer_(rawUrl) {
+  const clean = String(rawUrl || '').trim();
+  if (!clean || !/^https?:\/\//i.test(clean)) return [];
+  const fileId = extractDriveFileIdServer_(clean);
+  if (fileId) {
+    try {
+      const f = DriveApp.getFileById(fileId);
+      f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (shareErr) {
+      Logger.log('Info sharing QRIS/media: ' + shareErr);
+    }
+    return [
+      'https://lh3.googleusercontent.com/d/' + fileId + '=s1200',
+      'https://drive.google.com/uc?export=view&id=' + fileId,
+      'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1200'
+    ];
+  }
+  return [clean];
+}
+
+function fetchQrisBlobServer_(qrisUrl) {
+  const clean = String(qrisUrl || '').trim();
+  if (!clean) return null;
+  const fileId = extractDriveFileIdServer_(clean);
+  if (fileId) {
+    try {
+      const file = DriveApp.getFileById(fileId);
+      const blob = file.getBlob();
+      const mime = blob.getContentType() || 'image/png';
+      const ext = resolveExtension_(mime, file.getName() || 'qris.png');
+      return blob.setName('QRIS-DAIKITA.' + ext);
+    } catch (driveErr) {
+      Logger.log('Fallback ambil QRIS via URL: ' + driveErr);
+    }
+  }
+  const candidates = buildDirectImageCandidatesServer_(clean);
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      const resp = UrlFetchApp.fetch(candidates[i], {
+        muteHttpExceptions: true,
+        followRedirects: true
+      });
+      if (resp.getResponseCode() >= 200 && resp.getResponseCode() < 300) {
+        const blob = resp.getBlob();
+        const mime = String(blob.getContentType() || '').toLowerCase();
+        if (mime.indexOf('image/') === 0) {
+          const ext = resolveExtension_(mime, 'qris.png');
+          return blob.setName('QRIS-DAIKITA.' + ext);
+        }
+      }
+    } catch (fetchErr) {
+      Logger.log('Info fetch QRIS candidate: ' + fetchErr);
+    }
+  }
+  return null;
+}
+
 function sendDonorNotifications_(donatur, config, options) {
   const opts = options || {};
   const messageType = String(opts.messageType || 'daftar').trim();
@@ -1412,6 +1672,9 @@ function sendDonorNotifications_(donatur, config, options) {
     email: { attempted: false, ok: false, detail: 'Tidak dikirim.', templateIndex: 0 }
   };
 
+  const wantGroup = normalizeMinatGrup_(donatur.minatGrupWa) === 'Ya';
+  const qrisMedia = config.showQris && config.qrisUrl ? config.qrisUrl : '';
+
   // 1. Kirim WhatsApp sesuai jenis pesan
   if (!config.enableWaNotif) {
     result.wa.detail = 'Notifikasi WA otomatis sedang dinonaktifkan di Pengaturan.';
@@ -1424,7 +1687,7 @@ function sendDonorNotifications_(donatur, config, options) {
       ? config.waFollowupTemplates
       : DEFAULT_WA_FOLLOWUP_TEMPLATES;
     const fIdx = rotationIdx % fList.length;
-    const fBody = renderNotifTemplate_(fList[fIdx], donatur, config, { includeGroupLink: false });
+    const fBody = renderNotifTemplate_(fList[fIdx], donatur, config, { includeGroupLink: wantGroup });
     result.wa = sendWaViaRechat_(donatur.noWa, fBody, config, '');
     result.wa.templateIndex = fIdx;
   } else if (messageType === 'reminder') {
@@ -1433,27 +1696,30 @@ function sendDonorNotifications_(donatur, config, options) {
       : DEFAULT_WA_REMINDER_TEMPLATES;
     const rIdx = rotationIdx % rList.length;
     const rBody = renderNotifTemplate_(rList[rIdx], donatur, config, { includeGroupLink: false });
-    const qrisMedia = config.showQris && config.qrisUrl ? config.qrisUrl : '';
     result.wa = sendWaViaRechat_(donatur.noWa, rBody, config, qrisMedia);
     result.wa.templateIndex = rIdx;
   } else {
-    // Default: Pendaftaran Awal (Pesan 1 langsung + Pesan 2 terjadwal jeda 1 menit)
+    // Default: Pendaftaran Awal (Pesan 1 langsung + QRIS bila ada + Pesan 2 terjadwal jeda 1 menit dengan link grup WA)
     const waList = Array.isArray(config.waTemplates) && config.waTemplates.length > 0
       ? config.waTemplates
       : DEFAULT_WA_TEMPLATES;
     const waTemplateIdx = rotationIdx % waList.length;
     const waBody = renderNotifTemplate_(waList[waTemplateIdx], donatur, config, {
-      includeGroupLink: normalizeMinatGrup_(donatur.minatGrupWa) === 'Ya'
+      includeGroupLink: wantGroup
     });
-    result.wa = sendWaViaRechat_(donatur.noWa, waBody, config, '');
+    result.wa = sendWaViaRechat_(donatur.noWa, waBody, config, qrisMedia);
     result.wa.templateIndex = waTemplateIdx;
 
-    // Jadwalkan Pesan 2 (Arahan Save Nomor) dengan jeda default 60 detik di Antrean_Pesan
+    // Jadwalkan Pesan 2 (Arahan Save Nomor + Link Grup WA) dengan jeda default 60 detik di Antrean_Pesan
     const fList = Array.isArray(config.waFollowupTemplates) && config.waFollowupTemplates.length > 0
       ? config.waFollowupTemplates
       : DEFAULT_WA_FOLLOWUP_TEMPLATES;
     const fIdx = nextNotificationRotationIndex_('followup') % fList.length;
-    const fBody = renderNotifTemplate_(fList[fIdx], donatur, config, { includeGroupLink: false });
+    let fTpl = fList[fIdx];
+    if (wantGroup && config.waGroupLink && fTpl.indexOf('{link_grup') === -1) {
+      fTpl = fTpl + '\n{link_grup_section}';
+    }
+    const fBody = renderNotifTemplate_(fTpl, donatur, config, { includeGroupLink: wantGroup });
     const delaySec = Math.max(15, Math.min(600, Number(config.waFollowupDelaySec) || 60));
     const scheduledDate = new Date(Date.now() + delaySec * 1000);
 
@@ -1484,7 +1750,7 @@ function sendDonorNotifications_(donatur, config, options) {
     }
   }
 
-  // 2. Kirim Email (1 template per jenis: Daftar atau Reminder)
+  // 2. Kirim Email (1 template per jenis: Daftar atau Reminder, sertakan QRIS bila tersedia)
   if (messageType === 'followup') {
     result.email.detail = 'Pesan arahan save nomor khusus WA (tidak mengirim email).';
   } else if (!config.enableEmailNotif) {
@@ -1497,13 +1763,12 @@ function sendDonorNotifications_(donatur, config, options) {
         ? (config.emailTemplateReminder || DEFAULT_EMAIL_TEMPLATE_REMINDER)
         : (config.emailTemplateDaftar || DEFAULT_EMAIL_TEMPLATE_DAFTAR);
     const subject = renderNotifTemplate_(chosenTpl.subject, donatur, config, {
-      includeGroupLink: messageType === 'daftar' && normalizeMinatGrup_(donatur.minatGrupWa) === 'Ya'
+      includeGroupLink: messageType === 'daftar' && wantGroup
     });
     const plainBody = renderNotifTemplate_(chosenTpl.body, donatur, config, {
-      includeGroupLink: messageType === 'daftar' && normalizeMinatGrup_(donatur.minatGrupWa) === 'Ya'
+      includeGroupLink: messageType === 'daftar' && wantGroup
     });
-    const qrisEmailImg = messageType === 'reminder' && config.showQris && config.qrisUrl ? config.qrisUrl : '';
-    result.email = sendEmailViaAlias_(donatur.email, subject, plainBody, config, qrisEmailImg);
+    result.email = sendEmailViaAlias_(donatur.email, subject, plainBody, config, qrisMedia);
     result.email.templateIndex = 0;
   }
 
@@ -1526,47 +1791,47 @@ function sendWaViaRechat_(toNumber, messageText, config, mediaUrl) {
     }
 
     const cleanTo = String(toNumber || '').replace(/\D/g, '');
-    const cleanMedia = String(mediaUrl || '').trim();
+    const imageCandidates = buildDirectImageCandidatesServer_(mediaUrl);
+    const hasMedia = imageCandidates.length > 0;
 
-    // Jika ada gambar QRIS, kirim sebagai type: image + caption terlebih dahulu
-    if (cleanMedia && /^https?:\/\//i.test(cleanMedia)) {
-      const imagePayload = {
-        recipient_type: 'individual',
-        to: cleanTo,
-        type: 'image',
-        image: {
-          link: cleanMedia,
-          caption: messageText
-        }
-      };
-      const imgResp = UrlFetchApp.fetch(endpoint, {
-        method: 'post',
-        contentType: 'application/json',
-        headers: headers,
-        payload: JSON.stringify(imagePayload),
-        muteHttpExceptions: true
-      });
-      const imgCode = imgResp.getResponseCode();
-      if (imgCode >= 200 && imgCode < 300) {
-        return {
-          attempted: true,
-          ok: true,
-          detail: 'Pesan WA + gambar QRIS terkirim (HTTP ' + imgCode + ').'
+    // Mode 1: Jika ada QRIS dan panjang teks <= 950 karakter, kirim sekaligus sebagai gambar + caption
+    if (hasMedia && messageText.length <= 950) {
+      for (let i = 0; i < imageCandidates.length; i++) {
+        const imagePayload = {
+          recipient_type: 'individual',
+          to: cleanTo,
+          type: 'image',
+          image: {
+            link: imageCandidates[i],
+            caption: messageText
+          }
         };
+        const imgResp = UrlFetchApp.fetch(endpoint, {
+          method: 'post',
+          contentType: 'application/json',
+          headers: headers,
+          payload: JSON.stringify(imagePayload),
+          muteHttpExceptions: true
+        });
+        const imgCode = imgResp.getResponseCode();
+        if (imgCode >= 200 && imgCode < 300) {
+          return {
+            attempted: true,
+            ok: true,
+            detail: 'Pesan WA + gambar QRIS terkirim (HTTP ' + imgCode + ').'
+          };
+        }
+        Logger.log('Percobaan gambar QRIS #' + (i + 1) + ' HTTP ' + imgCode + ': ' + imgResp.getContentText().substring(0, 140));
       }
-      Logger.log('Fallback kirim teks WA karena image HTTP ' + imgCode + ': ' + imgResp.getContentText().substring(0, 140));
     }
 
-    const finalText = cleanMedia && messageText.indexOf(cleanMedia) === -1 && /^https?:\/\//i.test(cleanMedia)
-      ? messageText + '\n\nLink QRIS: ' + cleanMedia
-      : messageText;
-
+    // Mode 2: Kirim pesan teks terlebih dahulu
     const bodyPayload = {
       recipient_type: 'individual',
       to: cleanTo,
       type: 'text',
       text: {
-        body: finalText
+        body: messageText
       }
     };
 
@@ -1588,6 +1853,47 @@ function sendWaViaRechat_(toNumber, messageText, config, mediaUrl) {
     }
 
     if (code >= 200 && code < 300) {
+      // Jika ada gambar QRIS, kirim gambar QRIS terpisah dengan caption ringkas agar tidak kena batas 1024 karakter WA
+      if (hasMedia) {
+        let qrisSent = false;
+        const shortCaption =
+          'QRIS Pembayaran Resmi ' +
+          (config.namaLembaga || NAMA_LEMBAGA) +
+          (config.qrisMerchantName ? ' (' + config.qrisMerchantName + ')' : '');
+        for (let j = 0; j < imageCandidates.length; j++) {
+          try {
+            const qResp = UrlFetchApp.fetch(endpoint, {
+              method: 'post',
+              contentType: 'application/json',
+              headers: headers,
+              payload: JSON.stringify({
+                recipient_type: 'individual',
+                to: cleanTo,
+                type: 'image',
+                image: {
+                  link: imageCandidates[j],
+                  caption: shortCaption
+                }
+              }),
+              muteHttpExceptions: true
+            });
+            if (qResp.getResponseCode() >= 200 && qResp.getResponseCode() < 300) {
+              qrisSent = true;
+              break;
+            }
+          } catch (qErr) {
+            Logger.log('Info kirim gambar QRIS terpisah: ' + qErr);
+          }
+        }
+        return {
+          attempted: true,
+          ok: true,
+          detail: qrisSent
+            ? 'Pesan WA + gambar QRIS terkirim (HTTP ' + code + ').'
+            : 'Pesan WA teks terkirim (HTTP ' + code + '), gambar QRIS belum berhasil diunduh gateway.'
+        };
+      }
+
       return {
         attempted: true,
         ok: true,
@@ -1621,12 +1927,27 @@ function sendEmailViaAlias_(recipientEmail, subject, plainBody, config, qrisImag
       .replace(/\n\n/g, '</p><p style="margin:0 0 12px 0;">')
       .replace(/\n/g, '<br/>');
 
-    const qrisBlock = qrisImageUrl && /^https?:\/\//i.test(qrisImageUrl)
-      ? '<div style="margin-top:16px;text-align:center;padding:14px;background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;">' +
+    const qrisBlob = qrisImageUrl ? fetchQrisBlobServer_(qrisImageUrl) : null;
+    const directFallbackUrls = buildDirectImageCandidatesServer_(qrisImageUrl);
+    const fallbackImgUrl = directFallbackUrls.length > 0 ? directFallbackUrls[0] : '';
+
+    let qrisBlock = '';
+    if (qrisBlob) {
+      qrisBlock =
+        '<div style="margin-top:16px;text-align:center;padding:16px;background:#f8fafc;border-radius:14px;border:1px solid #d1fae5;">' +
+        '<div style="font-size:12px;font-weight:700;color:#065f46;margin-bottom:8px;">QRIS Pembayaran Resmi — ' +
+        escapeHtmlServer_(config.qrisMerchantName || config.namaLembaga || NAMA_LEMBAGA) +
+        '</div>' +
+        '<img src="cid:qrisCode" alt="QRIS Resmi" style="max-width:260px;width:100%;height:auto;border-radius:10px;border:1px solid #e2e8f0;"/>' +
+        '<div style="font-size:11px;color:#64748b;margin-top:6px;">Scan langsung gambar QRIS di atas atau unduh lampiran email ini.</div>' +
+        '</div>';
+    } else if (fallbackImgUrl) {
+      qrisBlock =
+        '<div style="margin-top:16px;text-align:center;padding:16px;background:#f8fafc;border-radius:14px;border:1px solid #d1fae5;">' +
         '<div style="font-size:12px;font-weight:700;color:#065f46;margin-bottom:8px;">QRIS Pembayaran Resmi</div>' +
-        '<img src="' + escapeHtmlServer_(qrisImageUrl) + '" alt="QRIS Resmi" style="max-width:240px;height:auto;border-radius:8px;"/>' +
-        '</div>'
-      : '';
+        '<img src="' + escapeHtmlServer_(fallbackImgUrl) + '" alt="QRIS Resmi" style="max-width:260px;width:100%;height:auto;border-radius:10px;"/>' +
+        '</div>';
+    }
 
     const htmlBody =
       '<div style="font-family:Montserrat,Arial,sans-serif;background:#f0fdf9;padding:24px;color:#0f172a;">' +
@@ -1648,6 +1969,11 @@ function sendEmailViaAlias_(recipientEmail, subject, plainBody, config, qrisImag
       htmlBody: htmlBody
     };
 
+    if (qrisBlob) {
+      mailOptions.inlineImages = { qrisCode: qrisBlob };
+      mailOptions.attachments = [qrisBlob];
+    }
+
     let usedAliasFrom = false;
     try {
       const aliases = GmailApp.getAliases();
@@ -1667,9 +1993,10 @@ function sendEmailViaAlias_(recipientEmail, subject, plainBody, config, qrisImag
     return {
       attempted: true,
       ok: true,
-      detail: usedAliasFrom
-        ? 'Email terkirim menggunakan alias ' + aliasEmail + '.'
-        : 'Email terkirim (Reply-To: ' + aliasEmail + ').'
+      detail: (usedAliasFrom
+        ? 'Email terkirim menggunakan alias ' + aliasEmail
+        : 'Email terkirim (Reply-To: ' + aliasEmail + ')') +
+        (qrisBlob ? ' + QRIS terlampir.' : '.')
     };
   } catch (err) {
     return {
@@ -1957,6 +2284,7 @@ function handleSubmitPembayaran_(payload) {
         'ID_Transaksi',
         'Waktu_Input',
         'Tanggal_Transfer',
+        'Jenis_Donatur',
         'ID_Donatur',
         'No_WA',
         'Bulan_Tagihan',
@@ -1968,9 +2296,12 @@ function handleSubmitPembayaran_(payload) {
     });
   }
 
-  const idDonatur = String(payload.idDonatur || '').trim();
-  const namaDonatur = String(payload.namaDonatur || '').trim();
-  const waCheck = validateAndNormalizeWA_(payload.noWa);
+  const jenisDonatur = normalizeJenisDonatur_(payload.jenisDonatur, payload.idDonatur);
+  const isUmum = jenisDonatur === 'Umum';
+  const idDonatur = isUmum ? 'UMUM' : String(payload.idDonatur || '').trim();
+  const rawNamaDonatur = String(payload.namaDonatur || '').trim();
+  const namaDonatur = rawNamaDonatur || (isUmum ? 'Hamba Allah' : '');
+  const rawNoWa = String(payload.noWa || '').trim();
   const nominalTransfer = parseNumber_(payload.nominalTransfer);
   const bankTujuan = String(payload.bankTujuan || '').trim();
   const diinputOleh = String(payload.diinputOleh || 'Donatur (Mandiri)').trim();
@@ -1999,23 +2330,30 @@ function handleSubmitPembayaran_(payload) {
   const bulanList = Object.keys(monthMap).sort();
 
   if (!namaDonatur) {
-    return { status: 'error', message: 'Pilih donatur terdaftar terlebih dahulu.' };
+    return { status: 'error', message: 'Pilih donatur terdaftar atau masukkan nama donatur terlebih dahulu.' };
   }
-  if (!waCheck.valid) {
-    return { status: 'error', message: waCheck.error };
+
+  let normalizedWa = '';
+  if (rawNoWa) {
+    const waCheck = validateAndNormalizeWA_(rawNoWa);
+    if (!waCheck.valid) {
+      return { status: 'error', message: waCheck.error };
+    }
+    normalizedWa = waCheck.normalized;
+  } else if (!isUmum) {
+    return { status: 'error', message: 'Nomor WhatsApp donatur terdaftar wajib diisi.' };
   }
-  const normalizedWa = waCheck.normalized;
 
   if (bulanList.length === 0) {
-    return { status: 'error', message: 'Pilih minimal 1 bulan tagihan yang valid (format YYYY-MM).' };
+    return { status: 'error', message: 'Pilih minimal 1 bulan pencatatan yang valid (format YYYY-MM).' };
   }
   if (nominalTransfer <= 0) {
     return { status: 'error', message: 'Nominal transfer harus lebih dari Rp 0.' };
   }
 
-  // Ambil komitmen per bulan (dari payload atau lookup Master_Donatur)
-  let komitmenPerBulan = parseNumber_(payload.nominalKomitmenPerBulan);
-  if (komitmenPerBulan <= 0 && idDonatur) {
+  // Ambil komitmen per bulan (khusus Donatur Rutin)
+  let komitmenPerBulan = isUmum ? 0 : parseNumber_(payload.nominalKomitmenPerBulan);
+  if (!isUmum && komitmenPerBulan <= 0 && idDonatur) {
     const donaturSheet = ss.getSheetByName(SHEET_NAMES.DONATUR);
     const allDonors = readSheetAsObjects_(donaturSheet);
     for (let i = 0; i < allDonors.length; i++) {
@@ -2035,7 +2373,7 @@ function handleSubmitPembayaran_(payload) {
       fileName: String(payload.fileName || 'bukti.jpg'),
       tanggalTransfer: tanggalTransfer,
       bulanTagihan: bulanList[0],
-      bulanList: bulanList,
+      bulanList: isUmum ? [bulanList[0]] : bulanList,
       namaDonatur: namaDonatur,
       nominalTransfer: nominalTransfer
     });
@@ -2049,16 +2387,17 @@ function handleSubmitPembayaran_(payload) {
   const statusPenyaluran = 'Belum Disalurkan';
   const existingCount = Math.max(sheet.getLastRow() - 1, 0);
 
+  const effectiveMonths = isUmum ? [bulanList[0]] : bulanList;
   const totalRp = Math.round(nominalTransfer);
-  const totalKomitmenExpected = komitmenPerBulan * bulanList.length;
-  const hasExcess = komitmenPerBulan > 0 && totalRp > totalKomitmenExpected;
+  const totalKomitmenExpected = komitmenPerBulan * effectiveMonths.length;
+  const hasExcess = !isUmum && komitmenPerBulan > 0 && totalRp > totalKomitmenExpected;
   const totalDonasiLainnya = hasExcess ? totalRp - totalKomitmenExpected : 0;
 
-  const basePerMonth = Math.floor(totalRp / bulanList.length);
-  const remainder = totalRp % bulanList.length;
+  const basePerMonth = Math.floor(totalRp / effectiveMonths.length);
+  const remainder = totalRp % effectiveMonths.length;
 
-  const batchNote = bulanList.length > 1
-    ? 'Bayar sekaligus ' + bulanList.length + ' bln (Total ' + formatRupiahServer_(totalRp) + ')'
+  const batchNote = !isUmum && effectiveMonths.length > 1
+    ? 'Bayar sekaligus ' + effectiveMonths.length + ' bln (Total ' + formatRupiahServer_(totalRp) + ')'
     : '';
   const excessNote = totalDonasiLainnya > 0
     ? 'Termasuk Donasi Lainnya ' + formatRupiahServer_(totalDonasiLainnya)
@@ -2066,19 +2405,22 @@ function handleSubmitPembayaran_(payload) {
   const finalKeterangan = [userKeterangan, batchNote, excessNote].filter(Boolean).join(' · ');
 
   const createdRows = [];
-  for (let idx = 0; idx < bulanList.length; idx++) {
-    const bulanItem = bulanList[idx];
-    const nominalKomitmenBulan = hasExcess
+  for (let idx = 0; idx < effectiveMonths.length; idx++) {
+    const bulanItem = effectiveMonths[idx];
+    const nominalKomitmenBulan = isUmum
+      ? 0
+      : hasExcess
       ? komitmenPerBulan
       : basePerMonth + (idx < remainder ? 1 : 0);
-    const donasiLainnyaBulan = hasExcess && idx === 0 ? totalDonasiLainnya : 0;
-    const nominalTransferBulan = nominalKomitmenBulan + donasiLainnyaBulan;
+    const donasiLainnyaBulan = !isUmum && hasExcess && idx === 0 ? totalDonasiLainnya : 0;
+    const nominalTransferBulan = isUmum ? totalRp : nominalKomitmenBulan + donasiLainnyaBulan;
     const idTransaksi = generateTransaksiId_(existingCount + idx + 1, now);
 
     appendRowByHeaderMap_(sheet, {
       ID_Transaksi: idTransaksi,
       Waktu_Input: waktuInput,
       Tanggal_Transfer: tanggalTransfer,
+      Jenis_Donatur: jenisDonatur,
       ID_Donatur: idDonatur || '-',
       Nama_Donatur: namaDonatur,
       No_WA: normalizedWa,
@@ -2096,6 +2438,7 @@ function handleSubmitPembayaran_(payload) {
       'ID_Transaksi',
       'Waktu_Input',
       'Tanggal_Transfer',
+      'Jenis_Donatur',
       'ID_Donatur',
       'No_WA',
       'Bulan_Tagihan',
@@ -2104,10 +2447,30 @@ function handleSubmitPembayaran_(payload) {
       'Keterangan'
     ], ['Nominal_Komitmen', 'Donasi_Lainnya', 'Nominal_Transfer']);
 
+    // Catat khusus ke sheet Donasi_Lainnya jika ada kelebihan komitmen atau merupakan Donatur Umum
+    if (isUmum || donasiLainnyaBulan > 0) {
+      appendDonasiLainnyaRow_(ss, {
+        idTransaksi: idTransaksi,
+        tanggalTransfer: tanggalTransfer,
+        bulanTagihan: bulanItem,
+        jenisSumber: isUmum ? 'Donatur Umum' : 'Kelebihan Komitmen',
+        idDonatur: idDonatur || '-',
+        namaDonatur: namaDonatur,
+        noWa: normalizedWa,
+        nominalKomitmen: nominalKomitmenBulan,
+        nominalDonasiLainnya: isUmum ? nominalTransferBulan : donasiLainnyaBulan,
+        totalTransfer: nominalTransferBulan,
+        statusVerifikasi: statusVerifikasi,
+        keterangan: finalKeterangan,
+        linkBuktiDrive: proofUrl
+      });
+    }
+
     createdRows.push({
       idTransaksi: idTransaksi,
       waktuInput: waktuInput,
       tanggalTransfer: tanggalTransfer,
+      jenisDonatur: jenisDonatur,
       idDonatur: idDonatur || '-',
       namaDonatur: namaDonatur,
       noWa: normalizedWa,
@@ -2130,6 +2493,8 @@ function handleSubmitPembayaran_(payload) {
     status: 'success',
     message: createdRows.length > 1
       ? 'Konfirmasi pembayaran untuk ' + createdRows.length + ' bulan berhasil dikirim dan menunggu verifikasi pengurus.'
+      : isUmum
+      ? 'Donasi Umum atas nama ' + namaDonatur + ' berhasil dicatat dan menunggu verifikasi pengurus.'
       : 'Konfirmasi pembayaran berhasil dikirim dan menunggu verifikasi pengurus.',
     data: {
       transaksi: createdRows[0],
@@ -2139,7 +2504,7 @@ function handleSubmitPembayaran_(payload) {
   };
 }
 
-// ==================== VERIFIKASI, PENYALURAN & STATUS DONATUR / GRUP WA ====================
+// ==================== VERIFIKASI & STATUS DONATUR / GRUP WA ====================
 function handleVerifikasiTransaksi_(payload) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAMES.TRANSAKSI);
@@ -2169,6 +2534,23 @@ function handleVerifikasiTransaksi_(payload) {
       if (newStatus === 'Ditolak' && salurCol && salurCol <= sheet.getLastColumn()) {
         sheet.getRange(r + 1, salurCol).setNumberFormat('@').setValue('Belum Disalurkan');
       }
+
+      // Sinkronkan juga status verifikasi pada sheet Donasi_Lainnya jika ID transaksi tercatat di sana
+      const otherSheet = ss.getSheetByName(SHEET_NAMES.DONASI_LAINNYA);
+      if (otherSheet && otherSheet.getLastRow() > 1) {
+        const oIdx = getHeaderIndexMap_(otherSheet);
+        const oIdCol = oIdx.ID_Transaksi || 1;
+        const oVerCol = oIdx.Status_Verifikasi;
+        if (oVerCol) {
+          const oVals = otherSheet.getDataRange().getValues();
+          for (let k = 1; k < oVals.length; k++) {
+            if (String(oVals[k][oIdCol - 1] || '').trim() === idTransaksi) {
+              otherSheet.getRange(k + 1, oVerCol).setNumberFormat('@').setValue(newStatus);
+            }
+          }
+        }
+      }
+
       SpreadsheetApp.flush();
       return {
         status: 'success',
@@ -2190,41 +2572,13 @@ function handleUpdateStatusPenyaluran_(payload) {
   if (!sheet) {
     return { status: 'error', message: 'Data transaksi tidak ditemukan.' };
   }
-  ensureSheetWithHeaders_(ss, SHEET_NAMES.TRANSAKSI, HEADERS.Transaksi_Donasi, {
-    textHeaders: ['Status_Penyaluran']
-  });
-
   const idTransaksi = String(payload.idTransaksi || '').trim();
   const statusPenyaluran = String(payload.statusPenyaluran || '').trim();
-
-  if (!idTransaksi) {
-    return { status: 'error', message: 'ID Transaksi wajib diisi.' };
-  }
-  if (statusPenyaluran !== 'Sudah Disalurkan' && statusPenyaluran !== 'Belum Disalurkan') {
-    return { status: 'error', message: 'Status penyaluran harus Sudah Disalurkan atau Belum Disalurkan.' };
-  }
-
-  const indexMap = getHeaderIndexMap_(sheet);
-  const idCol = indexMap.ID_Transaksi || 1;
-  const salurCol = indexMap.Status_Penyaluran;
-
-  const values = sheet.getDataRange().getValues();
-  for (let r = 1; r < values.length; r++) {
-    if (String(values[r][idCol - 1] || '').trim() === idTransaksi) {
-      if (salurCol) sheet.getRange(r + 1, salurCol).setNumberFormat('@').setValue(statusPenyaluran);
-      SpreadsheetApp.flush();
-      return {
-        status: 'success',
-        message: 'Status penyaluran transaksi ' + idTransaksi + ' diperbarui menjadi ' + statusPenyaluran + '.',
-        data: {
-          idTransaksi: idTransaksi,
-          statusPenyaluran: statusPenyaluran
-        }
-      };
-    }
-  }
-
-  return { status: 'error', message: 'Transaksi dengan ID ' + idTransaksi + ' tidak ditemukan.' };
+  return {
+    status: 'success',
+    message: 'Transaksi ' + idTransaksi + ' dicatat.',
+    data: { idTransaksi: idTransaksi, statusPenyaluran: statusPenyaluran }
+  };
 }
 
 function handleUpdateStatusDonatur_(payload) {
@@ -2235,13 +2589,14 @@ function handleUpdateStatusDonatur_(payload) {
   }
 
   const idDonatur = String(payload.idDonatur || '').trim();
-  const newStatus = String(payload.status || '').trim();
+  const rawStatus = String(payload.status || '').trim();
+  const newStatus = normalizeStatusAktif_(rawStatus);
 
   if (!idDonatur) {
     return { status: 'error', message: 'ID Donatur wajib diisi.' };
   }
-  if (newStatus !== 'Aktif' && newStatus !== 'Cuti') {
-    return { status: 'error', message: 'Status donatur harus Aktif atau Cuti.' };
+  if (!rawStatus || (newStatus !== 'Aktif' && newStatus !== 'Non Aktif')) {
+    return { status: 'error', message: 'Status donatur harus Aktif atau Non Aktif.' };
   }
 
   const indexMap = getHeaderIndexMap_(sheet);
@@ -2642,6 +2997,23 @@ function normalizeStatusGrup_(raw) {
     return 'Sudah Bergabung';
   }
   return 'Belum Bergabung';
+}
+
+function normalizeStatusAktif_(raw) {
+  const clean = String(raw || '').trim().toLowerCase();
+  if (clean === 'non aktif' || clean === 'non-aktif' || clean === 'nonaktif' || clean === 'tidak aktif' || clean === 'cuti' || clean === 'inactive') {
+    return 'Non Aktif';
+  }
+  return 'Aktif';
+}
+
+function normalizeJenisDonatur_(raw, idDonatur) {
+  const clean = String(raw || '').trim().toLowerCase();
+  const cleanId = String(idDonatur || '').trim().toUpperCase();
+  if (clean === 'umum' || clean === 'insidental' || clean === 'non-rutin' || cleanId === 'UMUM' || cleanId.indexOf('DU-') === 0) {
+    return 'Umum';
+  }
+  return 'Rutin';
 }
 
 function parseRequestBody_(e) {

@@ -33,7 +33,6 @@ import {
   SendBroadcastSinglePayload,
   StatusAktif,
   StatusGrupWa,
-  StatusPenyaluran,
   StatusVerifikasi,
   SubmitPembayaranPayload,
   TabKey,
@@ -59,15 +58,15 @@ import {
   submitPembayaran,
   updateStatusDonatur,
   updateStatusGrupDonatur,
-  updateStatusPenyaluran,
   verifikasiTransaksi,
 } from './services/api';
 import { getDriveThumbnailFallback, normalizeDriveImageUrl } from './utils/formatters';
 import { ConnectionModal } from './components/ConnectionModal';
 import { TabPendaftaran } from './components/TabPendaftaran';
 import { TabKonfirmasi } from './components/TabKonfirmasi';
-import { TabDashboard } from './components/TabDashboard';
 import { TabVerifikasi } from './components/TabVerifikasi';
+import { TabMutasi } from './components/TabMutasi';
+import { TabDashboard } from './components/TabDashboard';
 import { TabGrupWa } from './components/TabGrupWa';
 import { TabBroadcast } from './components/TabBroadcast';
 
@@ -112,8 +111,9 @@ function getSavedScreenWidth(): number {
 const NAV_TABS: { key: TabKey; label: string }[] = [
   { key: 'pendaftaran', label: 'Pendaftaran' },
   { key: 'konfirmasi', label: 'Konfirmasi' },
-  { key: 'dashboard', label: 'Dashboard' },
   { key: 'verifikasi', label: 'Verifikasi' },
+  { key: 'mutasi', label: 'Mutasi' },
+  { key: 'dashboard', label: 'Dashboard' },
   { key: 'grup_wa', label: 'Grup WA' },
   { key: 'broadcast', label: 'Broadcast' },
 ];
@@ -125,6 +125,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>(() =>
     readReferralFromUrl() ? 'pendaftaran' : 'dashboard'
   );
+  const [mutasiSubView, setMutasiSubView] = useState<'mutasi' | 'donatur'>('mutasi');
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getSavedTheme());
   const [screenWidthPct, setScreenWidthPct] = useState<number>(() => getSavedScreenWidth());
@@ -419,8 +420,6 @@ export default function App() {
             ? {
                 ...t,
                 statusVerifikasi: status,
-                statusPenyaluran:
-                  status === 'Ditolak' ? 'Belum Disalurkan' : t.statusPenyaluran,
               }
             : t
         ),
@@ -429,25 +428,6 @@ export default function App() {
       return true;
     }
     notify('error', 'Gagal memperbarui verifikasi', res.message);
-    return false;
-  };
-
-  const handleUpdateStatusPenyaluran = async (
-    idTransaksi: string,
-    statusPenyaluran: StatusPenyaluran
-  ): Promise<boolean> => {
-    const res = await updateStatusPenyaluran(gasUrl, idTransaksi, statusPenyaluran);
-    if (res.status === 'success') {
-      setData((prev) => ({
-        ...prev,
-        transaksi: prev.transaksi.map((t) =>
-          t.idTransaksi === idTransaksi ? { ...t, statusPenyaluran } : t
-        ),
-      }));
-      notify('success', statusPenyaluran, res.message);
-      return true;
-    }
-    notify('error', 'Gagal memperbarui penyaluran', res.message);
     return false;
   };
 
@@ -943,6 +923,29 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'verifikasi' && (
+          <TabVerifikasi
+            config={data.config}
+            transaksiList={data.transaksi}
+            isLoading={isLoading}
+            onVerifikasi={handleVerifikasiTransaksi}
+          />
+        )}
+
+        {activeTab === 'mutasi' && (
+          <TabMutasi
+            config={data.config}
+            donaturList={data.donatur}
+            transaksiList={data.transaksi}
+            panitiaList={data.panitia}
+            isLoading={isLoading}
+            initialSubView={mutasiSubView}
+            onUpdateStatusDonatur={handleUpdateStatusDonatur}
+            onGoToPendaftaran={() => setActiveTab('pendaftaran')}
+            onGoToKonfirmasiBulan={handleGoToKonfirmasi}
+          />
+        )}
+
         {activeTab === 'dashboard' && (
           <TabDashboard
             config={data.config}
@@ -950,21 +953,11 @@ export default function App() {
             transaksiList={data.transaksi}
             panitiaList={data.panitia}
             isLoading={isLoading}
-            onUpdateStatusDonatur={handleUpdateStatusDonatur}
-            onUpdateStatusPenyaluran={handleUpdateStatusPenyaluran}
-            onGoToPendaftaran={() => setActiveTab('pendaftaran')}
-            onGoToKonfirmasiBulan={handleGoToKonfirmasi}
+            onOpenMutasi={(view) => {
+              setMutasiSubView(view);
+              setActiveTab('mutasi');
+            }}
             onNotify={notify}
-          />
-        )}
-
-        {activeTab === 'verifikasi' && (
-          <TabVerifikasi
-            config={data.config}
-            transaksiList={data.transaksi}
-            isLoading={isLoading}
-            onVerifikasi={handleVerifikasiTransaksi}
-            onUpdateStatusPenyaluran={handleUpdateStatusPenyaluran}
           />
         )}
 

@@ -956,7 +956,8 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
               Pengingat dikirim secara ramah melalui WhatsApp sesuai tanggal pengingat pilihan Anda.
             </li>
             <li>
-              Status keaktifan dapat dialihkan sementara ke Cuti kapan saja bila sedang berhalangan.
+              Status keaktifan dapat dialihkan sementara ke Non Aktif kapan saja bila sedang
+              berhalangan.
             </li>
           </ul>
         </div>

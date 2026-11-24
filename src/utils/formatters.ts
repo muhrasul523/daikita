@@ -1,9 +1,11 @@
 import { APP_PUBLIC_URL, DEFAULT_WA_REMINDER_TEMPLATES } from '../config';
 import {
   Donatur,
+  JenisDonatur,
   LembagaConfig,
   MinatGrupWa,
   RekeningInfo,
+  StatusAktif,
   StatusGrupWa,
   TransaksiDonasi,
 } from '../types';
@@ -164,6 +166,30 @@ export function normalizeStatusGrup(raw?: string): StatusGrupWa {
     return 'Sudah Bergabung';
   }
   return 'Belum Bergabung';
+}
+
+export function normalizeStatusAktif(raw?: string): StatusAktif {
+  const clean = String(raw || '').trim().toLowerCase();
+  if (
+    clean === 'non aktif' ||
+    clean === 'non-aktif' ||
+    clean === 'nonaktif' ||
+    clean === 'tidak aktif' ||
+    clean === 'cuti' ||
+    clean === 'inactive'
+  ) {
+    return 'Non Aktif';
+  }
+  return 'Aktif';
+}
+
+export function normalizeJenisDonatur(raw?: string, idDonatur?: string): JenisDonatur {
+  const clean = String(raw || '').trim().toLowerCase();
+  const cleanId = String(idDonatur || '').trim().toUpperCase();
+  if (clean === 'umum' || clean === 'insidental' || clean === 'non-rutin' || cleanId === 'UMUM' || cleanId.startsWith('DU-')) {
+    return 'Umum';
+  }
+  return 'Rutin';
 }
 
 export function extractDriveFileId(url: string): string {
@@ -478,9 +504,13 @@ export function buildReceiptWaLink(
 ): string {
   const wa = normalizeWA(trx.noWa) || String(trx.noWa || '').replace(/\D/g, '');
   const bulanLabel = formatBulanLabel(trx.bulanTagihan);
-  const donasiKomitmen =
-    trx.nominalKomitmen > 0 ? trx.nominalKomitmen : trx.nominalTransfer;
-  const donasiLainnya = Math.max(0, trx.donasiLainnya || 0);
+  const isUmum = normalizeJenisDonatur(trx.jenisDonatur, trx.idDonatur) === 'Umum';
+  const donasiKomitmen = isUmum
+    ? 0
+    : trx.nominalKomitmen > 0
+    ? trx.nominalKomitmen
+    : trx.nominalTransfer;
+  const donasiLainnya = isUmum ? 0 : Math.max(0, trx.donasiLainnya || 0);
 
   const lines = [
     `Assalamu'alaikum Warahmatullahi Wabarakatuh,`,
@@ -492,12 +522,13 @@ export function buildReceiptWaLink(
     `• No. Transaksi: ${trx.idTransaksi}`,
     trx.tanggalTransfer ? `• Tanggal Transfer: ${formatTanggalIndo(trx.tanggalTransfer)}` : '',
     `• Periode Donasi: ${bulanLabel}`,
-    `• Donasi Komitmen: *${formatRupiah(donasiKomitmen)}*`,
-    donasiLainnya > 0 ? `• Donasi Lainnya: *${formatRupiah(donasiLainnya)}*` : '',
+    isUmum
+      ? `• Kategori: Donatur Umum`
+      : `• Donasi Komitmen: *${formatRupiah(donasiKomitmen)}*`,
+    !isUmum && donasiLainnya > 0 ? `• Donasi Lainnya: *${formatRupiah(donasiLainnya)}*` : '',
     `• Total Diterima: *${formatRupiah(trx.nominalTransfer)}*`,
     trx.keterangan ? `• Keterangan: ${trx.keterangan}` : '',
-    `• Status Verifikasi: Valid / Lunas`,
-    `• Status Penyaluran: ${trx.statusPenyaluran || 'Belum Disalurkan'}`,
+    `• Status Verifikasi: Valid / Diterima`,
     ``,
     `_Syukran wa jazakumullahu khairan._`,
     `_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._`,

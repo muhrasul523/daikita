@@ -716,7 +716,7 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
               </div>
 
               <div className="flex gap-1 rounded-xl bg-slate-100/85 dark:bg-slate-800/80 p-1">
-                {(['Aktif', 'Cuti', 'Semua'] as const).map((ak) => (
+                {(['Aktif', 'Non Aktif', 'Semua'] as const).map((ak) => (
                   <button
                     key={ak}
                     type="button"

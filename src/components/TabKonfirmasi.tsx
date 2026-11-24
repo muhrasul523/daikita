@@ -19,6 +19,7 @@ import {
 import { PROGRAM_START_YM, TRANSFER_MIN_DATE } from '../config';
 import {
   Donatur,
+  JenisDonatur,
   LembagaConfig,
   Panitia,
   SubmitPembayaranPayload,
@@ -93,7 +94,11 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
       : getCurrentYearMonth();
   const initialYm = rawInitialYm < PROGRAM_START_YM ? PROGRAM_START_YM : rawInitialYm;
 
+  const [jenisDonatur, setJenisDonatur] = useState<JenisDonatur>('Rutin');
   const [selectedDonaturId, setSelectedDonaturId] = useState('');
+  const [namaDonaturUmum, setNamaDonaturUmum] = useState('');
+  const [noWaUmum, setNoWaUmum] = useState('');
+  const [bulanUmum, setBulanUmum] = useState<string>(initialYm);
   const [tanggalTransfer, setTanggalTransfer] = useState<string>(() => getTodayIsoDate());
   const [selectedMonths, setSelectedMonths] = useState<string[]>([initialYm]);
   const [windowStartYm, setWindowStartYm] = useState<string>(() => {
@@ -105,11 +110,13 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
   const [keterangan, setKeterangan] = useState('');
 
   const [uploadFile, setUploadFile] = useState<ProcessedUploadFile | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<{
     transaksiList: TransaksiDonasi[];
+    jenisDonatur: JenisDonatur;
     totalNominal: number;
     totalKomitmen: number;
     totalLainnya: number;
@@ -217,6 +224,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
 
   // Isi otomatis nominal saat memilih donatur atau mengubah jumlah bulan (kecuali jika user mengedit manual)
   useEffect(() => {
+    if (jenisDonatur !== 'Rutin') return;
     if (!selectedDonatur) {
       if (!isNominalCustom) setNominalInput('');
       return;
@@ -225,10 +233,11 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
       const total = Math.max(1, sortedSelectedMonths.length) * selectedDonatur.nominalKomitmen;
       setNominalInput(total > 0 ? total.toLocaleString('id-ID') : '');
     }
-  }, [selectedDonatur, sortedSelectedMonths, isNominalCustom]);
+  }, [jenisDonatur, selectedDonatur, sortedSelectedMonths, isNominalCustom]);
 
   useEffect(() => {
     if (preselectedDonatur) {
+      setJenisDonatur('Rutin');
       setSelectedDonaturId(preselectedDonatur.idDonatur);
       setIsNominalCustom(false);
       const regYm = extractYearMonthFromDateStr(preselectedDonatur.tanggalDaftar);
@@ -245,6 +254,20 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
       onClearPreselected();
     }
   }, [preselectedDonatur, preselectedMonth, onClearPreselected]);
+
+  const handleSwitchJenisDonatur = (next: JenisDonatur) => {
+    setJenisDonatur(next);
+    setErrorMsg(null);
+    setSuccessInfo(null);
+    if (next === 'Umum') {
+      setIsNominalCustom(true);
+      if (!bulanUmum || !/^\d{4}-\d{2}$/.test(bulanUmum)) {
+        setBulanUmum(initialYm);
+      }
+    } else {
+      setIsNominalCustom(false);
+    }
+  };
 
   const handleDonaturDropdownChange = (val: string) => {
     setSelectedDonaturId(val);
@@ -326,19 +349,32 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
   }, [selectedDonatur, parsedNominal, sortedSelectedMonths.length]);
 
   const autoRenamePreview = useMemo(() => {
+    const isUmum = jenisDonatur === 'Umum';
+    const targetMonth = isUmum ? bulanUmum || initialYm : sortedSelectedMonths[0] || minSelectableYm;
     return previewAutoRenameFile({
       tanggalTransfer,
-      bulanTagihan: sortedSelectedMonths[0] || minSelectableYm,
-      bulanList: sortedSelectedMonths,
-      namaDonatur: selectedDonatur?.namaLengkap || 'Nama-Donatur',
+      bulanTagihan: targetMonth,
+      bulanList: isUmum ? [targetMonth] : sortedSelectedMonths,
+      namaDonatur: isUmum
+        ? namaDonaturUmum.trim() || 'Hamba Allah'
+        : selectedDonatur?.namaLengkap || 'Nama-Donatur',
       nominalTransfer: parsedNominal,
       extension: uploadFile?.extension || 'jpg',
     });
-  }, [tanggalTransfer, sortedSelectedMonths, minSelectableYm, selectedDonatur, parsedNominal, uploadFile]);
+  }, [
+    jenisDonatur,
+    bulanUmum,
+    initialYm,
+    namaDonaturUmum,
+    tanggalTransfer,
+    sortedSelectedMonths,
+    minSelectableYm,
+    selectedDonatur,
+    parsedNominal,
+    uploadFile,
+  ]);
 
-  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const processUploadFile = async (file: File) => {
     setErrorMsg(null);
     setIsCompressing(true);
     try {
@@ -350,6 +386,39 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     } finally {
       setIsCompressing(false);
     }
+  };
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processUploadFile(file);
+  };
+
+  const handleDragEnterOrOver = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isCompressing && !isDraggingFile) {
+      setIsDraggingFile(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const related = e.relatedTarget as Node | null;
+    if (!related || !e.currentTarget.contains(related)) {
+      setIsDraggingFile(false);
+    }
+  };
+
+  const handleFileDrop = async (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(false);
+    if (isCompressing) return;
+    const dropped = e.dataTransfer.files?.[0];
+    if (!dropped) return;
+    await processUploadFile(dropped);
   };
 
   const handleRemoveFile = () => {
@@ -375,24 +444,6 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     setErrorMsg(null);
     setSuccessInfo(null);
 
-    if (!selectedDonatur) {
-      setErrorMsg(
-        'Silakan pilih donatur terdaftar terlebih dahulu. Jika nama belum ada, klik tombol Daftar Donatur Baru.'
-      );
-      return;
-    }
-
-    const waCheck = validateAndNormalizeWA(selectedDonatur.noWa);
-    if (!waCheck.valid) {
-      setErrorMsg(waCheck.error);
-      return;
-    }
-
-    if (sortedSelectedMonths.length === 0) {
-      setErrorMsg('Pilih minimal 1 periode bulan donasi / tagihan.');
-      return;
-    }
-
     if (!tanggalTransfer || !/^\d{4}-\d{2}-\d{2}$/.test(tanggalTransfer)) {
       setErrorMsg('Tanggal transfer wajib diisi dengan format yang valid.');
       return;
@@ -415,8 +466,88 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
       return;
     }
 
+    if (jenisDonatur === 'Umum') {
+      const targetYm = /^\d{4}-\d{2}$/.test(bulanUmum) ? bulanUmum : tanggalTransfer.slice(0, 7);
+      let normalizedWa = '';
+      if (noWaUmum.trim()) {
+        const waCheck = validateAndNormalizeWA(noWaUmum);
+        if (!waCheck.valid) {
+          setErrorMsg(waCheck.error);
+          return;
+        }
+        normalizedWa = waCheck.normalized;
+      }
+
+      const finalNama = namaDonaturUmum.trim() || 'Hamba Allah';
+      setIsSubmitting(true);
+      const res = await onSubmitPembayaran({
+        jenisDonatur: 'Umum',
+        idDonatur: 'UMUM',
+        namaDonatur: finalNama,
+        noWa: normalizedWa,
+        tanggalTransfer,
+        bulanTagihan: targetYm,
+        bulanTagihanList: [targetYm],
+        nominalTransfer: parsedNominal,
+        nominalKomitmenPerBulan: 0,
+        diinputOleh: autoDiinputOleh,
+        keterangan: keterangan.trim() || undefined,
+        fileBase64: uploadFile?.base64,
+        fileMimeType: uploadFile?.mimeType,
+        fileName: uploadFile?.originalName,
+      });
+      setIsSubmitting(false);
+
+      const createdList =
+        res.transaksiList && res.transaksiList.length > 0
+          ? res.transaksiList
+          : res.transaksi
+          ? [res.transaksi]
+          : [];
+
+      if (res.ok && createdList.length > 0) {
+        setSuccessInfo({
+          transaksiList: createdList,
+          jenisDonatur: 'Umum',
+          totalNominal: createdList.reduce((sum, t) => sum + t.nominalTransfer, 0),
+          totalKomitmen: 0,
+          totalLainnya: 0,
+          tanggalTransfer: createdList[0].tanggalTransfer || tanggalTransfer,
+          savedFileName: res.savedFileName,
+        });
+        setNamaDonaturUmum('');
+        setNoWaUmum('');
+        setNominalInput('');
+        setKeterangan('');
+        setTanggalTransfer(getTodayIsoDate());
+        handleRemoveFile();
+      } else {
+        setErrorMsg(res.message);
+      }
+      return;
+    }
+
+    if (!selectedDonatur) {
+      setErrorMsg(
+        'Silakan pilih donatur terdaftar terlebih dahulu, atau pilih opsi Donatur Umum (Non-Terdaftar).'
+      );
+      return;
+    }
+
+    const waCheck = validateAndNormalizeWA(selectedDonatur.noWa);
+    if (!waCheck.valid) {
+      setErrorMsg(waCheck.error);
+      return;
+    }
+
+    if (sortedSelectedMonths.length === 0) {
+      setErrorMsg('Pilih minimal 1 periode bulan donasi / tagihan.');
+      return;
+    }
+
     setIsSubmitting(true);
     const res = await onSubmitPembayaran({
+      jenisDonatur: 'Rutin',
       idDonatur: selectedDonatur.idDonatur,
       namaDonatur: selectedDonatur.namaLengkap,
       noWa: waCheck.normalized,
@@ -443,8 +574,12 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     if (res.ok && createdList.length > 0) {
       setSuccessInfo({
         transaksiList: createdList,
+        jenisDonatur: 'Rutin',
         totalNominal: createdList.reduce((sum, t) => sum + t.nominalTransfer, 0),
-        totalKomitmen: createdList.reduce((sum, t) => sum + (t.nominalKomitmen || t.nominalTransfer), 0),
+        totalKomitmen: createdList.reduce(
+          (sum, t) => sum + (t.nominalKomitmen || t.nominalTransfer),
+          0
+        ),
         totalLainnya: createdList.reduce((sum, t) => sum + (t.donasiLainnya || 0), 0),
         tanggalTransfer: createdList[0].tanggalTransfer || tanggalTransfer,
         savedFileName: res.savedFileName,
@@ -495,10 +630,13 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
               <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-emerald-950 dark:text-emerald-100">
-                  Konfirmasi Pembayaran Terkirim ({successInfo.transaksiList.length} Periode Bulan)
+                  {successInfo.jenisDonatur === 'Umum'
+                    ? 'Konfirmasi Donatur Umum Terkirim'
+                    : `Konfirmasi Pembayaran Terkirim (${successInfo.transaksiList.length} Periode Bulan)`}
                 </p>
                 <p className="mt-1 text-xs text-emerald-900/85 dark:text-emerald-200/90 leading-relaxed safe-wrap">
-                  Atas nama <strong>{successInfo.transaksiList[0].namaDonatur}</strong> sebesar total{' '}
+                  Atas nama <strong>{successInfo.transaksiList[0].namaDonatur}</strong>
+                  {successInfo.jenisDonatur === 'Umum' ? ' (Donatur Umum)' : ''} sebesar total{' '}
                   <strong className="tabular-nums">{formatRupiah(successInfo.totalNominal)}</strong>{' '}
                   (Tgl transfer: <strong>{formatTanggalIndo(successInfo.tanggalTransfer)}</strong>)
                   untuk periode{' '}
@@ -509,7 +647,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                   </strong>{' '}
                   kini berstatus <strong>Menunggu Verifikasi</strong>.
                 </p>
-                {successInfo.totalLainnya > 0 && (
+                {successInfo.jenisDonatur === 'Rutin' && successInfo.totalLainnya > 0 && (
                   <p className="mt-1 text-xs text-teal-900 dark:text-teal-200 tabular-nums safe-wrap">
                     Rincian: Donasi Komitmen{' '}
                     <strong>{formatRupiah(successInfo.totalKomitmen)}</strong> + Donasi Lainnya{' '}
@@ -536,96 +674,238 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Pilih Donatur Terdaftar + Tombol Daftar Baru */}
-          <div className="space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label
-                htmlFor="konf-search"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-200"
-              >
-                Pilih Donatur Terdaftar (Nama / No. WA / ID / Domisili){' '}
-                <span className="text-rose-600 dark:text-rose-400">*</span>
-              </label>
-              <button
-                type="button"
-                onClick={onGoToPendaftaran}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/90 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                <UserPlus className="h-3.5 w-3.5 shrink-0" />
-                <span>Belum terdaftar? Daftar Donatur Baru</span>
-              </button>
+          {/* Pilihan Jenis Donatur: Rutin Terdaftar vs Donatur Umum */}
+          <div className="space-y-2">
+            <span className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
+              Sumber Dana Masuk / Jenis Donatur
+            </span>
+            <div
+              role="radiogroup"
+              aria-label="Jenis Donatur"
+              className="grid grid-cols-1 sm:grid-cols-2 gap-2.5"
+            >
+              {(
+                [
+                  {
+                    value: 'Rutin' as const,
+                    title: 'Donatur Rutin (Terdaftar)',
+                    desc: 'Terhubung dengan komitmen bulanan & riwayat donatur',
+                  },
+                  {
+                    value: 'Umum' as const,
+                    title: 'Donatur Umum (Non-Terdaftar)',
+                    desc: 'Dana masuk dari mutasi/donatur insidental tanpa wajib daftar',
+                  },
+                ] as const
+              ).map((opt) => {
+                const active = jenisDonatur === opt.value;
+                return (
+                  <label
+                    key={opt.value}
+                    className={`rounded-2xl border p-3.5 transition-all cursor-pointer select-none ${
+                      active
+                        ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/50 ring-2 ring-emerald-500/20'
+                        : 'border-slate-200/90 dark:border-slate-700 bg-white/80 dark:bg-slate-900/60 hover:border-emerald-300'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="konf-jenis-donatur"
+                      value={opt.value}
+                      checked={active}
+                      onChange={() => handleSwitchJenisDonatur(opt.value)}
+                      className="sr-only"
+                    />
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p
+                          className={`text-xs font-bold safe-wrap ${
+                            active
+                              ? 'text-emerald-900 dark:text-emerald-200'
+                              : 'text-slate-800 dark:text-slate-200'
+                          }`}
+                        >
+                          {opt.title}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
+                          {opt.desc}
+                        </p>
+                      </div>
+                      <span
+                        className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                          active
+                            ? 'border-emerald-600 bg-emerald-600 text-white'
+                            : 'border-slate-300 dark:border-slate-600'
+                        }`}
+                      >
+                        {active && <Check className="h-2.5 w-2.5" />}
+                      </span>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
-
-            <SearchableSelect
-              id="konf-search"
-              ariaLabel="Pilih donatur terdaftar"
-              options={donaturOptions}
-              value={selectedDonaturId}
-              onChange={handleDonaturDropdownChange}
-              allowClear
-              placeholder="Ketik atau pilih donatur dari daftar..."
-              searchPlaceholder="Ketik nama, nomor WA, atau ID donatur..."
-              emptyText="Donatur belum ditemukan. Klik tombol 'Daftar Donatur Baru' di atas."
-            />
-
-            {/* Profil Otomatis Donatur Terpilih (Read-only) */}
-            {selectedDonatur ? (
-              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/75 dark:bg-slate-800/45 p-4">
-                <div className="flex items-center justify-between gap-2 mb-2.5">
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                    <Lock className="h-3 w-3 shrink-0" />
-                    <span>Identitas Donatur Terisi Otomatis</span>
-                  </span>
-                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 tabular-nums">
-                    Komitmen: {formatRupiah(selectedDonatur.nominalKomitmen)} / bulan
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                  <div className="min-w-0 rounded-xl bg-white/80 dark:bg-slate-900/70 px-3 py-2 border border-slate-200/60 dark:border-slate-700/60">
-                    <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                      ID Donatur
-                    </p>
-                    <p className="mt-0.5 font-mono font-bold text-slate-900 dark:text-slate-100 truncate">
-                      {selectedDonatur.idDonatur}
-                    </p>
-                  </div>
-                  <div className="min-w-0 rounded-xl bg-white/80 dark:bg-slate-900/70 px-3 py-2 border border-slate-200/60 dark:border-slate-700/60">
-                    <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                      Nama Donatur
-                    </p>
-                    <p className="mt-0.5 font-bold text-slate-900 dark:text-slate-100 safe-wrap">
-                      {selectedDonatur.namaLengkap}
-                    </p>
-                  </div>
-                  <div className="min-w-0 rounded-xl bg-white/80 dark:bg-slate-900/70 px-3 py-2 border border-slate-200/60 dark:border-slate-700/60">
-                    <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                      No. WhatsApp
-                    </p>
-                    <p className="mt-0.5 font-semibold text-slate-900 dark:text-slate-100 tabular-nums">
-                      {formatWADisplay(selectedDonatur.noWa)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-900/30 px-4 py-3 text-xs text-slate-500 dark:text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <span className="safe-wrap">
-                  ID Donatur, Nama, dan No. WhatsApp terisi otomatis setelah Anda memilih donatur di
-                  atas.
-                </span>
-                <button
-                  type="button"
-                  onClick={onGoToPendaftaran}
-                  className="font-semibold text-emerald-700 dark:text-emerald-400 hover:underline whitespace-nowrap shrink-0 text-left cursor-pointer"
-                >
-                  Ke Halaman Pendaftaran →
-                </button>
-              </div>
-            )}
           </div>
 
-          {/* Pilih Bulan Donasi (12 Bulan Berurutan Mulai Nov 2026 / Bulan Daftar Donatur) */}
-          <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/60 dark:bg-slate-900/50 p-4 space-y-3.5">
+          {jenisDonatur === 'Umum' ? (
+            <div className="rounded-2xl border border-sky-200/80 dark:border-sky-800/70 bg-sky-50/45 dark:bg-sky-950/25 p-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-sky-900 dark:text-sky-200">
+                    Identitas Donatur Umum (Non-Terdaftar)
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300 safe-wrap">
+                    Tetap tercatat rapi di Mutasi Dana Masuk dan rekap keseluruhan meski pengirim
+                    belum terdaftar sebagai donatur rutin.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="min-w-0">
+                  <label
+                    htmlFor="konf-umum-nama"
+                    className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
+                  >
+                    Nama Pengirim / Donatur (Opsional)
+                  </label>
+                  <input
+                    id="konf-umum-nama"
+                    type="text"
+                    value={namaDonaturUmum}
+                    onChange={(e) => setNamaDonaturUmum(e.target.value)}
+                    placeholder="Kosongkan = Hamba Allah"
+                    className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/95 dark:bg-slate-900/90 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  />
+                </div>
+
+                <div className="min-w-0">
+                  <label
+                    htmlFor="konf-umum-wa"
+                    className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
+                  >
+                    Nomor WhatsApp (Opsional)
+                  </label>
+                  <input
+                    id="konf-umum-wa"
+                    type="tel"
+                    value={noWaUmum}
+                    onChange={(e) => setNoWaUmum(e.target.value)}
+                    placeholder="0812... (jika ada)"
+                    className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/95 dark:bg-slate-900/90 px-3.5 py-2.5 text-sm tabular-nums text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  />
+                </div>
+
+                <div className="min-w-0">
+                  <label
+                    htmlFor="konf-umum-bulan"
+                    className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
+                  >
+                    Periode Bulan <span className="text-rose-600 dark:text-rose-400">*</span>
+                  </label>
+                  <input
+                    id="konf-umum-bulan"
+                    type="month"
+                    required
+                    value={bulanUmum}
+                    onChange={(e) => setBulanUmum(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/95 dark:bg-slate-900/90 px-3.5 py-2.5 text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Pilih Donatur Terdaftar + Tombol Daftar Baru */}
+              <div className="space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label
+                    htmlFor="konf-search"
+                    className="block text-xs font-semibold text-slate-700 dark:text-slate-200"
+                  >
+                    Pilih Donatur Terdaftar (Nama / No. WA / ID / Domisili){' '}
+                    <span className="text-rose-600 dark:text-rose-400">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={onGoToPendaftaran}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/90 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <UserPlus className="h-3.5 w-3.5 shrink-0" />
+                    <span>Belum terdaftar? Daftar Donatur Baru</span>
+                  </button>
+                </div>
+
+                <SearchableSelect
+                  id="konf-search"
+                  ariaLabel="Pilih donatur terdaftar"
+                  options={donaturOptions}
+                  value={selectedDonaturId}
+                  onChange={handleDonaturDropdownChange}
+                  allowClear
+                  placeholder="Ketik atau pilih donatur dari daftar..."
+                  searchPlaceholder="Ketik nama, nomor WA, atau ID donatur..."
+                  emptyText="Donatur belum ditemukan. Klik tombol 'Daftar Donatur Baru' atau pilih opsi Donatur Umum."
+                />
+
+                {/* Profil Otomatis Donatur Terpilih (Read-only) */}
+                {selectedDonatur ? (
+                  <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/75 dark:bg-slate-800/45 p-4">
+                    <div className="flex items-center justify-between gap-2 mb-2.5">
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                        <Lock className="h-3 w-3 shrink-0" />
+                        <span>Identitas Donatur Terisi Otomatis</span>
+                      </span>
+                      <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 tabular-nums">
+                        Komitmen: {formatRupiah(selectedDonatur.nominalKomitmen)} / bulan
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div className="min-w-0 rounded-xl bg-white/80 dark:bg-slate-900/70 px-3 py-2 border border-slate-200/60 dark:border-slate-700/60">
+                        <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                          ID Donatur
+                        </p>
+                        <p className="mt-0.5 font-mono font-bold text-slate-900 dark:text-slate-100 truncate">
+                          {selectedDonatur.idDonatur}
+                        </p>
+                      </div>
+                      <div className="min-w-0 rounded-xl bg-white/80 dark:bg-slate-900/70 px-3 py-2 border border-slate-200/60 dark:border-slate-700/60">
+                        <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                          Nama Donatur
+                        </p>
+                        <p className="mt-0.5 font-bold text-slate-900 dark:text-slate-100 safe-wrap">
+                          {selectedDonatur.namaLengkap}
+                        </p>
+                      </div>
+                      <div className="min-w-0 rounded-xl bg-white/80 dark:bg-slate-900/70 px-3 py-2 border border-slate-200/60 dark:border-slate-700/60">
+                        <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                          No. WhatsApp
+                        </p>
+                        <p className="mt-0.5 font-semibold text-slate-900 dark:text-slate-100 tabular-nums">
+                          {formatWADisplay(selectedDonatur.noWa)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-900/30 px-4 py-3 text-xs text-slate-500 dark:text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="safe-wrap">
+                      ID Donatur, Nama, dan No. WhatsApp terisi otomatis setelah Anda memilih
+                      donatur di atas.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={onGoToPendaftaran}
+                      className="font-semibold text-emerald-700 dark:text-emerald-400 hover:underline whitespace-nowrap shrink-0 text-left cursor-pointer"
+                    >
+                      Ke Halaman Pendaftaran →
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Pilih Bulan Donasi (12 Bulan Berurutan Mulai Nov 2026 / Bulan Daftar Donatur) */}
+              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/60 dark:bg-slate-900/50 p-4 space-y-3.5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
@@ -765,6 +1045,8 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
               ))}
             </div>
           </div>
+            </>
+          )}
 
           {/* Tanggal Transfer & Nominal Transfer Total */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -816,18 +1098,23 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                   className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 pl-11 pr-4 py-3 text-sm font-semibold text-slate-900 dark:text-slate-100 tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                 />
               </div>
-              {selectedDonatur && (
+              {jenisDonatur === 'Rutin' && selectedDonatur && (
                 <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
                   Komitmen: {sortedSelectedMonths.length} bln ×{' '}
                   {formatRupiah(selectedDonatur.nominalKomitmen)} ={' '}
                   <strong>{formatRupiah(expectedKomitmenTotal)}</strong>
                 </p>
               )}
+              {jenisDonatur === 'Umum' && (
+                <p className="mt-1.5 text-[11px] text-sky-700 dark:text-sky-300 safe-wrap">
+                  Seluruh nominal tercatat otomatis sebagai pemasukan Donatur Umum.
+                </p>
+              )}
             </div>
           </div>
 
           {/* Rincian Otomatis Kelebihan Transfer sebagai Donasi Lainnya */}
-          {selectedDonatur && donasiLainnyaRp > 0 && (
+          {jenisDonatur === 'Rutin' && selectedDonatur && donasiLainnyaRp > 0 && (
             <div className="rounded-2xl border border-teal-200/90 dark:border-teal-800/75 bg-gradient-to-r from-emerald-50/80 via-teal-50/70 to-sky-50/70 dark:from-emerald-950/45 dark:via-teal-950/40 dark:to-sky-950/35 p-4 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-bold text-teal-900 dark:text-teal-200">
@@ -890,28 +1177,44 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
             />
           </div>
 
-          {/* Upload Bukti Transfer (Opsional) */}
+          {/* Upload Bukti Transfer (Opsional — Mendukung Drag & Drop) */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
-              Unggah Bukti Transfer (Opsional — jika ada: JPG, PNG, WEBP, atau PDF)
+              Unggah Bukti Transfer (Opsional — seret &amp; lepas atau klik: JPG, PNG, WEBP, PDF)
             </label>
 
             {!uploadFile ? (
               <label
                 htmlFor="konf-file"
-                className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-emerald-200/90 dark:border-emerald-800/80 bg-emerald-50/35 dark:bg-emerald-950/25 px-6 py-7 text-center hover:border-emerald-400 dark:hover:border-emerald-600 hover:bg-emerald-50/60 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer"
+                onDragEnter={handleDragEnterOrOver}
+                onDragOver={handleDragEnterOrOver}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => void handleFileDrop(e)}
+                className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-7 text-center transition-all cursor-pointer ${
+                  isDraggingFile
+                    ? 'border-emerald-500 bg-emerald-100/75 dark:bg-emerald-900/50 scale-[1.01] ring-4 ring-emerald-500/15'
+                    : 'border-emerald-200/90 dark:border-emerald-800/80 bg-emerald-50/35 dark:bg-emerald-950/25 hover:border-emerald-400 dark:hover:border-emerald-600 hover:bg-emerald-50/60 dark:hover:bg-emerald-950/40'
+                }`}
               >
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 shadow-sm mb-3">
+                <div
+                  className={`flex h-11 w-11 items-center justify-center rounded-2xl shadow-sm mb-3 transition-transform ${
+                    isDraggingFile
+                      ? 'bg-emerald-600 text-white scale-110'
+                      : 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400'
+                  }`}
+                >
                   <Upload className="h-5 w-5" />
                 </div>
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                   {isCompressing
                     ? 'Mengompresi gambar bukti transfer...'
-                    : 'Pilih file bukti transfer (opsional)'}
+                    : isDraggingFile
+                    ? 'Lepaskan file bukti transfer di sini'
+                    : 'Seret & lepas file ke sini, atau klik untuk memilih'}
                 </p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-md">
-                  Anda tetap dapat mengirim konfirmasi meski tanpa mengunggah file bukti transfer.
-                  Jika diunggah, gambar otomatis dikompresi agar ringan.
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-md safe-wrap">
+                  Bukti transfer bersifat opsional — Anda tetap dapat mengirim konfirmasi tanpa
+                  mengunggah file. Gambar otomatis dikompresi agar ringan.
                 </p>
                 <input
                   ref={fileInputRef}
@@ -924,7 +1227,17 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                 />
               </label>
             ) : (
-              <div className="rounded-2xl border border-emerald-200/80 dark:border-emerald-800/80 bg-white/90 dark:bg-slate-900/85 p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div
+                onDragEnter={handleDragEnterOrOver}
+                onDragOver={handleDragEnterOrOver}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => void handleFileDrop(e)}
+                className={`rounded-2xl border p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 transition-all ${
+                  isDraggingFile
+                    ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/50 ring-2 ring-emerald-500/20'
+                    : 'border-emerald-200/80 dark:border-emerald-800/80 bg-white/90 dark:bg-slate-900/85'
+                }`}
+              >
                 {uploadFile.isPdf ? (
                   <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300">
                     <FileText className="h-7 w-7" />
@@ -984,6 +1297,8 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
               <span>
                 {isSubmitting
                   ? 'Mengirim Konfirmasi...'
+                  : jenisDonatur === 'Umum'
+                  ? 'Kirim Konfirmasi Donatur Umum'
                   : sortedSelectedMonths.length > 1
                   ? `Kirim Konfirmasi (${sortedSelectedMonths.length} Bulan)`
                   : 'Kirim Konfirmasi Pembayaran'}

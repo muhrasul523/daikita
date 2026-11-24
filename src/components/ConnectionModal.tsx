@@ -1365,12 +1365,12 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                           if (waTemplateSubTab === 'daftar') {
                             setWaTemplates((prev) => [
                               ...prev,
-                              `Assalamu'alaikum {sapaan} *{nama}*,\nTerima kasih atas komitmen Kafalah Dai sebesar *{nominal}* (ID: {id_donatur}).\n\n*Rincian Data Donatur*\n• Jenis Kelamin: {jenis_kelamin}\n• Domisili: {domisili}\n\n{rekening}\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._`,
+                              `Assalamu'alaikum {sapaan} *{nama}*,\nTerima kasih atas komitmen Kafalah Dai sebesar *{nominal}* (ID: {id_donatur}).\n\n*Rincian Data Donatur*\n• Jenis Kelamin: {jenis_kelamin}\n• Domisili: {domisili}\n\n{rekening}\n{qris_note}\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._`,
                             ]);
                           } else if (waTemplateSubTab === 'followup') {
                             setWaFollowupTemplates((prev) => [
                               ...prev,
-                              `Halo {sapaan} *{nama}*, mohon berkenan menyimpan nomor resmi *{lembaga}* ini agar tautan konfirmasi dapat diklik langsung dan notifikasi rutin tersampaikan dengan baik. Syukran.`,
+                              `Halo {sapaan} *{nama}*, mohon berkenan menyimpan nomor resmi *{lembaga}* ini agar tautan konfirmasi dapat diklik langsung dan notifikasi rutin tersampaikan dengan baik.\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._`,
                             ]);
                           } else {
                             setWaReminderTemplates((prev) => [
@@ -1386,11 +1386,20 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                       </button>
                     </div>
 
+                    {waTemplateSubTab === 'daftar' && (
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 safe-wrap">
+                        Template pendaftaran awal otomatis mengirim gambar QRIS (jika sudah
+                        diunggah di menu Rekening &amp; QRIS) serta link Grup WA bagi donatur yang
+                        berminat bergabung.
+                      </p>
+                    )}
+
                     {waTemplateSubTab === 'followup' && (
                       <div className="rounded-xl border border-teal-200/80 dark:border-teal-800/70 bg-teal-50/50 dark:bg-teal-950/30 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
                         <p className="text-[11px] text-teal-900 dark:text-teal-200 safe-wrap">
                           Pesan 2 otomatis dijadwalkan terkirim setelah Pesan 1 pendaftaran awal
-                          (arahan save nomor).
+                          (arahan save nomor &amp; link Grup WA melalui{' '}
+                          <code className="font-mono">{'{link_grup_section}'}</code>).
                         </p>
                         <div className="flex items-center gap-2 shrink-0">
                           <label className="text-[11px] font-semibold text-teal-900 dark:text-teal-200">
@@ -1413,8 +1422,8 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     {waTemplateSubTab === 'reminder' && (
                       <p className="text-[11px] text-slate-600 dark:text-slate-300 safe-wrap">
                         Template pengingat bulanan ringkas (tanpa rincian data pendaftaran) dan
-                        otomatis melampirkan gambar QRIS apabila file QRIS sudah diunggah di tab
-                        Rekening &amp; QRIS.
+                        otomatis melampirkan gambar QRIS melalui WhatsApp &amp; Email apabila file
+                        QRIS sudah diunggah di menu Rekening &amp; QRIS.
                       </p>
                     )}
 

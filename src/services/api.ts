@@ -36,9 +36,11 @@ import {
 import {
   extractIsoDateFromDateStr,
   getTodayIsoDate,
+  normalizeJenisDonatur,
   normalizeJenisKelamin,
   normalizeMinatGrup,
   normalizeRoleLabel,
+  normalizeStatusAktif,
   normalizeStatusGrup,
   previewAutoRenameFile,
   validateAndNormalizeWA,
@@ -83,10 +85,13 @@ export function isValidGasUrl(url: string): boolean {
 function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
   const transaksi: TransaksiDonasi[] = Array.isArray(raw?.transaksi)
     ? raw!.transaksi.map((t) => {
+        const jenisDonatur = normalizeJenisDonatur(t.jenisDonatur, t.idDonatur);
         const nominalTransfer = Number(t.nominalTransfer) || 0;
-        const donasiLainnya = Math.max(0, Number(t.donasiLainnya) || 0);
+        const donasiLainnya = jenisDonatur === 'Umum' ? 0 : Math.max(0, Number(t.donasiLainnya) || 0);
         const nominalKomitmen =
-          Number(t.nominalKomitmen) > 0
+          jenisDonatur === 'Umum'
+            ? 0
+            : Number(t.nominalKomitmen) > 0
             ? Number(t.nominalKomitmen)
             : Math.max(0, nominalTransfer - donasiLainnya);
         const tanggalTransfer =
@@ -96,6 +101,7 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
 
         return {
           ...t,
+          jenisDonatur,
           tanggalTransfer,
           nominalKomitmen,
           donasiLainnya,
@@ -114,6 +120,7 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
     ? raw!.donatur.map((d) => ({
         ...d,
         jenisKelamin: normalizeJenisKelamin(d.jenisKelamin),
+        statusAktif: normalizeStatusAktif(d.statusAktif),
         email: d.email || '',
         kabId: d.kabId || '',
         domisili: d.domisili || '',
@@ -507,9 +514,21 @@ export async function submitPembayaran(
   }
 
   const state = getLocalState();
-  const waCheck = validateAndNormalizeWA(payload.noWa);
-  if (!waCheck.valid) {
-    return { status: 'error', message: waCheck.error };
+  const isUmum = normalizeJenisDonatur(payload.jenisDonatur, payload.idDonatur) === 'Umum';
+  let normalizedWa = '';
+  if (payload.noWa && payload.noWa.trim()) {
+    const waCheck = validateAndNormalizeWA(payload.noWa);
+    if (!waCheck.valid) {
+      return { status: 'error', message: waCheck.error };
+    }
+    normalizedWa = waCheck.normalized;
+  } else if (!isUmum) {
+    return { status: 'error', message: 'Nomor WhatsApp donatur rutin wajib diisi.' };
+  }
+
+  const finalNamaDonatur = payload.namaDonatur.trim() || (isUmum ? 'Hamba Allah' : '');
+  if (!finalNamaDonatur) {
+    return { status: 'error', message: 'Nama donatur wajib diisi.' };
   }
 
   const todayIso = getTodayIsoDate();
@@ -543,7 +562,7 @@ export async function submitPembayaran(
         tanggalTransfer: tglTransfer,
         bulanTagihan: months[0],
         bulanList: months,
-        namaDonatur: payload.namaDonatur,
+        namaDonatur: finalNamaDonatur,
         nominalTransfer: payload.nominalTransfer,
         extension: ext,
       })
@@ -554,13 +573,14 @@ export async function submitPembayaran(
   const baseSeq = state.transaksi.length + 1;
   const totalRp = Math.round(payload.nominalTransfer);
 
-  const matchedDonor = state.donatur.find((d) => d.idDonatur === payload.idDonatur);
-  const komitmenPerBulan = Math.max(
-    0,
-    Math.round(payload.nominalKomitmenPerBulan ?? matchedDonor?.nominalKomitmen ?? 0)
-  );
+  const matchedDonor = !isUmum
+    ? state.donatur.find((d) => d.idDonatur === payload.idDonatur)
+    : undefined;
+  const komitmenPerBulan = isUmum
+    ? 0
+    : Math.max(0, Math.round(payload.nominalKomitmenPerBulan ?? matchedDonor?.nominalKomitmen ?? 0));
   const totalKomitmenExpected = komitmenPerBulan * months.length;
-  const hasExcess = komitmenPerBulan > 0 && totalRp > totalKomitmenExpected;
+  const hasExcess = !isUmum && komitmenPerBulan > 0 && totalRp > totalKomitmenExpected;
   const totalDonasiLainnya = hasExcess ? totalRp - totalKomitmenExpected : 0;
 
   const basePerMonth = Math.floor(totalRp / months.length);
@@ -568,7 +588,7 @@ export async function submitPembayaran(
 
   const userNote = (payload.keterangan || '').trim();
   const batchNote =
-    months.length > 1
+    !isUmum && months.length > 1
       ? `Bayar sekaligus ${months.length} bln (Total Rp ${totalRp.toLocaleString('id-ID')})`
       : '';
   const excessNote =
@@ -577,21 +597,24 @@ export async function submitPembayaran(
       : '';
   const finalKeterangan = [userNote, batchNote, excessNote].filter(Boolean).join(' · ');
 
-  const createdRows: TransaksiDonasi[] = months.map((bulan, idx) => {
+  const createdRows: TransaksiDonasi[] = (isUmum ? [months[0]] : months).map((bulan, idx) => {
     const seq = String(baseSeq + idx).padStart(3, '0');
-    const nominalKomitmenBulan = hasExcess
+    const nominalKomitmenBulan = isUmum
+      ? 0
+      : hasExcess
       ? komitmenPerBulan
       : basePerMonth + (idx < remainder ? 1 : 0);
-    const donasiLainnyaBulan = hasExcess && idx === 0 ? totalDonasiLainnya : 0;
-    const nominalTransferBulan = nominalKomitmenBulan + donasiLainnyaBulan;
+    const donasiLainnyaBulan = !isUmum && hasExcess && idx === 0 ? totalDonasiLainnya : 0;
+    const nominalTransferBulan = isUmum ? totalRp : nominalKomitmenBulan + donasiLainnyaBulan;
 
     return {
       idTransaksi: `TRX-${ymd}-${seq}`,
       waktuInput: formatNowLocal(),
       tanggalTransfer: tglTransfer,
-      idDonatur: payload.idDonatur || '-',
-      namaDonatur: payload.namaDonatur.trim(),
-      noWa: waCheck.normalized,
+      jenisDonatur: isUmum ? 'Umum' : 'Rutin',
+      idDonatur: isUmum ? 'UMUM' : payload.idDonatur || '-',
+      namaDonatur: finalNamaDonatur,
+      noWa: normalizedWa,
       bulanTagihan: bulan,
       nominalKomitmen: nominalKomitmenBulan,
       donasiLainnya: donasiLainnyaBulan,

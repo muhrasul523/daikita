@@ -29,7 +29,8 @@ interface MonthStatPoint {
   danaValidRp: number;
   danaKomitmenValidRp: number;
   danaLainnyaValidRp: number;
-  danaSalurRp: number;
+  danaUmumValidRp: number;
+  danaTambahanValidRp: number;
   donaturBaru: number;
   totalDonaturAktif: number;
   donaturLunas: number;
@@ -81,13 +82,17 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
       const monthTrx = transaksiList.filter((t) => t.bulanTagihan === ym);
       const validTrx = monthTrx.filter((t) => t.statusVerifikasi === 'Valid');
       const pendingTrx = monthTrx.filter((t) => t.statusVerifikasi === 'Pending');
-      const salurTrx = validTrx.filter((t) => t.statusPenyaluran === 'Sudah Disalurkan');
 
       const danaValidRp = validTrx.reduce((s, t) => s + t.nominalTransfer, 0);
-      const danaLainnyaValidRp = validTrx.reduce((s, t) => s + Math.max(0, t.donasiLainnya || 0), 0);
-      const danaKomitmenValidRp = Math.max(0, danaValidRp - danaLainnyaValidRp);
+      const danaUmumValidRp = validTrx
+        .filter((t) => t.jenisDonatur === 'Umum' || t.idDonatur === 'UMUM')
+        .reduce((s, t) => s + t.nominalTransfer, 0);
+      const danaLainnyaValidRp = validTrx
+        .filter((t) => t.jenisDonatur !== 'Umum' && t.idDonatur !== 'UMUM')
+        .reduce((s, t) => s + Math.max(0, t.donasiLainnya || 0), 0);
+      const danaTambahanValidRp = danaLainnyaValidRp + danaUmumValidRp;
+      const danaKomitmenValidRp = Math.max(0, danaValidRp - danaTambahanValidRp);
       const danaPendingRp = pendingTrx.reduce((s, t) => s + t.nominalTransfer, 0);
-      const danaSalurRp = salurTrx.reduce((s, t) => s + t.nominalTransfer, 0);
 
       let donaturBaru = 0;
       let totalDonaturAktif = 0;
@@ -95,9 +100,16 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
       let donaturLunas = 0;
 
       const validIdSet = new Set(
-        validTrx.map((t) => t.idDonatur).filter((id) => id && id !== '-')
+        validTrx
+          .map((t) => t.idDonatur)
+          .filter((id) => id && id !== '-' && id !== 'UMUM')
       );
-      const validWaSet = new Set(validTrx.map((t) => normalizeWA(t.noWa) || t.noWa).filter(Boolean));
+      const validWaSet = new Set(
+        validTrx
+          .filter((t) => t.jenisDonatur !== 'Umum' && t.idDonatur !== 'UMUM')
+          .map((t) => normalizeWA(t.noWa) || t.noWa)
+          .filter(Boolean)
+      );
 
       parsedDonors.forEach(({ donor, regYm, normWa }) => {
         if (regYm === ym) {
@@ -125,7 +137,8 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
         danaValidRp,
         danaKomitmenValidRp,
         danaLainnyaValidRp,
-        danaSalurRp,
+        danaUmumValidRp,
+        danaTambahanValidRp,
         donaturBaru,
         totalDonaturAktif,
         donaturLunas,
@@ -145,7 +158,7 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
         maxVal,
         p.komitmenAktifRp,
         p.danaValidRp + p.danaPendingRp,
-        p.danaSalurRp
+        p.danaTambahanValidRp
       );
     });
     return maxVal;
@@ -173,9 +186,9 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
     const masukValid = sel?.danaValidRp || 0;
     const realisasiPct =
       targetKomitmen > 0 ? Math.min(100, Math.round((masukValid / targetKomitmen) * 1000) / 10) : 0;
-    const salurPct =
+    const tambahanPct =
       masukValid > 0
-        ? Math.min(100, Math.round(((sel?.danaSalurRp || 0) / masukValid) * 1000) / 10)
+        ? Math.min(100, Math.round(((sel?.danaTambahanValidRp || 0) / masukValid) * 1000) / 10)
         : 0;
 
     return {
@@ -186,7 +199,7 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
       lakiPct: Math.round((lakiCount / totalGender) * 100),
       perempuanPct: Math.round((perempuanCount / totalGender) * 100),
       realisasiPct,
-      salurPct,
+      tambahanPct,
     };
   }, [series, selectedMonth, activePoint, donaturList]);
 
@@ -229,8 +242,8 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
             <span>Analitik &amp; Grafik Perkembangan Bulanan</span>
           </h2>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 safe-wrap">
-            Pantau perbandingan komitmen, dana terkonfirmasi, penyaluran, serta pertambahan donatur
-            dari bulan ke bulan. Ketuk atau arahkan kursor ke bulan pada grafik untuk rincian.
+            Pantau perbandingan potensi komitmen, pemasukan terkonfirmasi, donasi lainnya/umum,
+            serta pertambahan donatur dari bulan ke bulan. Ketuk bulan pada grafik untuk rincian.
           </p>
         </div>
 
@@ -274,30 +287,24 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-700 dark:text-slate-200 tabular-nums">
               <span>
-                Komitmen: <strong>{formatRupiah(activePoint.komitmenAktifRp)}</strong>
+                Potensi Komitmen: <strong>{formatRupiah(activePoint.komitmenAktifRp)}</strong>
               </span>
               <span>
                 Valid Masuk:{' '}
                 <strong className="text-emerald-700 dark:text-emerald-300">
                   {formatRupiah(activePoint.danaValidRp)}
                 </strong>
-                {activePoint.danaLainnyaValidRp > 0 && (
-                  <span className="text-sky-700 dark:text-sky-300">
-                    {' '}
-                    (+{formatRupiah(activePoint.danaLainnyaValidRp)} lainnya)
-                  </span>
-                )}
+              </span>
+              <span>
+                Lainnya &amp; Umum:{' '}
+                <strong className="text-sky-700 dark:text-sky-300">
+                  {formatRupiah(activePoint.danaTambahanValidRp)}
+                </strong>
               </span>
               <span>
                 Pending:{' '}
                 <strong className="text-amber-700 dark:text-amber-300">
                   {formatRupiah(activePoint.danaPendingRp)}
-                </strong>
-              </span>
-              <span>
-                Disalurkan:{' '}
-                <strong className="text-sky-700 dark:text-sky-300">
-                  {formatRupiah(activePoint.danaSalurRp)}
                 </strong>
               </span>
               <span>
@@ -323,15 +330,15 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
 
       {/* Dua Grafik Utama */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-        {/* Chart 1: Dana Masuk, Komitmen, Terkonfirmasi & Disalurkan */}
+        {/* Chart 1: Dana Masuk, Komitmen & Donasi Lainnya/Umum */}
         <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/75 dark:bg-slate-900/60 p-4 space-y-3 min-w-0">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                Arus Dana &amp; Komitmen Bulanan
+                Pemasukan &amp; Potensi Komitmen Bulanan
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Perbandingan target komitmen, valid masuk, menunggu verifikasi, &amp; penyaluran
+                Perbandingan potensi komitmen, dana valid, pending, &amp; donasi lainnya/umum
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600 dark:text-slate-300">
@@ -349,7 +356,7 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
               </span>
               <span className="inline-flex items-center gap-1">
                 <span className="h-2.5 w-2.5 rounded-sm bg-sky-500" />
-                Disalurkan
+                Lainnya &amp; Umum
               </span>
             </div>
           </div>
@@ -399,7 +406,7 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
                 const hKomitmen = (p.komitmenAktifRp / maxFinanceRp) * plotH;
                 const hValid = (p.danaValidRp / maxFinanceRp) * plotH;
                 const hPending = (p.danaPendingRp / maxFinanceRp) * plotH;
-                const hSalur = (p.danaSalurRp / maxFinanceRp) * plotH;
+                const hTambahan = (p.danaTambahanValidRp / maxFinanceRp) * plotH;
                 const isSelected = p.ym === selectedMonth;
                 const isHovered = p.ym === hoveredYm;
 
@@ -453,12 +460,12 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
                         className="fill-amber-400 dark:fill-amber-300 transition-all"
                       />
                     )}
-                    {/* Bar 3: Disalurkan */}
+                    {/* Bar 3: Donasi Lainnya & Umum */}
                     <rect
                       x={startX + (barW + gap) * 2}
-                      y={padT + plotH - hSalur}
+                      y={padT + plotH - hTambahan}
                       width={barW}
-                      height={Math.max(p.danaSalurRp > 0 ? 2 : 0, hSalur)}
+                      height={Math.max(p.danaTambahanValidRp > 0 ? 2 : 0, hTambahan)}
                       rx={3}
                       className="fill-sky-500 dark:fill-sky-400 transition-all"
                     />
@@ -685,20 +692,21 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
         <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/75 dark:bg-slate-900/60 p-4 space-y-2.5 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-              Rasio Penyaluran Dana Valid
+              Porsi Donasi Lainnya &amp; Umum
             </span>
             <span className="text-xs font-bold text-sky-700 dark:text-sky-300 tabular-nums">
-              {monthRatioSummary.salurPct.toFixed(1)}%
+              {monthRatioSummary.tambahanPct.toFixed(1)}%
             </span>
           </div>
           <div className="h-2 w-full rounded-full bg-slate-200/80 dark:bg-slate-700/80 overflow-hidden">
             <div
               className="h-full rounded-full bg-gradient-to-r from-sky-500 to-teal-500 transition-all duration-300"
-              style={{ width: `${monthRatioSummary.salurPct}%` }}
+              style={{ width: `${monthRatioSummary.tambahanPct}%` }}
             />
           </div>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
-            {formatRupiah(monthRatioSummary.sel?.danaSalurRp || 0)} telah disalurkan pada{' '}
+            Lainnya: {formatRupiah(monthRatioSummary.sel?.danaLainnyaValidRp || 0)} · Umum:{' '}
+            {formatRupiah(monthRatioSummary.sel?.danaUmumValidRp || 0)} pada{' '}
             {formatBulanLabel(selectedMonth)}.
           </p>
         </div>

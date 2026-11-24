@@ -46,6 +46,7 @@ Terima kasih telah bergabung sebagai Donatur Rutin *Kafalah Dai* di *{lembaga}*.
 
 Penyaluran donasi dapat melalui rekening resmi:
 {rekening}
+{qris_note}
 
 Konfirmasi bukti transfer dapat dikirim melalui web:
 {link_konfirmasi}
@@ -70,6 +71,7 @@ Alhamdulillah, pendaftaran Donatur Rutin *Kafalah Dai* di *{lembaga}* telah resm
 
 Salurkan donasi melalui rekening resmi berikut:
 {rekening}
+{qris_note}
 
 Konfirmasi bukti transfer dapat dikirim melalui web:
 {link_konfirmasi}
@@ -92,8 +94,9 @@ Terima kasih atas kepercayaan {sapaan} mendukung program *Kafalah Dai* bersama *
 • Tanggal Pengingat: Setiap tanggal {tgl_pengingat}
 • Perantara: {perantara}
 
-Rekening Resmi Penyaluran:
+Rekening Resmi:
 {rekening}
+{qris_note}
 
 Konfirmasi bukti transfer dapat dikirim melalui web:
 {link_konfirmasi}
@@ -105,7 +108,7 @@ _Aamiin._`,
 ];
 
 /**
- * Template WA Pesan 2: Arahan Save Nomor (dikirim otomatis dengan jeda 1 menit setelah daftar)
+ * Template WA Pesan 2: Arahan Save Nomor + Tautan Grup WA (dikirim otomatis dengan jeda 1 menit setelah daftar)
  */
 export const DEFAULT_WA_FOLLOWUP_TEMPLATES: string[] = [
   `Assalamu'alaikum {sapaan} *{nama}*,
@@ -113,23 +116,23 @@ export const DEFAULT_WA_FOLLOWUP_TEMPLATES: string[] = [
 Mohon berkenan untuk *menyimpan (save) nomor WhatsApp ini* di kontak {sapaan} dengan nama *{lembaga}*.
 
 Dengan menyimpan nomor ini:
-• Tautan konfirmasi & tautan grup di pesan sebelumnya dapat langsung diklik
-• Notifikasi pengingat rutin & informasi penyaluran *Kafalah Dai* dapat diterima dengan lancar
+• Tautan konfirmasi & tautan grup di pesan ini dapat langsung diklik
+• Notifikasi pengingat rutin & informasi program *Kafalah Dai* dapat diterima dengan lancar
 • {sapaan} dapat langsung japri admin di nomor ini kapan saja
-
+{link_grup_section}
 _Syukran wa jazakumullahu khairan._`,
 
   `Bismillah, izin mengingatkan kembali {sapaan} *{nama}* 😊
 
-Agar tautan web konfirmasi dapat diklik dan {sapaan} selalu menerima notifikasi pengingat rutin serta laporan penyaluran *Kafalah Dai*, silakan *simpan nomor ini* di buku kontak HP {sapaan} (contoh: *DAIKITA Lajnah Dai*).
-
+Agar tautan web konfirmasi & tautan grup dapat diklik dan {sapaan} selalu menerima notifikasi pengingat rutin serta info program *Kafalah Dai*, silakan *simpan nomor ini* di buku kontak HP {sapaan} (contoh: *DAIKITA Lajnah Dai*).
+{link_grup_section}
 Jika ada pertanyaan atau konfirmasi transfer, silakan balas langsung pesan ini ya {sapaan}.
 _Jazakumullahu khairan._`,
 
   `Halo {sapaan} *{nama}*, satu langkah kecil agar komunikasi kita semakin lancar:
 
 Silakan *save nomor resmi {lembaga}* ini di kontak HP {sapaan}. Dengan begitu, gambar QRIS, pengingat bulanan, serta update program *Kafalah Dai* akan tampil utuh dan tautannya langsung bisa dibuka.
-
+{link_grup_section}
 _Barakallahu fiikum, terima kasih banyak {sapaan}._`,
 ];
 
@@ -210,6 +213,7 @@ Rincian Data Donatur:
 
 Penyaluran donasi dapat melalui rekening resmi berikut:
 {rekening}
+{qris_note}
 
 Konfirmasi bukti transfer dapat dikirim melalui web:
 {link_konfirmasi}

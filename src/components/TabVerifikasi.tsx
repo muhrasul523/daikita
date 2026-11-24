@@ -13,13 +13,12 @@ import {
   FileCheck2,
   MessageCircle,
   Search,
-  Send,
   X,
   XCircle,
 } from 'lucide-react';
 import {
+  JenisDonatur,
   LembagaConfig,
-  StatusPenyaluran,
   StatusVerifikasi,
   TransaksiDonasi,
 } from '../types';
@@ -38,10 +37,6 @@ interface TabVerifikasiProps {
   transaksiList: TransaksiDonasi[];
   isLoading: boolean;
   onVerifikasi: (idTransaksi: string, status: StatusVerifikasi) => Promise<boolean>;
-  onUpdateStatusPenyaluran: (
-    idTransaksi: string,
-    statusPenyaluran: StatusPenyaluran
-  ) => Promise<boolean>;
 }
 
 type TrxSortField =
@@ -50,13 +45,12 @@ type TrxSortField =
   | 'nominal'
   | 'bulan'
   | 'nama'
-  | 'statusVerifikasi'
-  | 'statusPenyaluran';
+  | 'statusVerifikasi';
 
-const SALUR_FILTER_OPTIONS: SearchableOption[] = [
-  { value: 'Semua', label: 'Penyaluran: Semua', keywords: 'semua' },
-  { value: 'Sudah Disalurkan', label: 'Sudah Disalurkan', keywords: 'sudah disalurkan' },
-  { value: 'Belum Disalurkan', label: 'Belum Disalurkan', keywords: 'belum disalurkan' },
+const JENIS_FILTER_OPTIONS: SearchableOption[] = [
+  { value: 'Semua', label: 'Sumber: Semua Donatur', keywords: 'semua' },
+  { value: 'Rutin', label: 'Donatur Rutin', keywords: 'rutin terdaftar' },
+  { value: 'Umum', label: 'Donatur Umum', keywords: 'umum non terdaftar hamba allah' },
 ];
 
 const SORT_OPTIONS: SearchableOption[] = [
@@ -66,7 +60,6 @@ const SORT_OPTIONS: SearchableOption[] = [
   { value: 'nominal', label: 'Urut: Nominal', keywords: 'nominal rupiah' },
   { value: 'bulan', label: 'Urut: Bulan Donasi', keywords: 'bulan periode' },
   { value: 'statusVerifikasi', label: 'Urut: Status Verifikasi', keywords: 'status verifikasi' },
-  { value: 'statusPenyaluran', label: 'Urut: Status Penyaluran', keywords: 'status penyaluran' },
 ];
 
 export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
@@ -74,20 +67,18 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
   transaksiList,
   isLoading,
   onVerifikasi,
-  onUpdateStatusPenyaluran,
 }) => {
   const [filterMonthMode, setFilterMonthMode] = useState<'semua' | 'bulan'>('semua');
   const [selectedMonth, setSelectedMonth] = useState(getCurrentYearMonth());
   const [filterStatus, setFilterStatus] = useState<'Pending' | 'Valid' | 'Ditolak' | 'Semua'>(
     'Pending'
   );
-  const [filterSalur, setFilterSalur] = useState<'Semua' | StatusPenyaluran>('Semua');
+  const [filterJenis, setFilterJenis] = useState<'Semua' | JenisDonatur>('Semua');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<TrxSortField>('waktu');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const [processingId, setProcessingId] = useState<string | null>(null);
-  const [processingSalurId, setProcessingSalurId] = useState<string | null>(null);
   const [confirmRejectId, setConfirmRejectId] = useState<string | null>(null);
   const [recentlyValidated, setRecentlyValidated] = useState<TransaksiDonasi | null>(null);
   const [previewModalTrx, setPreviewModalTrx] = useState<TransaksiDonasi | null>(null);
@@ -112,7 +103,9 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
     const q = searchQuery.trim().toLowerCase();
     const filtered = monthScopedTransaksi.filter((t) => {
       if (filterStatus !== 'Semua' && t.statusVerifikasi !== filterStatus) return false;
-      if (filterSalur !== 'Semua' && t.statusPenyaluran !== filterSalur) return false;
+      const jenis: JenisDonatur =
+        t.jenisDonatur === 'Umum' || t.idDonatur === 'UMUM' ? 'Umum' : 'Rutin';
+      if (filterJenis !== 'Semua' && jenis !== filterJenis) return false;
       if (!q) return true;
       return (
         t.namaDonatur.toLowerCase().includes(q) ||
@@ -153,16 +146,13 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
         case 'statusVerifikasi':
           cmp = verifRank[a.statusVerifikasi] - verifRank[b.statusVerifikasi];
           break;
-        case 'statusPenyaluran':
-          cmp = a.statusPenyaluran.localeCompare(b.statusPenyaluran, 'id');
-          break;
       }
       if (cmp === 0) {
         return a.idTransaksi.localeCompare(b.idTransaksi);
       }
       return cmp * dir;
     });
-  }, [monthScopedTransaksi, filterStatus, filterSalur, searchQuery, sortField, sortDir]);
+  }, [monthScopedTransaksi, filterStatus, filterJenis, searchQuery, sortField, sortDir]);
 
   const handleSortHeader = (field: TrxSortField) => {
     if (sortField === field) {
@@ -192,24 +182,16 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
     }
   };
 
-  const handleToggleSalur = async (trx: TransaksiDonasi) => {
-    const next: StatusPenyaluran =
-      trx.statusPenyaluran === 'Sudah Disalurkan' ? 'Belum Disalurkan' : 'Sudah Disalurkan';
-    setProcessingSalurId(trx.idTransaksi);
-    await onUpdateStatusPenyaluran(trx.idTransaksi, next);
-    setProcessingSalurId(null);
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Verifikasi &amp; Penyaluran Pengurus
+            Verifikasi Dana Masuk
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-            Periksa bukti transfer, validasi atau tolak konfirmasi, tandai status penyaluran, lalu
-            kirim kuitansi resmi via WhatsApp.
+            Periksa bukti transfer, validasi atau tolak konfirmasi pemasukan, lalu kirim kuitansi
+            resmi via WhatsApp.
           </p>
         </div>
       </div>
@@ -227,22 +209,23 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                 <strong className="tabular-nums">
                   {formatRupiah(recentlyValidated.nominalTransfer)}
                 </strong>{' '}
-                ({formatBulanLabel(recentlyValidated.bulanTagihan)}) siap dikirimkan kuitansi &amp;
-                ucapan terima kasih.
+                ({formatBulanLabel(recentlyValidated.bulanTagihan)}) telah tercatat valid.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <a
-              href={buildReceiptWaLink(recentlyValidated, config)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors whitespace-nowrap"
-            >
-              <MessageCircle className="h-4 w-4 shrink-0" />
-              <span>Kirim Kuitansi / Ucapan via WA</span>
-            </a>
+            {recentlyValidated.noWa && recentlyValidated.noWa !== '-' && (
+              <a
+                href={buildReceiptWaLink(recentlyValidated, config)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors whitespace-nowrap"
+              >
+                <MessageCircle className="h-4 w-4 shrink-0" />
+                <span>Kirim Kuitansi / Ucapan via WA</span>
+              </a>
+            )}
             <button
               type="button"
               onClick={() => setRecentlyValidated(null)}
@@ -343,12 +326,12 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
 
             <div className="w-full sm:w-48">
               <SearchableSelect
-                ariaLabel="Filter status penyaluran transaksi"
-                options={SALUR_FILTER_OPTIONS}
-                value={filterSalur}
-                onChange={(val) => setFilterSalur((val || 'Semua') as 'Semua' | StatusPenyaluran)}
+                ariaLabel="Filter jenis donatur"
+                options={JENIS_FILTER_OPTIONS}
+                value={filterJenis}
+                onChange={(val) => setFilterJenis((val || 'Semua') as 'Semua' | JenisDonatur)}
                 compact
-                searchPlaceholder="Filter penyaluran..."
+                searchPlaceholder="Filter jenis donatur..."
               />
             </div>
 
@@ -407,7 +390,7 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
           </div>
         ) : (
           <div className="overflow-x-auto clean-scroll">
-            <table className="w-full min-w-[960px] text-left border-collapse">
+            <table className="w-full min-w-[820px] text-left border-collapse">
               <thead>
                 <tr className="bg-emerald-800 dark:bg-emerald-950 text-white dark:text-emerald-100 text-[11px] font-semibold">
                   <th className="py-3.5 pl-5 pr-3 w-12 text-center">No</th>
@@ -451,24 +434,15 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                       {renderSortIcon(sortField === 'statusVerifikasi')}
                     </button>
                   </th>
-                  <th className="py-3.5 px-4">
-                    <button
-                      type="button"
-                      onClick={() => handleSortHeader('statusPenyaluran')}
-                      className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
-                    >
-                      <span>Penyaluran</span>
-                      {renderSortIcon(sortField === 'statusPenyaluran')}
-                    </button>
-                  </th>
                   <th className="py-3.5 pl-4 pr-5 text-right">Tindakan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/70 dark:divide-slate-700/70 text-sm">
                 {filteredTransaksi.map((trx, index) => {
                   const isBusy = processingId === trx.idTransaksi;
-                  const isBusySalur = processingSalurId === trx.idTransaksi;
                   const isConfirmingReject = confirmRejectId === trx.idTransaksi;
+                  const isUmum = trx.jenisDonatur === 'Umum' || trx.idDonatur === 'UMUM';
+                  const hasWa = Boolean(trx.noWa && trx.noWa !== '-');
                   const hasExternalUrl =
                     trx.linkBuktiDrive.startsWith('http://') ||
                     trx.linkBuktiDrive.startsWith('https://');
@@ -504,11 +478,18 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                       </td>
 
                       <td className="py-4 px-4 min-w-0 max-w-[230px]">
-                        <p className="font-semibold text-slate-900 dark:text-slate-100 safe-wrap">
-                          {trx.namaDonatur}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="font-semibold text-slate-900 dark:text-slate-100 safe-wrap">
+                            {trx.namaDonatur}
+                          </p>
+                          {isUmum && (
+                            <span className="rounded-lg bg-sky-100 dark:bg-sky-950/70 border border-sky-200 dark:border-sky-800 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 dark:text-sky-300">
+                              Donatur Umum
+                            </span>
+                          )}
+                        </div>
                         <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 tabular-nums">
-                          {formatWADisplay(trx.noWa)}
+                          {hasWa ? formatWADisplay(trx.noWa) : 'Tanpa nomor WA'}
                         </p>
                         {trx.bankTujuan && trx.bankTujuan !== '-' && (
                           <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
@@ -526,15 +507,21 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                         <p className="font-bold text-emerald-800 dark:text-emerald-300 tabular-nums">
                           {formatRupiah(trx.nominalTransfer)}
                         </p>
-                        {trx.donasiLainnya > 0 && (
-                          <div className="mt-0.5 space-y-0.5 text-[10px] tabular-nums">
-                            <p className="text-slate-500 dark:text-slate-400">
-                              Komitmen: {formatRupiah(trx.nominalKomitmen)}
-                            </p>
-                            <p className="font-semibold text-sky-700 dark:text-sky-300">
-                              +{formatRupiah(trx.donasiLainnya)} Lainnya
-                            </p>
-                          </div>
+                        {isUmum ? (
+                          <p className="mt-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300">
+                            Pemasukan Umum
+                          </p>
+                        ) : (
+                          trx.donasiLainnya > 0 && (
+                            <div className="mt-0.5 space-y-0.5 text-[10px] tabular-nums">
+                              <p className="text-slate-500 dark:text-slate-400">
+                                Komitmen: {formatRupiah(trx.nominalKomitmen)}
+                              </p>
+                              <p className="font-semibold text-sky-700 dark:text-sky-300">
+                                +{formatRupiah(trx.donasiLainnya)} Lainnya
+                              </p>
+                            </div>
+                          )
                         )}
                       </td>
 
@@ -588,41 +575,6 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                         )}
                       </td>
 
-                      <td className="py-4 px-4 whitespace-nowrap">
-                        {trx.statusVerifikasi !== 'Valid' ? (
-                          <span className="text-xs text-slate-400 dark:text-slate-500">
-                            Belum Disalurkan
-                          </span>
-                        ) : (
-                          <div className="space-y-1.5">
-                            <span
-                              className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
-                                trx.statusPenyaluran === 'Sudah Disalurkan'
-                                  ? 'text-sky-700 dark:text-sky-400'
-                                  : 'text-amber-700 dark:text-amber-400'
-                              }`}
-                            >
-                              <Send className="h-3.5 w-3.5 shrink-0" />
-                              <span>{trx.statusPenyaluran}</span>
-                            </span>
-                            <div>
-                              <button
-                                type="button"
-                                disabled={isBusySalur}
-                                onClick={() => void handleToggleSalur(trx)}
-                                className="text-[11px] font-semibold text-teal-700 dark:text-teal-300 hover:underline disabled:opacity-50 cursor-pointer"
-                              >
-                                {isBusySalur
-                                  ? 'Menyimpan...'
-                                  : trx.statusPenyaluran === 'Sudah Disalurkan'
-                                  ? 'Ubah ke Belum Disalurkan'
-                                  : 'Tandai Sudah Disalurkan'}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </td>
-
                       <td className="py-4 pl-4 pr-5 text-right">
                         <div className="inline-flex flex-wrap items-center justify-end gap-2">
                           {trx.statusVerifikasi === 'Pending' && !isConfirmingReject && (
@@ -671,17 +623,22 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                             </div>
                           )}
 
-                          {trx.statusVerifikasi === 'Valid' && (
-                            <a
-                              href={buildReceiptWaLink(trx, config)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-3.5 py-2 text-xs font-semibold text-white hover:opacity-95 transition-opacity whitespace-nowrap"
-                            >
-                              <MessageCircle className="h-3.5 w-3.5 shrink-0" />
-                              <span>Kirim Kuitansi WA</span>
-                            </a>
-                          )}
+                          {trx.statusVerifikasi === 'Valid' &&
+                            (hasWa ? (
+                              <a
+                                href={buildReceiptWaLink(trx, config)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-3.5 py-2 text-xs font-semibold text-white hover:opacity-95 transition-opacity whitespace-nowrap"
+                              >
+                                <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+                                <span>Kirim Kuitansi WA</span>
+                              </a>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 dark:text-slate-500 whitespace-nowrap">
+                                Tervalidasi (tanpa WA)
+                              </span>
+                            ))}
 
                           {trx.statusVerifikasi === 'Ditolak' && (
                             <button

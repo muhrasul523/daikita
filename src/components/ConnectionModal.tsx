@@ -29,7 +29,13 @@ import {
   X,
 } from 'lucide-react';
 import gasCodeSource from '../../backend/Code.gs?raw';
-import { DEFAULT_EMAIL_TEMPLATES, DEFAULT_WA_TEMPLATES } from '../config';
+import {
+  DEFAULT_EMAIL_TEMPLATE_DAFTAR,
+  DEFAULT_EMAIL_TEMPLATE_REMINDER,
+  DEFAULT_WA_FOLLOWUP_TEMPLATES,
+  DEFAULT_WA_REMINDER_TEMPLATES,
+  DEFAULT_WA_TEMPLATES,
+} from '../config';
 import {
   EmailTemplateItem,
   JenisKelamin,
@@ -94,6 +100,11 @@ const TEMPLATE_VARIABLES = [
   '{rekening}',
   '{lembaga}',
   '{link_konfirmasi}',
+  '{bulan}',
+  '{nama_grup}',
+  '{link_grup}',
+  '{link_grup_section}',
+  '{qris_note}',
 ];
 
 export const ConnectionModal: React.FC<ConnectionModalProps> = ({
@@ -142,20 +153,44 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   );
   const [catatanPembayaran, setCatatanPembayaran] = useState(config.catatanPembayaran || '');
 
-  // State Notifikasi WA (ReChat / MiPos) & Email Alias
+  // State Notifikasi WA (ReChat / MiPos), Grup WA & Email Alias
   const [enableWaNotif, setEnableWaNotif] = useState<boolean>(config.enableWaNotif);
   const [waEndpointUrl, setWaEndpointUrl] = useState(config.waEndpointUrl);
   const [waApiKey, setWaApiKey] = useState(config.waApiKey || '');
   const [showWaKey, setShowWaKey] = useState(false);
+  const [waTemplateSubTab, setWaTemplateSubTab] = useState<'daftar' | 'followup' | 'reminder'>(
+    'daftar'
+  );
   const [waTemplates, setWaTemplates] = useState<string[]>(config.waTemplates);
+  const [waFollowupTemplates, setWaFollowupTemplates] = useState<string[]>(
+    config.waFollowupTemplates
+  );
+  const [waFollowupDelaySec, setWaFollowupDelaySec] = useState<number>(
+    config.waFollowupDelaySec || 60
+  );
+  const [waReminderTemplates, setWaReminderTemplates] = useState<string[]>(
+    config.waReminderTemplates
+  );
+  const [waGroupName, setWaGroupName] = useState(config.waGroupName || '');
+  const [waGroupLink, setWaGroupLink] = useState(config.waGroupLink || '');
+  const [waGroupId, setWaGroupId] = useState(config.waGroupId || '');
+
   const [enableEmailNotif, setEnableEmailNotif] = useState<boolean>(config.enableEmailNotif);
   const [emailSenderAlias, setEmailSenderAlias] = useState(config.emailSenderAlias);
   const [emailSenderName, setEmailSenderName] = useState(config.emailSenderName);
-  const [emailTemplates, setEmailTemplates] = useState<EmailTemplateItem[]>(config.emailTemplates);
+  const [emailTemplateDaftar, setEmailTemplateDaftar] = useState<EmailTemplateItem>(
+    config.emailTemplateDaftar || DEFAULT_EMAIL_TEMPLATE_DAFTAR
+  );
+  const [emailTemplateReminder, setEmailTemplateReminder] = useState<EmailTemplateItem>(
+    config.emailTemplateReminder || DEFAULT_EMAIL_TEMPLATE_REMINDER
+  );
 
   // State Uji Kirim Notifikasi
   const [testWaInput, setTestWaInput] = useState('');
   const [testEmailInput, setTestEmailInput] = useState('');
+  const [testMessageType, setTestMessageType] = useState<'daftar' | 'followup' | 'reminder'>(
+    'daftar'
+  );
   const [isSendingTestNotif, setIsSendingTestNotif] = useState(false);
   const [testNotifResult, setTestNotifResult] = useState<NotifDeliveryResult | null>(null);
 
@@ -252,13 +287,33 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         ? [...config.waTemplates]
         : [...DEFAULT_WA_TEMPLATES]
     );
+    setWaFollowupTemplates(
+      config.waFollowupTemplates && config.waFollowupTemplates.length > 0
+        ? [...config.waFollowupTemplates]
+        : [...DEFAULT_WA_FOLLOWUP_TEMPLATES]
+    );
+    setWaFollowupDelaySec(config.waFollowupDelaySec || 60);
+    setWaReminderTemplates(
+      config.waReminderTemplates && config.waReminderTemplates.length > 0
+        ? [...config.waReminderTemplates]
+        : [...DEFAULT_WA_REMINDER_TEMPLATES]
+    );
+    setWaGroupName(config.waGroupName || 'Grup Donatur DAIKITA — Kafalah Dai');
+    setWaGroupLink(config.waGroupLink || '');
+    setWaGroupId(config.waGroupId || '');
+
     setEnableEmailNotif(config.enableEmailNotif);
     setEmailSenderAlias(config.emailSenderAlias || 'lajnahdai.dpp@gmail.com');
     setEmailSenderName(config.emailSenderName || 'DAIKITA — Lajnah Dai Wahdah Islamiyah');
-    setEmailTemplates(
-      config.emailTemplates && config.emailTemplates.length > 0
-        ? config.emailTemplates.map((t) => ({ ...t }))
-        : DEFAULT_EMAIL_TEMPLATES.map((t) => ({ ...t }))
+    setEmailTemplateDaftar(
+      config.emailTemplateDaftar?.subject && config.emailTemplateDaftar?.body
+        ? { ...config.emailTemplateDaftar }
+        : { ...DEFAULT_EMAIL_TEMPLATE_DAFTAR }
+    );
+    setEmailTemplateReminder(
+      config.emailTemplateReminder?.subject && config.emailTemplateReminder?.body
+        ? { ...config.emailTemplateReminder }
+        : { ...DEFAULT_EMAIL_TEMPLATE_REMINDER }
     );
     setTestNotifResult(null);
     setUrlInput(gasUrl);
@@ -470,9 +525,24 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     }
 
     const cleanWaTemplates = waTemplates.map((t) => t.trim()).filter(Boolean);
-    const cleanEmailTemplates = emailTemplates
-      .map((t) => ({ subject: t.subject.trim(), body: t.body.trim() }))
-      .filter((t) => t.subject !== '' && t.body !== '');
+    const cleanFollowupTemplates = waFollowupTemplates.map((t) => t.trim()).filter(Boolean);
+    const cleanReminderTemplates = waReminderTemplates.map((t) => t.trim()).filter(Boolean);
+
+    const safeEmailDaftar: EmailTemplateItem =
+      emailTemplateDaftar.subject.trim() && emailTemplateDaftar.body.trim()
+        ? {
+            subject: emailTemplateDaftar.subject.trim(),
+            body: emailTemplateDaftar.body.trim(),
+          }
+        : DEFAULT_EMAIL_TEMPLATE_DAFTAR;
+
+    const safeEmailReminder: EmailTemplateItem =
+      emailTemplateReminder.subject.trim() && emailTemplateReminder.body.trim()
+        ? {
+            subject: emailTemplateReminder.subject.trim(),
+            body: emailTemplateReminder.body.trim(),
+          }
+        : DEFAULT_EMAIL_TEMPLATE_REMINDER;
 
     setIsSavingSettings(true);
     const ok = await onSavePengaturan({
@@ -496,11 +566,24 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       waEndpointUrl: waEndpointUrl.trim() || 'https://www.rechat.id/api/v1/messages',
       waApiKey: waApiKey.trim(),
       waTemplates: cleanWaTemplates.length > 0 ? cleanWaTemplates : DEFAULT_WA_TEMPLATES,
+      waFollowupTemplates:
+        cleanFollowupTemplates.length > 0
+          ? cleanFollowupTemplates
+          : DEFAULT_WA_FOLLOWUP_TEMPLATES,
+      waFollowupDelaySec: Math.max(10, Math.min(600, Math.round(waFollowupDelaySec || 60))),
+      waReminderTemplates:
+        cleanReminderTemplates.length > 0
+          ? cleanReminderTemplates
+          : DEFAULT_WA_REMINDER_TEMPLATES,
+      waGroupName: waGroupName.trim() || 'Grup Donatur DAIKITA — Kafalah Dai',
+      waGroupLink: waGroupLink.trim(),
+      waGroupId: waGroupId.trim(),
       enableEmailNotif,
       emailSenderAlias: emailSenderAlias.trim() || 'lajnahdai.dpp@gmail.com',
       emailSenderName: emailSenderName.trim() || 'DAIKITA — Lajnah Dai Wahdah Islamiyah',
-      emailTemplates:
-        cleanEmailTemplates.length > 0 ? cleanEmailTemplates : DEFAULT_EMAIL_TEMPLATES,
+      emailTemplateDaftar: safeEmailDaftar,
+      emailTemplateReminder: safeEmailReminder,
+      emailTemplates: [safeEmailDaftar, safeEmailReminder],
     });
     setIsSavingSettings(false);
     if (ok) {
@@ -544,6 +627,8 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       email: testEmailInput.trim(),
       namaLengkap: 'Hamba Allah (Uji Coba)',
       jenisKelamin: 'Laki-laki',
+      minatGrupWa: 'Ya',
+      messageType: testMessageType,
     });
     setIsSendingTestNotif(false);
     if (res.notifStatus) {
@@ -1191,43 +1276,183 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Daftar Template WA */}
-                  <div className="space-y-3 pt-2 border-t border-slate-200/70 dark:border-slate-700/70">
-                    <div className="flex items-center justify-between gap-2">
+                  {/* Pengaturan Grup WhatsApp Donatur */}
+                  <div className="pt-3 border-t border-slate-200/70 dark:border-slate-700/70 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-teal-700 dark:text-teal-400" />
                       <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        Variasi Template Pesan WA ({waTemplates.length} template aktif)
+                        Pengaturan Grup WhatsApp Donatur
                       </p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <div className="min-w-0">
+                        <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                          Nama Grup WA
+                        </label>
+                        <input
+                          type="text"
+                          value={waGroupName}
+                          onChange={(e) => setWaGroupName(e.target.value)}
+                          placeholder="Grup Donatur DAIKITA"
+                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                          Link Undangan Grup WA
+                        </label>
+                        <input
+                          type="url"
+                          value={waGroupLink}
+                          onChange={(e) => setWaGroupLink(e.target.value)}
+                          placeholder="https://chat.whatsapp.com/..."
+                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                          ID Grup WA (Opsional)
+                        </label>
+                        <input
+                          type="text"
+                          value={waGroupId}
+                          onChange={(e) => setWaGroupId(e.target.value)}
+                          placeholder="120363...@g.us"
+                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Daftar Template WA — Terpisah 3 Jenis Pesan */}
+                  <div className="space-y-3 pt-3 border-t border-slate-200/70 dark:border-slate-700/70">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap gap-1 rounded-xl bg-slate-200/70 dark:bg-slate-900/70 p-1">
+                        {(
+                          [
+                            {
+                              key: 'daftar',
+                              label: `Daftar Awal · Pesan 1 (${waTemplates.length})`,
+                            },
+                            {
+                              key: 'followup',
+                              label: `Save Nomor · Pesan 2 (${waFollowupTemplates.length})`,
+                            },
+                            {
+                              key: 'reminder',
+                              label: `Reminder Bulanan (${waReminderTemplates.length})`,
+                            },
+                          ] as const
+                        ).map((sub) => (
+                          <button
+                            key={sub.key}
+                            type="button"
+                            onClick={() => setWaTemplateSubTab(sub.key)}
+                            className={`rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                              waTemplateSubTab === sub.key
+                                ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
+                                : 'text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            {sub.label}
+                          </button>
+                        ))}
+                      </div>
+
                       <button
                         type="button"
-                        onClick={() =>
-                          setWaTemplates((prev) => [
-                            ...prev,
-                            `Assalamu'alaikum {sapaan} *{nama}*,\nTerima kasih komitmen Kafalah Dai sebesar *{nominal}* (ID: {id_donatur}).`,
-                          ])
-                        }
+                        onClick={() => {
+                          if (waTemplateSubTab === 'daftar') {
+                            setWaTemplates((prev) => [
+                              ...prev,
+                              `Assalamu'alaikum {sapaan} *{nama}*,\nTerima kasih atas komitmen Kafalah Dai sebesar *{nominal}* (ID: {id_donatur}).\n\n*Rincian Data Donatur*\n• Jenis Kelamin: {jenis_kelamin}\n• Domisili: {domisili}\n\n{rekening}\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._`,
+                            ]);
+                          } else if (waTemplateSubTab === 'followup') {
+                            setWaFollowupTemplates((prev) => [
+                              ...prev,
+                              `Halo {sapaan} *{nama}*, mohon berkenan menyimpan nomor resmi *{lembaga}* ini agar tautan konfirmasi dapat diklik langsung dan notifikasi rutin tersampaikan dengan baik. Syukran.`,
+                            ]);
+                          } else {
+                            setWaReminderTemplates((prev) => [
+                              ...prev,
+                              `Assalamu'alaikum {sapaan} *{nama}*, mengingatkan donasi rutin Kafalah Dai bulan *{bulan}* sebesar *{nominal}*.\n\n{rekening}\n{qris_note}\nKonfirmasi bukti transfer dapat dikirim melalui web: {link_konfirmasi} atau melalui japri admin via nomor ini.\n\n_Syukran wa jazakumullahu khairan._`,
+                            ]);
+                          }
+                        }}
                         className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 cursor-pointer"
                       >
                         <Plus className="h-3.5 w-3.5 shrink-0" />
-                        <span>Tambah Template WA</span>
+                        <span>Tambah Variasi</span>
                       </button>
                     </div>
 
+                    {waTemplateSubTab === 'followup' && (
+                      <div className="rounded-xl border border-teal-200/80 dark:border-teal-800/70 bg-teal-50/50 dark:bg-teal-950/30 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-[11px] text-teal-900 dark:text-teal-200 safe-wrap">
+                          Pesan 2 otomatis dijadwalkan terkirim setelah Pesan 1 pendaftaran awal
+                          (arahan save nomor).
+                        </p>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <label className="text-[11px] font-semibold text-teal-900 dark:text-teal-200">
+                            Jeda (detik):
+                          </label>
+                          <input
+                            type="number"
+                            min={10}
+                            max={600}
+                            value={waFollowupDelaySec}
+                            onChange={(e) =>
+                              setWaFollowupDelaySec(Math.max(10, Number(e.target.value) || 60))
+                            }
+                            className="w-20 rounded-lg border border-teal-300 dark:border-teal-700 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-bold tabular-nums text-slate-900 dark:text-slate-100"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {waTemplateSubTab === 'reminder' && (
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 safe-wrap">
+                        Template pengingat bulanan ringkas (tanpa rincian data pendaftaran) dan
+                        otomatis melampirkan gambar QRIS apabila file QRIS sudah diunggah di tab
+                        Rekening &amp; QRIS.
+                      </p>
+                    )}
+
                     <div className="space-y-3">
-                      {waTemplates.map((tpl, idx) => (
+                      {(waTemplateSubTab === 'daftar'
+                        ? waTemplates
+                        : waTemplateSubTab === 'followup'
+                        ? waFollowupTemplates
+                        : waReminderTemplates
+                      ).map((tpl, idx, arr) => (
                         <div
-                          key={idx}
+                          key={`${waTemplateSubTab}-${idx}`}
                           className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/70 p-3 space-y-2"
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
-                              Template WA #{idx + 1}
+                              {waTemplateSubTab === 'daftar'
+                                ? `Template Daftar Awal #${idx + 1}`
+                                : waTemplateSubTab === 'followup'
+                                ? `Template Arahan Save Nomor #${idx + 1}`
+                                : `Template Reminder Bulanan #${idx + 1}`}
                             </span>
-                            {waTemplates.length > 1 && (
+                            {arr.length > 1 && (
                               <button
                                 type="button"
-                                onClick={() =>
-                                  setWaTemplates((prev) => prev.filter((_, i) => i !== idx))
-                                }
+                                onClick={() => {
+                                  if (waTemplateSubTab === 'daftar') {
+                                    setWaTemplates((prev) => prev.filter((_, i) => i !== idx));
+                                  } else if (waTemplateSubTab === 'followup') {
+                                    setWaFollowupTemplates((prev) =>
+                                      prev.filter((_, i) => i !== idx)
+                                    );
+                                  } else {
+                                    setWaReminderTemplates((prev) =>
+                                      prev.filter((_, i) => i !== idx)
+                                    );
+                                  }
+                                }}
                                 className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
                               >
                                 <Trash2 className="h-3 w-3" />
@@ -1236,13 +1461,24 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                             )}
                           </div>
                           <textarea
-                            rows={5}
+                            rows={waTemplateSubTab === 'followup' ? 4 : 6}
                             value={tpl}
-                            onChange={(e) =>
-                              setWaTemplates((prev) =>
-                                prev.map((item, i) => (i === idx ? e.target.value : item))
-                              )
-                            }
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (waTemplateSubTab === 'daftar') {
+                                setWaTemplates((prev) =>
+                                  prev.map((item, i) => (i === idx ? val : item))
+                                );
+                              } else if (waTemplateSubTab === 'followup') {
+                                setWaFollowupTemplates((prev) =>
+                                  prev.map((item, i) => (i === idx ? val : item))
+                                );
+                              } else {
+                                setWaReminderTemplates((prev) =>
+                                  prev.map((item, i) => (i === idx ? val : item))
+                                );
+                              }
+                            }}
                             className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/60 px-3 py-2 text-xs leading-relaxed text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                           />
                         </div>
@@ -1251,13 +1487,13 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                   </div>
                 </div>
 
-                {/* Pengaturan Email Alias */}
+                {/* Pengaturan Email Alias — 1 Template per Jenis Pesan */}
                 <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/40 p-4 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <Mail className="h-4 w-4 text-sky-700 dark:text-sky-400" />
                       <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        Notifikasi Email Otomatis (Email Alias)
+                        Notifikasi Email Otomatis (1 Template per Jenis Pesan)
                       </p>
                     </div>
                     <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200 cursor-pointer">
@@ -1283,10 +1519,6 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                         placeholder="lajnahdai.dpp@gmail.com"
                         className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                       />
-                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
-                        Jika alamat alias sudah didaftarkan di Gmail → Send mail as, pengirim
-                        otomatis memakai alias ini.
-                      </p>
                     </div>
                     <div className="min-w-0">
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">
@@ -1302,81 +1534,55 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Daftar Template Email */}
-                  <div className="space-y-3 pt-2 border-t border-slate-200/70 dark:border-slate-700/70">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        Variasi Template Email ({emailTemplates.length} template aktif)
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setEmailTemplates((prev) => [
-                            ...prev,
-                            {
-                              subject: 'Konfirmasi Kepesertaan {lembaga} — {nama}',
-                              body: "Assalamu'alaikum {sapaan} {nama},\n\nTerima kasih atas amanah Kafalah Dai sebesar {nominal} (ID: {id_donatur}).",
-                            },
-                          ])
+                  {/* 1 Template Email Daftar Awal */}
+                  <div className="space-y-2.5 pt-2 border-t border-slate-200/70 dark:border-slate-700/70">
+                    <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/70 p-3 space-y-2">
+                      <span className="text-[11px] font-bold text-sky-800 dark:text-sky-300">
+                        Template Email — Notifikasi Daftar Awal (1 Template)
+                      </span>
+                      <input
+                        type="text"
+                        value={emailTemplateDaftar.subject}
+                        onChange={(e) =>
+                          setEmailTemplateDaftar((prev) => ({ ...prev, subject: e.target.value }))
                         }
-                        className="inline-flex items-center gap-1 rounded-xl border border-sky-200 dark:border-sky-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-sky-800 dark:text-sky-200 hover:bg-sky-50 cursor-pointer"
-                      >
-                        <Plus className="h-3.5 w-3.5 shrink-0" />
-                        <span>Tambah Template Email</span>
-                      </button>
+                        placeholder="Subjek Email Daftar Awal..."
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/60 px-3 py-2 text-xs font-semibold text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
+                      <textarea
+                        rows={6}
+                        value={emailTemplateDaftar.body}
+                        onChange={(e) =>
+                          setEmailTemplateDaftar((prev) => ({ ...prev, body: e.target.value }))
+                        }
+                        placeholder="Isi Email Daftar Awal..."
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/60 px-3 py-2 text-xs leading-relaxed text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
                     </div>
 
-                    <div className="space-y-3">
-                      {emailTemplates.map((tpl, idx) => (
-                        <div
-                          key={idx}
-                          className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/70 p-3 space-y-2"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-bold text-sky-800 dark:text-sky-300">
-                              Template Email #{idx + 1}
-                            </span>
-                            {emailTemplates.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setEmailTemplates((prev) => prev.filter((_, i) => i !== idx))
-                                }
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                                <span>Hapus</span>
-                              </button>
-                            )}
-                          </div>
-                          <input
-                            type="text"
-                            value={tpl.subject}
-                            onChange={(e) =>
-                              setEmailTemplates((prev) =>
-                                prev.map((item, i) =>
-                                  i === idx ? { ...item, subject: e.target.value } : item
-                                )
-                              )
-                            }
-                            placeholder="Subjek Email..."
-                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/60 px-3 py-2 text-xs font-semibold text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
-                          />
-                          <textarea
-                            rows={5}
-                            value={tpl.body}
-                            onChange={(e) =>
-                              setEmailTemplates((prev) =>
-                                prev.map((item, i) =>
-                                  i === idx ? { ...item, body: e.target.value } : item
-                                )
-                              )
-                            }
-                            placeholder="Isi Email..."
-                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/60 px-3 py-2 text-xs leading-relaxed text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
-                          />
-                        </div>
-                      ))}
+                    {/* 1 Template Email Pengingat Bulanan */}
+                    <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/70 p-3 space-y-2">
+                      <span className="text-[11px] font-bold text-teal-800 dark:text-teal-300">
+                        Template Email — Pengingat / Reminder Bulanan (1 Template)
+                      </span>
+                      <input
+                        type="text"
+                        value={emailTemplateReminder.subject}
+                        onChange={(e) =>
+                          setEmailTemplateReminder((prev) => ({ ...prev, subject: e.target.value }))
+                        }
+                        placeholder="Subjek Email Pengingat Bulanan..."
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/60 px-3 py-2 text-xs font-semibold text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
+                      <textarea
+                        rows={5}
+                        value={emailTemplateReminder.body}
+                        onChange={(e) =>
+                          setEmailTemplateReminder((prev) => ({ ...prev, body: e.target.value }))
+                        }
+                        placeholder="Isi Email Pengingat Bulanan..."
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-950/60 px-3 py-2 text-xs leading-relaxed text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
                     </div>
                   </div>
                 </div>
@@ -1395,9 +1601,34 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
               {/* Uji Kirim Notifikasi */}
               <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/75 dark:bg-slate-900/55 p-4 space-y-3">
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  Uji Kirim Notifikasi WA &amp; Email (Simulasi Donatur Baru)
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Uji Kirim Notifikasi WA &amp; Email
+                  </p>
+                  <div className="inline-flex gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 p-1">
+                    {(
+                      [
+                        { key: 'daftar', label: 'Daftar Awal (Pesan 1+2)' },
+                        { key: 'followup', label: 'Save Nomor' },
+                        { key: 'reminder', label: 'Reminder (+QRIS)' },
+                      ] as const
+                    ).map((m) => (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => setTestMessageType(m.key)}
+                        className={`rounded-lg px-2 py-1 text-[11px] font-semibold whitespace-nowrap cursor-pointer ${
+                          testMessageType === m.key
+                            ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
+                            : 'text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
                   <input
                     type="tel"
@@ -1433,8 +1664,19 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                           : 'text-amber-700 dark:text-amber-300'
                       }
                     >
-                      WA: {testNotifResult.wa.detail}
+                      WA (Pesan 1): {testNotifResult.wa.detail}
                     </p>
+                    {testNotifResult.waFollowup && (
+                      <p
+                        className={
+                          testNotifResult.waFollowup.ok
+                            ? 'text-teal-700 dark:text-teal-300 font-semibold'
+                            : 'text-slate-600 dark:text-slate-300'
+                        }
+                      >
+                        WA (Pesan 2 · Save Nomor): {testNotifResult.waFollowup.detail}
+                      </p>
+                    )}
                     <p
                       className={
                         testNotifResult.email.ok

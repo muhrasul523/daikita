@@ -1,4 +1,12 @@
-import { Donatur, LembagaConfig, RekeningInfo, TransaksiDonasi } from '../types';
+import { APP_PUBLIC_URL, DEFAULT_WA_REMINDER_TEMPLATES } from '../config';
+import {
+  Donatur,
+  LembagaConfig,
+  MinatGrupWa,
+  RekeningInfo,
+  StatusGrupWa,
+  TransaksiDonasi,
+} from '../types';
 
 const BULAN_INDO = [
   'Januari',
@@ -136,6 +144,28 @@ export function normalizeRoleLabel(role: string): 'Super Admin' | 'Admin' | 'Pub
   return 'Admin';
 }
 
+export function normalizeMinatGrup(raw?: string): MinatGrupWa {
+  const clean = String(raw || '').trim().toLowerCase();
+  if (clean === 'tidak' || clean === 'no' || clean === 'false' || clean === '0') {
+    return 'Tidak';
+  }
+  return 'Ya';
+}
+
+export function normalizeStatusGrup(raw?: string): StatusGrupWa {
+  const clean = String(raw || '').trim().toLowerCase();
+  if (
+    clean === 'sudah bergabung' ||
+    clean === 'sudah' ||
+    clean === 'joined' ||
+    clean === 'ya' ||
+    clean === 'true'
+  ) {
+    return 'Sudah Bergabung';
+  }
+  return 'Belum Bergabung';
+}
+
 export function extractDriveFileId(url: string): string {
   const raw = String(url || '').trim();
   if (!raw) return '';
@@ -198,6 +228,20 @@ export function getTodayIsoDate(): string {
   return `${y}-${m}-${d}`;
 }
 
+export function extractIsoDateFromDateStr(raw?: string): string {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  const isoMatch = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+  }
+  const dmyMatch = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (dmyMatch) {
+    return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
+  }
+  return '';
+}
+
 export function extractYearMonthFromDateStr(raw?: string): string {
   const s = String(raw || '').trim();
   if (!s) return '';
@@ -214,6 +258,14 @@ export function extractYearMonthFromDateStr(raw?: string): string {
     return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
   }
   return '';
+}
+
+export function formatTanggalIndo(isoDate?: string): string {
+  const iso = extractIsoDateFromDateStr(isoDate);
+  if (!iso) return isoDate || '-';
+  const [y, m, d] = iso.split('-');
+  const monthName = BULAN_INDO[Number(m) - 1] || m;
+  return `${Number(d)} ${monthName.slice(0, 3)} ${y}`;
 }
 
 export function getAdjacentYearMonth(ym: string, offsetMonths: number): string {
@@ -259,13 +311,14 @@ export function sanitizeDonorNameForFile(name: string): string {
 }
 
 export function previewAutoRenameFile(params: {
+  tanggalTransfer?: string;
   bulanTagihan: string;
   bulanList?: string[];
   namaDonatur: string;
   nominalTransfer: number;
   extension: string;
 }): string {
-  const datePart = getTodayIsoDate();
+  const datePart = extractIsoDateFromDateStr(params.tanggalTransfer) || getTodayIsoDate();
   const list = Array.isArray(params.bulanList) ? params.bulanList.filter(Boolean) : [];
   const bulan =
     list.length > 1
@@ -279,10 +332,10 @@ export function previewAutoRenameFile(params: {
 
 export function formatRekeningLines(rekening: RekeningInfo[]): string {
   if (!rekening || rekening.length === 0) {
-    return '- Hubungi pengurus untuk info rekening resmi.';
+    return 'BSI (Bank Syariah Indonesia): *7777767407* a.n. LAJNAH DAI';
   }
   return rekening
-    .map((r) => `• ${r.bank}: ${r.nomor} (a.n. ${r.atasNama})`)
+    .map((r) => `${r.bank}: *${r.nomor}* a.n. ${r.atasNama}`)
     .join('\n');
 }
 
@@ -305,45 +358,115 @@ export function getSapaanByGender(raw?: string): string {
 }
 
 /**
- * Membangun Smart Link wa.me untuk pengingat amanah Kafalah Dai rutin
+ * Render template pesan WA / Email dengan seluruh variabel donatur & konfigurasi
+ */
+export function renderMessageTemplate(
+  templateStr: string,
+  donatur: Partial<Donatur>,
+  config: LembagaConfig,
+  options?: { bulanTagihan?: string; includeGroupLink?: boolean }
+): string {
+  const jk = normalizeJenisKelamin(donatur.jenisKelamin);
+  const sapaan = getSapaanByGender(jk);
+  const wilayahParts = [donatur.domisili, donatur.provinsi].filter(Boolean);
+  const domisiliLabel = wilayahParts.length > 0 ? wilayahParts.join(', ') : '-';
+  const portalUrl =
+    APP_PUBLIC_URL ||
+    (typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '');
+
+  const bulanYm = options?.bulanTagihan || getCurrentYearMonth();
+  const bulanLabel = formatBulanLabel(bulanYm);
+  const groupLink = (config.waGroupLink || '').trim();
+  const groupName = (config.waGroupName || 'Grup Donatur DAIKITA').trim();
+  const shouldIncludeGroup =
+    options?.includeGroupLink !== undefined
+      ? options.includeGroupLink
+      : normalizeMinatGrup(donatur.minatGrupWa) === 'Ya';
+
+  const linkGrupSection =
+    shouldIncludeGroup && groupLink
+      ? `\nSilakan bergabung ke *${groupName}* melalui tautan berikut:\n${groupLink}\n`
+      : '';
+
+  const qrisNote =
+    config.showQris && config.qrisUrl
+      ? 'Pembayaran juga dapat melalui QRIS resmi terlampir atau di web konfirmasi.'
+      : '';
+
+  const vars: Record<string, string> = {
+    '{nama}': donatur.namaLengkap || 'Sahabat Kebaikan',
+    '{sapaan}': sapaan,
+    '{jenis_kelamin}': jk || '-',
+    '{id_donatur}': donatur.idDonatur || '-',
+    '{no_wa}': donatur.noWa || '-',
+    '{domisili}': domisiliLabel,
+    '{nominal}': formatRupiah(donatur.nominalKomitmen || 0),
+    '{tgl_pengingat}': String(donatur.tglJatuhTempo || config.defaultTglPengingat || 5),
+    '{perantara}': donatur.namaPerantara || 'Langsung (Tanpa Perantara)',
+    '{lembaga}': config.namaLembaga || 'DAIKITA — Kafalah Dai',
+    '{rekening}': formatRekeningLines(config.infoRekening),
+    '{link_konfirmasi}': portalUrl,
+    '{bulan}': bulanLabel,
+    '{link_grup}': groupLink || '-',
+    '{nama_grup}': groupName,
+    '{link_grup_section}': linkGrupSection,
+    '{qris_note}': qrisNote,
+  };
+
+  let out = String(templateStr || '');
+  Object.keys(vars).forEach((token) => {
+    out = out.split(token).join(vars[token]);
+  });
+
+  // Rapikan baris kosong berlebih (> 2 baris kosong berturut-turut)
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+export function buildWaMeUrl(noWa: string, messageText: string): string {
+  const wa = normalizeWA(noWa) || String(noWa || '').replace(/\D/g, '');
+  return `https://wa.me/${wa}?text=${encodeURIComponent(messageText)}`;
+}
+
+/**
+ * Membangun Smart Link wa.me untuk pengingat donasi Kafalah Dai rutin
+ * Menggunakan template pengingat dari Pengaturan (tanpa rincian data daftar)
  */
 export function buildReminderWaLink(
   donatur: Donatur,
   bulanTagihan: string,
-  config: LembagaConfig
+  config: LembagaConfig,
+  templateIndex = 0
 ): string {
-  const wa = normalizeWA(donatur.noWa) || String(donatur.noWa || '').replace(/\D/g, '');
-  const bulanLabel = formatBulanLabel(bulanTagihan);
-  const rekeningText = formatRekeningLines(config.infoRekening);
+  const templates =
+    config.waReminderTemplates && config.waReminderTemplates.length > 0
+      ? config.waReminderTemplates
+      : DEFAULT_WA_REMINDER_TEMPLATES;
+  const tpl = templates[Math.abs(templateIndex) % templates.length];
+  const message = renderMessageTemplate(tpl, donatur, config, {
+    bulanTagihan,
+    includeGroupLink: false,
+  });
+  return buildWaMeUrl(donatur.noWa, message);
+}
+
+/**
+ * Membangun teks undangan Grup WhatsApp Donatur
+ */
+export function buildGroupInviteMessage(donatur: Donatur, config: LembagaConfig): string {
   const sapaan = getSapaanByGender(donatur.jenisKelamin);
-  const portalUrl =
-    typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '';
-
-  const message = [
-    `Assalamu'alaikum Warahmatullahi Wabarakatuh,`,
+  const groupName = config.waGroupName || 'Grup Donatur DAIKITA — Kafalah Dai';
+  const groupLink = config.waGroupLink || '(Link grup belum diatur di Pengaturan)';
+  return [
+    `Assalamu'alaikum Warahmatullahi Wabarakatuh ${sapaan} *${donatur.namaLengkap}*.`,
     ``,
-    `Yth. ${sapaan} *${donatur.namaLengkap}*,`,
-    `Semoga ${sapaan} beserta keluarga senantiasa dalam kesehatan dan keberkahan.`,
+    `Terima kasih atas partisipasi ${sapaan} sebagai Donatur Rutin *Kafalah Dai* di *${config.namaLembaga}*.`,
+    `Silakan bergabung ke *${groupName}* untuk mendapatkan info penyaluran & kabar dakwah para dai melalui tautan berikut:`,
+    groupLink,
     ``,
-    `Dengan hormat, kami menyampaikan pengingat rutin amanah *Kafalah Dai* bulan *${bulanLabel}* melalui *${config.namaLembaga}*:`,
-    `• Nominal Komitmen: *${formatRupiah(donatur.nominalKomitmen)}*`,
-    `• Jadwal Pengingat Rutin: Setiap tanggal ${donatur.tglJatuhTempo}`,
-    ``,
-    `Transfer dapat disalurkan melalui rekening resmi:`,
-    rekeningText,
-    config.showQris && config.qrisUrl
-      ? `Pembayaran juga dapat dilakukan melalui QRIS yang tersedia di portal konfirmasi.`
-      : '',
-    ``,
-    portalUrl ? `Konfirmasi bukti transfer dapat dikirim melalui tautan:\n${portalUrl}` : '',
-    ``,
-    `Jazakumullahu khairan katsiran atas kepedulian dan amanah rutin ${sapaan}.`,
-    `Wassalamu'alaikum Warahmatullahi Wabarakatuh.`,
-  ]
-    .filter((line, idx, arr) => !(line === '' && arr[idx - 1] === ''))
-    .join('\n');
-
-  return `https://wa.me/${wa}?text=${encodeURIComponent(message)}`;
+    `_Syukran wa jazakumullahu khairan._`,
+    `_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._`,
+    `_Aamiin._`,
+  ].join('\n');
 }
 
 /**
@@ -355,23 +478,30 @@ export function buildReceiptWaLink(
 ): string {
   const wa = normalizeWA(trx.noWa) || String(trx.noWa || '').replace(/\D/g, '');
   const bulanLabel = formatBulanLabel(trx.bulanTagihan);
+  const donasiKomitmen =
+    trx.nominalKomitmen > 0 ? trx.nominalKomitmen : trx.nominalTransfer;
+  const donasiLainnya = Math.max(0, trx.donasiLainnya || 0);
 
   const lines = [
     `Assalamu'alaikum Warahmatullahi Wabarakatuh,`,
     ``,
     `Alhamdulillah, terima kasih Bapak/Ibu *${trx.namaDonatur}*.`,
-    `Amanah Kafalah Dai Anda telah kami terima dan *TERVERIFIKASI VALID* oleh *${config.namaLembaga}*.`,
+    `Donasi Kafalah Dai Anda telah kami terima dan *TERVERIFIKASI VALID* oleh *${config.namaLembaga}*.`,
     ``,
     `*RINGKASAN KUITANSI DONASI*`,
     `• No. Transaksi: ${trx.idTransaksi}`,
-    `• Periode Amanah: ${bulanLabel}`,
-    `• Nominal Diterima: *${formatRupiah(trx.nominalTransfer)}*`,
-    trx.bankTujuan && trx.bankTujuan !== '-' ? `• Tujuan Transfer: ${trx.bankTujuan}` : '',
+    trx.tanggalTransfer ? `• Tanggal Transfer: ${formatTanggalIndo(trx.tanggalTransfer)}` : '',
+    `• Periode Donasi: ${bulanLabel}`,
+    `• Donasi Komitmen: *${formatRupiah(donasiKomitmen)}*`,
+    donasiLainnya > 0 ? `• Donasi Lainnya: *${formatRupiah(donasiLainnya)}*` : '',
+    `• Total Diterima: *${formatRupiah(trx.nominalTransfer)}*`,
     trx.keterangan ? `• Keterangan: ${trx.keterangan}` : '',
     `• Status Verifikasi: Valid / Lunas`,
     `• Status Penyaluran: ${trx.statusPenyaluran || 'Belum Disalurkan'}`,
     ``,
-    `Semoga Allah SWT membalas kebaikan Bapak/Ibu dengan pahala yang berlipat, rezeki yang berkah, dan kesehatan sekeluarga. Aamiin.`,
+    `_Syukran wa jazakumullahu khairan._`,
+    `_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._`,
+    `_Aamiin._`,
     ``,
     `Wassalamu'alaikum Warahmatullahi Wabarakatuh.`,
   ].filter((line, idx, arr) => {

@@ -27,6 +27,8 @@ interface MonthStatPoint {
   komitmenAktifRp: number;
   danaPendingRp: number;
   danaValidRp: number;
+  danaKomitmenValidRp: number;
+  danaLainnyaValidRp: number;
   danaSalurRp: number;
   donaturBaru: number;
   totalDonaturAktif: number;
@@ -82,6 +84,8 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
       const salurTrx = validTrx.filter((t) => t.statusPenyaluran === 'Sudah Disalurkan');
 
       const danaValidRp = validTrx.reduce((s, t) => s + t.nominalTransfer, 0);
+      const danaLainnyaValidRp = validTrx.reduce((s, t) => s + Math.max(0, t.donasiLainnya || 0), 0);
+      const danaKomitmenValidRp = Math.max(0, danaValidRp - danaLainnyaValidRp);
       const danaPendingRp = pendingTrx.reduce((s, t) => s + t.nominalTransfer, 0);
       const danaSalurRp = salurTrx.reduce((s, t) => s + t.nominalTransfer, 0);
 
@@ -119,6 +123,8 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
         komitmenAktifRp,
         danaPendingRp,
         danaValidRp,
+        danaKomitmenValidRp,
+        danaLainnyaValidRp,
         danaSalurRp,
         donaturBaru,
         totalDonaturAktif,
@@ -275,6 +281,12 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
                 <strong className="text-emerald-700 dark:text-emerald-300">
                   {formatRupiah(activePoint.danaValidRp)}
                 </strong>
+                {activePoint.danaLainnyaValidRp > 0 && (
+                  <span className="text-sky-700 dark:text-sky-300">
+                    {' '}
+                    (+{formatRupiah(activePoint.danaLainnyaValidRp)} lainnya)
+                  </span>
+                )}
               </span>
               <span>
                 Pending:{' '}

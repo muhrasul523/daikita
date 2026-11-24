@@ -7,10 +7,15 @@ export const DEFAULT_GAS_URL =
   'https://script.google.com/macros/s/AKfycbza8ngK4Wtqqw9vtAH96d-LejP2mp9KNXvUQVrFg77WGCKooQCEbgfxEyozSQ38FP72nA/exec';
 
 export const APP_BRAND_NAME = 'DAIKITA';
-export const APP_PROGRAM_FOCUS = "Kafalah Dai";
+export const APP_PROGRAM_FOCUS = 'Kafalah Dai';
 export const APP_TAGLINE = 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
 export const APP_PUBLIC_URL = 'https://daikita.duwd.web.id/';
 export const DEFAULT_LOGO_URL = 'https://lh3.googleusercontent.com/d/1OOSQydygv0K9SNcQUXQTqQyduW57mv4Y';
+
+/** Bulan awal pencatatan pembayaran donasi */
+export const PROGRAM_START_YM = '2026-11';
+/** Batas awal tanggal transfer yang diperbolehkan */
+export const TRANSFER_MIN_DATE = '2026-01-01';
 
 export const DEFAULT_SCREEN_WIDTH_PCT = 95;
 
@@ -21,164 +26,269 @@ export const STORAGE_KEYS = {
   SCREEN_WIDTH: 'daikita_screen_width_pct_v1',
 } as const;
 
+/**
+ * Template WA Pesan 1: Notifikasi Awal Pendaftaran Donatur Baru (rotasi anti-spam)
+ */
 export const DEFAULT_WA_TEMPLATES: string[] = [
   `Assalamu'alaikum Warahmatullahi Wabarakatuh.
 
 Ahlan wa sahlan {sapaan} *{nama}*,
-Jazakumullahu khairan telah bergabung sebagai Donatur Rutin *Kafalah Dai* di *{lembaga}*.
+Terima kasih telah bergabung sebagai Donatur Rutin *Kafalah Dai* di *{lembaga}*.
 
-Ringkasan Amanah Anda:
-• ID Donatur: {id_donatur}
+*Rincian Data Donatur:*
+• ID Donatur: *{id_donatur}*
+• Nama Lengkap: {nama}
+• Jenis Kelamin: {jenis_kelamin}
 • Domisili: {domisili}
 • Komitmen Bulanan: *{nominal}*
-• Pengingat Rutin: Setiap tanggal {tgl_pengingat}
+• Jadwal Pengingat: Setiap tanggal {tgl_pengingat}
 • Perantara: {perantara}
 
-Penyaluran dapat melalui rekening resmi:
+Penyaluran donasi dapat melalui rekening resmi:
 {rekening}
 
-Konfirmasi bukti transfer dapat dikirim melalui:
+Konfirmasi bukti transfer dapat dikirim melalui web:
 {link_konfirmasi}
+atau melalui japri admin via nomor ini.
+{link_grup_section}
+_Syukran wa jazakumullahu khairan._
+_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._
+_Aamiin._`,
 
-Semoga Allah SWT membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir. Aamiin.`,
+  `Bismillah, Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} *{nama}*.
 
-  `Bismillah, Assalamu'alaikum {sapaan} *{nama}*.
+Alhamdulillah, pendaftaran Donatur Rutin *Kafalah Dai* di *{lembaga}* telah resmi tercatat.
 
-Alhamdulillah, pendaftaran donatur rutin *{lembaga}* telah resmi tercatat atas nama {sapaan}:
-• Nomor ID: *{id_donatur}*
-• Komitmen Kafalah Dai: *{nominal} / bulan*
-• Jadwal Pengingat: Tanggal {tgl_pengingat} setiap bulan
+*Rincian Data Donatur:*
+- ID Donatur: *{id_donatur}*
+- Nama: {nama}
+- Jenis Kelamin: {jenis_kelamin}
+- Wilayah: {domisili}
+- Komitmen Bulanan: *{nominal} / bulan*
+- Pengingat Rutin: Tanggal {tgl_pengingat} setiap bulan
+- Perantara: {perantara}
 
-Salurkan amanah Anda melalui:
+Salurkan donasi melalui rekening resmi berikut:
 {rekening}
 
-Jika sudah berdonasi, silakan kirim konfirmasi lewat portal:
+Konfirmasi bukti transfer dapat dikirim melalui web:
 {link_konfirmasi}
+atau melalui japri admin via nomor ini.
+{link_grup_section}
+_Syukran wa jazakumullahu khairan._
+_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._
+_Aamiin._`,
 
-Barakallahu fiikum, semoga menjadi amal shalih yang menguatkan langkah dakwah para dai.`,
-
-  `Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} *{nama}* 🌟
+  `Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} *{nama}*
 
 Terima kasih atas kepercayaan {sapaan} mendukung program *Kafalah Dai* bersama *{lembaga}*.
 
-Detail Komitmen Terdaftar:
-- ID Donatur: {id_donatur}
-- Wilayah: {domisili}
-- Nominal Komitmen: {nominal}
-- Tanggal Pengingat: Tgl {tgl_pengingat}
+*Detail Kepesertaan Donatur:*
+• ID Donatur: *{id_donatur}*
+• Nama Lengkap: {nama}
+• Jenis Kelamin: {jenis_kelamin}
+• Domisili: {domisili}
+• Nominal Komitmen: *{nominal}*
+• Tanggal Pengingat: Setiap tanggal {tgl_pengingat}
+• Perantara: {perantara}
 
 Rekening Resmi Penyaluran:
 {rekening}
 
-Portal konfirmasi transfer:
+Konfirmasi bukti transfer dapat dikirim melalui web:
 {link_konfirmasi}
-
-Semoga Allah melapangkan urusan dan memberkahi harta {sapaan} sekeluarga. Wassalamu'alaikum Warahmatullahi Wabarakatuh.`,
+atau melalui japri admin via nomor ini.
+{link_grup_section}
+_Syukran wa jazakumullahu khairan._
+_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._
+_Aamiin._`,
 ];
 
-export const DEFAULT_EMAIL_TEMPLATES: EmailTemplateItem[] = [
-  {
-    subject: "Selamat Bergabung di {lembaga} — Komitmen Kafalah Dai ({id_donatur})",
-    body: `Assalamu'alaikum Warahmatullahi Wabarakatuh,
+/**
+ * Template WA Pesan 2: Arahan Save Nomor (dikirim otomatis dengan jeda 1 menit setelah daftar)
+ */
+export const DEFAULT_WA_FOLLOWUP_TEMPLATES: string[] = [
+  `Assalamu'alaikum {sapaan} *{nama}*,
+
+Mohon berkenan untuk *menyimpan (save) nomor WhatsApp ini* di kontak {sapaan} dengan nama *{lembaga}*.
+
+Dengan menyimpan nomor ini:
+• Tautan konfirmasi & tautan grup di pesan sebelumnya dapat langsung diklik
+• Notifikasi pengingat rutin & informasi penyaluran *Kafalah Dai* dapat diterima dengan lancar
+• {sapaan} dapat langsung japri admin di nomor ini kapan saja
+
+_Syukran wa jazakumullahu khairan._`,
+
+  `Bismillah, izin mengingatkan kembali {sapaan} *{nama}* 😊
+
+Agar tautan web konfirmasi dapat diklik dan {sapaan} selalu menerima notifikasi pengingat rutin serta laporan penyaluran *Kafalah Dai*, silakan *simpan nomor ini* di buku kontak HP {sapaan} (contoh: *DAIKITA Lajnah Dai*).
+
+Jika ada pertanyaan atau konfirmasi transfer, silakan balas langsung pesan ini ya {sapaan}.
+_Jazakumullahu khairan._`,
+
+  `Halo {sapaan} *{nama}*, satu langkah kecil agar komunikasi kita semakin lancar:
+
+Silakan *save nomor resmi {lembaga}* ini di kontak HP {sapaan}. Dengan begitu, gambar QRIS, pengingat bulanan, serta update program *Kafalah Dai* akan tampil utuh dan tautannya langsung bisa dibuka.
+
+_Barakallahu fiikum, terima kasih banyak {sapaan}._`,
+];
+
+/**
+ * Template WA Pengingat / Reminder Bulanan (ringkas tanpa rincian data daftar, siap disertai gambar QRIS)
+ */
+export const DEFAULT_WA_REMINDER_TEMPLATES: string[] = [
+  `Assalamu'alaikum Warahmatullahi Wabarakatuh, {sapaan} *{nama}*.
+
+Semoga {sapaan} sekeluarga senantiasa dalam kesehatan dan lindungan Allah.
+
+Izin menyampaikan pengingat rutin donasi *Kafalah Dai* untuk periode *{bulan}* sebesar *{nominal}* melalui *{lembaga}*.
+
+Penyaluran dapat melalui rekening resmi:
+{rekening}
+{qris_note}
+
+Konfirmasi bukti transfer dapat dikirim melalui web:
+{link_konfirmasi}
+atau melalui japri admin via nomor ini.
+
+_Syukran wa jazakumullahu khairan._
+_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._
+_Aamiin._`,
+
+  `Bismillah, Assalamu'alaikum {sapaan} *{nama}*.
+
+Mengingatkan dengan penuh hormat untuk jadwal donasi rutin *Kafalah Dai* periode *{bulan}* (Komitmen: *{nominal}*).
+
+Salurkan melalui rekening resmi berikut:
+{rekening}
+{qris_note}
+
+Konfirmasi bukti transfer dapat dikirim melalui web:
+{link_konfirmasi}
+atau melalui japri admin via nomor ini.
+
+_Syukran wa jazakumullahu khairan._
+_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._
+_Aamiin._`,
+
+  `Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} *{nama}*.
+
+Waktu kebaikan bulan *{bulan}* telah tiba. Izin mengingatkan komitmen donasi *Kafalah Dai* sebesar *{nominal}* bersama *{lembaga}*.
+
+Rekening resmi penyaluran:
+{rekening}
+{qris_note}
+
+Konfirmasi bukti transfer dapat dikirim melalui web:
+{link_konfirmasi}
+atau melalui japri admin via nomor ini.
+
+_Syukran wa jazakumullahu khairan._
+_Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir._
+_Aamiin._`,
+];
+
+/**
+ * 1 Template Email Khusus Pendaftaran Awal
+ */
+export const DEFAULT_EMAIL_TEMPLATE_DAFTAR: EmailTemplateItem = {
+  subject: 'Selamat Bergabung di {lembaga} — Donatur Rutin Kafalah Dai ({id_donatur})',
+  body: `Assalamu'alaikum Warahmatullahi Wabarakatuh,
 
 Yth. {sapaan} {nama},
 
-Jazakumullahu khairan katsiran telah mendaftarkan komitmen amal rutin Program Kafalah Dai bersama {lembaga}.
+Terima kasih telah bergabung sebagai Donatur Rutin Program Kafalah Dai bersama {lembaga}.
 
-Ringkasan Data Donatur:
+Rincian Data Donatur:
 • ID Donatur: {id_donatur}
-• Nama Lengkap: {nama} ({jenis_kelamin})
+• Nama Lengkap: {nama}
+• Jenis Kelamin: {jenis_kelamin}
 • Domisili: {domisili}
 • Nominal Komitmen: {nominal} / bulan
 • Jadwal Pengingat Rutin: Setiap tanggal {tgl_pengingat}
 • Perantara / Pengurus: {perantara}
 
-Salurkan amanah Anda melalui rekening resmi berikut:
+Penyaluran donasi dapat melalui rekening resmi berikut:
 {rekening}
 
-Portal Konfirmasi Pembayaran:
+Konfirmasi bukti transfer dapat dikirim melalui web:
 {link_konfirmasi}
-
-Semoga Allah SWT senantiasa memberkahi keluarga, kesehatan, dan rezeki {sapaan}. Aamiin.
+atau melalui japri admin via nomor WhatsApp resmi kami.
+{link_grup_section}
+Syukran wa jazakumullahu khairan.
+Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir.
+Aamiin.
 
 Wassalamu'alaikum Warahmatullahi Wabarakatuh,
 {lembaga}`,
-  },
-  {
-    subject: "Konfirmasi Pendaftaran Donatur Rutin Kafalah Dai — {nama}",
-    body: `Bismillahirrahmanirrahim,
-Assalamu'alaikum Warahmatullahi Wabarakatuh {sapaan} {nama},
+};
 
-Alhamdulillah, data kepesertaan donatur rutin Anda telah kami catat di {lembaga} dengan detail sebagai berikut:
-- ID Donatur: {id_donatur}
-- Komitmen Bulanan: {nominal}
-- Tanggal Pengingat: Setiap tanggal {tgl_pengingat}
-- Wilayah: {domisili}
+/**
+ * 1 Template Email Khusus Pengingat / Reminder Bulanan
+ */
+export const DEFAULT_EMAIL_TEMPLATE_REMINDER: EmailTemplateItem = {
+  subject: 'Pengingat Donasi Rutin Kafalah Dai ({bulan}) — {lembaga}',
+  body: `Assalamu'alaikum Warahmatullahi Wabarakatuh,
 
-Transfer amanah Kafalah Dai dapat dikirimkan ke rekening resmi:
+Yth. {sapaan} {nama},
+
+Semoga {sapaan} beserta keluarga senantiasa dalam lindungan dan keberkahan Allah.
+Dengan hormat kami menyampaikan pengingat donasi rutin Kafalah Dai periode {bulan} sebesar {nominal}.
+
+Penyaluran donasi dapat melalui rekening resmi berikut:
 {rekening}
+{qris_note}
 
-Untuk konfirmasi bukti transfer atau informasi QRIS, silakan kunjungi:
+Konfirmasi bukti transfer dapat dikirim melalui web:
 {link_konfirmasi}
+atau melalui japri admin via nomor WhatsApp resmi kami.
 
-Terima kasih atas dukungan dan amanah {sapaan}. Barakallahu fiikum.`,
-  },
-  {
-    subject: "[{id_donatur}] Terima Kasih Amanah Rutin Kafalah Dai — {lembaga}",
-    body: `Assalamu'alaikum {sapaan} {nama},
+Syukran wa jazakumullahu khairan.
+Semoga Allah membalas dengan keberkahan rezeki dan pahala jariyah yang terus mengalir.
+Aamiin.
 
-Terima kasih telah menjadi bagian dari penggerak kebaikan Kafalah Dai bersama {lembaga}.
+Wassalamu'alaikum Warahmatullahi Wabarakatuh,
+{lembaga}`,
+};
 
-Detail Kepesertaan:
-• ID Donatur: {id_donatur}
-• Domisili: {domisili}
-• Komitmen Rutin: {nominal} (Pengingat tiap tgl {tgl_pengingat})
-
-Daftar Rekening Resmi:
-{rekening}
-
-Kirim bukti konfirmasi donasi melalui tautan berikut:
-{link_konfirmasi}
-
-Jazakumullahu khairan. Wassalamu'alaikum Warahmatullahi Wabarakatuh.`,
-  },
+export const DEFAULT_EMAIL_TEMPLATES: EmailTemplateItem[] = [
+  DEFAULT_EMAIL_TEMPLATE_DAFTAR,
+  DEFAULT_EMAIL_TEMPLATE_REMINDER,
 ];
 
 export const DEFAULT_CONFIG: LembagaConfig = {
-  namaLembaga: "DAIKITA — Kafalah Dai",
+  namaLembaga: 'DAIKITA — Kafalah Dai',
   tagline: APP_TAGLINE,
   logoUrl: DEFAULT_LOGO_URL,
   qrisUrl: '',
-  qrisMerchantName: 'DAIKITA Wahdah Islamiyah',
+  qrisMerchantName: 'LAJNAH DAI',
   showQris: true,
   defaultNominal: 50000,
   defaultTglPengingat: 5,
   catatanPembayaran:
-    "Penyaluran amanah rutin Kafalah Dai hanya melalui rekening resmi atau QRIS lembaga.",
+    'Penyaluran donasi rutin Kafalah Dai hanya melalui rekening resmi atau QRIS lembaga.',
   infoRekening: [
     {
       bank: 'BSI (Bank Syariah Indonesia)',
-      nomor: '7123456789',
-      atasNama: 'DAIKITA Wahdah Islamiyah',
-    },
-    {
-      bank: 'Bank Mandiri',
-      nomor: '1320012345678',
-      atasNama: 'DAIKITA Wahdah Islamiyah',
-    },
-    {
-      bank: 'BCA Syariah',
-      nomor: '0123456789',
-      atasNama: 'DAIKITA Wahdah Islamiyah',
+      nomor: '7777767407',
+      atasNama: 'LAJNAH DAI',
     },
   ],
   enableWaNotif: true,
   waEndpointUrl: 'https://www.rechat.id/api/v1/messages',
   waApiKey: '',
   waTemplates: DEFAULT_WA_TEMPLATES,
+  waFollowupTemplates: DEFAULT_WA_FOLLOWUP_TEMPLATES,
+  waFollowupDelaySec: 60,
+  waReminderTemplates: DEFAULT_WA_REMINDER_TEMPLATES,
+  waGroupName: 'Grup Donatur DAIKITA — Kafalah Dai',
+  waGroupLink: '',
+  waGroupId: '',
   enableEmailNotif: true,
   emailSenderAlias: 'lajnahdai.dpp@gmail.com',
-  emailSenderName: "DAIKITA — Lajnah Dai Wahdah Islamiyah",
+  emailSenderName: 'DAIKITA — Lajnah Dai Wahdah Islamiyah',
+  emailTemplateDaftar: DEFAULT_EMAIL_TEMPLATE_DAFTAR,
+  emailTemplateReminder: DEFAULT_EMAIL_TEMPLATE_REMINDER,
   emailTemplates: DEFAULT_EMAIL_TEMPLATES,
 };
 

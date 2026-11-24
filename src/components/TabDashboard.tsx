@@ -37,7 +37,9 @@ import {
   formatRupiah,
   formatWADisplay,
   getCurrentYearMonth,
+  normalizeMinatGrup,
   normalizeRoleLabel,
+  normalizeStatusGrup,
   normalizeWA,
 } from '../utils/formatters';
 import { DashboardCharts } from './DashboardCharts';
@@ -305,13 +307,21 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     const allBelumDisalurkan = allValid.filter((t) => t.statusPenyaluran !== 'Sudah Disalurkan');
 
     const totalValidRp = allValid.reduce((s, t) => s + t.nominalTransfer, 0);
+    const totalLainnyaValidRp = allValid.reduce((s, t) => s + Math.max(0, t.donasiLainnya || 0), 0);
+    const totalKomitmenValidRp = Math.max(0, totalValidRp - totalLainnyaValidRp);
     const totalDisalurkanRp = allDisalurkan.reduce((s, t) => s + t.nominalTransfer, 0);
     const totalBelumDisalurkanRp = allBelumDisalurkan.reduce((s, t) => s + t.nominalTransfer, 0);
     const activeCount = donaturList.filter((d) => d.statusAktif === 'Aktif').length;
     const cutiCount = donaturList.length - activeCount;
+    const grupMinatCount = donaturList.filter((d) => normalizeMinatGrup(d.minatGrupWa) === 'Ya').length;
+    const grupJoinedCount = donaturList.filter(
+      (d) => normalizeStatusGrup(d.statusGrupWa) === 'Sudah Bergabung'
+    ).length;
 
     return {
       totalValidRp,
+      totalKomitmenValidRp,
+      totalLainnyaValidRp,
       validCount: allValid.length,
       totalDisalurkanRp,
       disalurkanCount: allDisalurkan.length,
@@ -321,6 +331,8 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
       totalDonatur: donaturList.length,
       activeCount,
       cutiCount,
+      grupMinatCount,
+      grupJoinedCount,
     };
   }, [transaksiList, donaturList]);
 
@@ -332,6 +344,11 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     );
 
     const totalValidRp = validMonthTrx.reduce((sum, t) => sum + t.nominalTransfer, 0);
+    const totalLainnyaValidRp = validMonthTrx.reduce(
+      (sum, t) => sum + Math.max(0, t.donasiLainnya || 0),
+      0
+    );
+    const totalKomitmenValidRp = Math.max(0, totalValidRp - totalLainnyaValidRp);
     const totalDisalurkanRp = disalurkanMonthTrx.reduce((sum, t) => sum + t.nominalTransfer, 0);
     const totalPendingRp = pendingMonthTrx.reduce((sum, t) => sum + t.nominalTransfer, 0);
 
@@ -348,6 +365,8 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
 
     return {
       totalValidRp,
+      totalKomitmenValidRp,
+      totalLainnyaValidRp,
       validCount: validMonthTrx.length,
       totalDisalurkanRp,
       disalurkanCount: disalurkanMonthTrx.length,
@@ -729,8 +748,11 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
             <p className="mt-1 text-xl font-bold text-emerald-800 dark:text-emerald-300 tabular-nums safe-wrap">
               {formatRupiah(overallMetrics.totalValidRp)}
             </p>
-            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
               {overallMetrics.validCount} transaksi valid
+              {overallMetrics.totalLainnyaValidRp > 0
+                ? ` · Komitmen ${formatRupiah(overallMetrics.totalKomitmenValidRp)} + Lainnya ${formatRupiah(overallMetrics.totalLainnyaValidRp)}`
+                : ''}
             </p>
           </div>
 
@@ -759,11 +781,12 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
             <p className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
               {overallMetrics.totalDonatur}
             </p>
-            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
               {overallMetrics.activeCount} Aktif · {overallMetrics.cutiCount} Cuti ·{' '}
               <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                +{monthlyMetrics.donaturBaruBulanIni} baru bulan ini
-              </span>
+                +{monthlyMetrics.donaturBaruBulanIni} baru
+              </span>{' '}
+              · Grup WA {overallMetrics.grupJoinedCount}/{overallMetrics.grupMinatCount}
             </p>
           </div>
         </div>
@@ -778,9 +801,12 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
           <p className="mt-2 text-2xl font-bold tracking-tight text-emerald-800 dark:text-emerald-300 tabular-nums safe-wrap">
             {formatRupiah(monthlyMetrics.totalValidRp)}
           </p>
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-            {monthlyMetrics.validCount} valid · Target komitmen{' '}
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
+            {monthlyMetrics.validCount} valid · Target{' '}
             {formatRupiah(monthlyMetrics.komitmenBulanIniRp)}
+            {monthlyMetrics.totalLainnyaValidRp > 0
+              ? ` · +${formatRupiah(monthlyMetrics.totalLainnyaValidRp)} lainnya`
+              : ''}
           </p>
         </div>
 
@@ -1168,8 +1194,13 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                             {donatur.email}
                           </p>
                         )}
-                        <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500 font-mono">
-                          {donatur.idDonatur} · {donatur.statusAktif}
+                        <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500 font-mono safe-wrap">
+                          {donatur.idDonatur} · {donatur.statusAktif} · Grup:{' '}
+                          {normalizeStatusGrup(donatur.statusGrupWa) === 'Sudah Bergabung'
+                            ? 'Gabung'
+                            : normalizeMinatGrup(donatur.minatGrupWa) === 'Ya'
+                            ? 'Minat'
+                            : 'Japri'}
                         </p>
                       </td>
 

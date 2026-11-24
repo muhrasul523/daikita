@@ -24,11 +24,15 @@ import {
 import {
   AppDataState,
   Donatur,
+  MinatGrupWa,
   NotifDeliveryResult,
   Panitia,
   RegisterDonaturPayload,
   SavePengaturanPayload,
+  ScheduleBroadcastItemPayload,
+  SendBroadcastSinglePayload,
   StatusAktif,
+  StatusGrupWa,
   StatusPenyaluran,
   StatusVerifikasi,
   SubmitPembayaranPayload,
@@ -39,16 +43,22 @@ import {
   TransaksiDonasi,
 } from './types';
 import {
+  bulkUpdateStatusGrupDonatur,
+  cancelScheduledMessage,
   deletePanitia,
   fetchInitialData,
   getSavedGasUrl,
+  processScheduledQueue,
   registerDonatur,
   saveGasUrl,
   savePanitia,
   savePengaturan,
+  scheduleWaBroadcast,
+  sendBroadcastSingle,
   sendTestNotification,
   submitPembayaran,
   updateStatusDonatur,
+  updateStatusGrupDonatur,
   updateStatusPenyaluran,
   verifikasiTransaksi,
 } from './services/api';
@@ -58,6 +68,8 @@ import { TabPendaftaran } from './components/TabPendaftaran';
 import { TabKonfirmasi } from './components/TabKonfirmasi';
 import { TabDashboard } from './components/TabDashboard';
 import { TabVerifikasi } from './components/TabVerifikasi';
+import { TabGrupWa } from './components/TabGrupWa';
+import { TabBroadcast } from './components/TabBroadcast';
 
 function readReferralFromUrl(): string | null {
   try {
@@ -102,6 +114,8 @@ const NAV_TABS: { key: TabKey; label: string }[] = [
   { key: 'konfirmasi', label: 'Konfirmasi' },
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'verifikasi', label: 'Verifikasi' },
+  { key: 'grup_wa', label: 'Grup WA' },
+  { key: 'broadcast', label: 'Broadcast' },
 ];
 
 const WIDTH_PRESETS = [75, 85, 95, 100];
@@ -132,6 +146,7 @@ export default function App() {
     donatur: [],
     transaksi: [],
     panitia: DEFAULT_PANITIA,
+    antreanPesan: [],
   });
 
   const [logoImgFailed, setLogoImgFailed] = useState(false);
@@ -451,6 +466,114 @@ export default function App() {
     }
   };
 
+  const handleUpdateStatusGrup = async (
+    idDonatur: string,
+    statusGrupWa: StatusGrupWa,
+    minatGrupWa?: MinatGrupWa
+  ): Promise<boolean> => {
+    const res = await updateStatusGrupDonatur(gasUrl, idDonatur, statusGrupWa, minatGrupWa);
+    if (res.status === 'success') {
+      setData((prev) => ({
+        ...prev,
+        donatur: prev.donatur.map((d) =>
+          d.idDonatur === idDonatur
+            ? { ...d, statusGrupWa, minatGrupWa: minatGrupWa || d.minatGrupWa }
+            : d
+        ),
+      }));
+      notify('success', 'Status Grup WA diperbarui', res.message);
+      return true;
+    }
+    notify('error', 'Gagal memperbarui status Grup WA', res.message);
+    return false;
+  };
+
+  const handleBulkUpdateStatusGrup = async (
+    ids: string[],
+    statusGrupWa: StatusGrupWa
+  ): Promise<boolean> => {
+    const res = await bulkUpdateStatusGrupDonatur(gasUrl, ids, statusGrupWa);
+    if (res.status === 'success') {
+      const idSet = new Set(ids);
+      setData((prev) => ({
+        ...prev,
+        donatur: prev.donatur.map((d) =>
+          idSet.has(d.idDonatur) ? { ...d, statusGrupWa } : d
+        ),
+      }));
+      notify('success', 'Pembaruan massal berhasil', res.message);
+      return true;
+    }
+    notify('error', 'Gagal memperbarui status grup massal', res.message);
+    return false;
+  };
+
+  const handleSendBroadcastSingle = async (
+    payload: SendBroadcastSinglePayload
+  ): Promise<{ ok: boolean; detail: string; emailDetail?: string }> => {
+    const res = await sendBroadcastSingle(gasUrl, payload);
+    if (res.status === 'success' && res.data) {
+      return {
+        ok: Boolean(res.data.ok),
+        detail: res.data.detail || res.message,
+        emailDetail: res.data.emailDetail,
+      };
+    }
+    return { ok: false, detail: res.message };
+  };
+
+  const handleScheduleBroadcast = async (
+    items: ScheduleBroadcastItemPayload[]
+  ): Promise<boolean> => {
+    const res = await scheduleWaBroadcast(gasUrl, items);
+    if (res.status === 'success') {
+      if (res.data?.antreanPesan) {
+        setData((prev) => ({
+          ...prev,
+          antreanPesan: res.data!.antreanPesan,
+        }));
+      }
+      notify('success', 'Broadcast terjadwal disimpan', res.message);
+      return true;
+    }
+    notify('error', 'Gagal menjadwalkan broadcast', res.message);
+    return false;
+  };
+
+  const handleProcessQueue = async (): Promise<boolean> => {
+    const res = await processScheduledQueue(gasUrl);
+    if (res.status === 'success') {
+      if (res.data?.antreanPesan) {
+        setData((prev) => ({
+          ...prev,
+          antreanPesan: res.data!.antreanPesan,
+        }));
+      }
+      notify('success', 'Antrean diproses', res.message);
+      return true;
+    }
+    notify('error', 'Gagal memproses antrean', res.message);
+    return false;
+  };
+
+  const handleCancelScheduled = async (idAntrean: string): Promise<boolean> => {
+    const res = await cancelScheduledMessage(gasUrl, idAntrean);
+    if (res.status === 'success') {
+      setData((prev) => ({
+        ...prev,
+        antreanPesan: res.data?.antreanPesan
+          ? res.data.antreanPesan
+          : (prev.antreanPesan || []).map((item) =>
+              item.idAntrean === idAntrean ? { ...item, status: 'Dibatalkan' } : item
+            ),
+      }));
+      notify('success', 'Antrean dibatalkan', res.message);
+      return true;
+    }
+    notify('error', 'Gagal membatalkan antrean', res.message);
+    return false;
+  };
+
   const pendingCount = useMemo(
     () => data.transaksi.filter((t) => t.statusVerifikasi === 'Pending').length,
     [data.transaksi]
@@ -525,7 +648,7 @@ export default function App() {
           </button>
 
           {/* Zone 2: Desktop Single-Line Navigation Links */}
-          <nav className="hidden md:flex items-center gap-7" aria-label="Navigasi Utama">
+          <nav className="hidden md:flex items-center gap-4 lg:gap-6" aria-label="Navigasi Utama">
             {NAV_TABS.map((tab) => {
               const isActive = activeTab === tab.key;
               return (
@@ -594,7 +717,7 @@ export default function App() {
       >
         {/* Mobile Navigation */}
         <div
-          className="md:hidden grid grid-cols-2 sm:grid-cols-4 gap-1.5 rounded-2xl glass-surface p-1.5"
+          className="md:hidden grid grid-cols-2 sm:grid-cols-3 gap-1.5 rounded-2xl glass-surface p-1.5"
           role="tablist"
           aria-label="Navigasi Mobile"
         >
@@ -842,6 +965,37 @@ export default function App() {
             isLoading={isLoading}
             onVerifikasi={handleVerifikasiTransaksi}
             onUpdateStatusPenyaluran={handleUpdateStatusPenyaluran}
+          />
+        )}
+
+        {activeTab === 'grup_wa' && (
+          <TabGrupWa
+            config={data.config}
+            donaturList={data.donatur}
+            panitiaList={data.panitia}
+            isLoading={isLoading}
+            connectionStatus={connectionStatus}
+            onUpdateStatusGrup={handleUpdateStatusGrup}
+            onBulkUpdateStatusGrup={handleBulkUpdateStatusGrup}
+            onSendBroadcastSingle={handleSendBroadcastSingle}
+            onOpenSettings={() => setIsModalOpen(true)}
+            onNotify={notify}
+          />
+        )}
+
+        {activeTab === 'broadcast' && (
+          <TabBroadcast
+            config={data.config}
+            donaturList={data.donatur}
+            transaksiList={data.transaksi}
+            panitiaList={data.panitia}
+            antreanPesan={data.antreanPesan || []}
+            connectionStatus={connectionStatus}
+            onSendBroadcastSingle={handleSendBroadcastSingle}
+            onScheduleBroadcast={handleScheduleBroadcast}
+            onProcessQueue={handleProcessQueue}
+            onCancelScheduled={handleCancelScheduled}
+            onNotify={notify}
           />
         )}
       </main>

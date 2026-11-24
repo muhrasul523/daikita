@@ -7,9 +7,11 @@ import {
   CheckCircle2,
   Copy,
   Download,
+  ExternalLink,
   Lock,
   QrCode,
   UserPlus,
+  Users,
   X,
 } from 'lucide-react';
 import { WILAYAH_KABUPATEN } from '../data/wilayah';
@@ -17,6 +19,7 @@ import {
   Donatur,
   JenisKelamin,
   LembagaConfig,
+  MinatGrupWa,
   NotifDeliveryResult,
   Panitia,
   RegisterDonaturPayload,
@@ -108,6 +111,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
   const [tglPengingat, setTglPengingat] = useState<number>(
     () => config.defaultTglPengingat || 5
   );
+  const [minatGrupWa, setMinatGrupWa] = useState<MinatGrupWa>('Ya');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorState, setErrorState] = useState<{
@@ -219,6 +223,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
     setSelectedKabId('');
     setNominalInput((config.defaultNominal || 50000).toLocaleString('id-ID'));
     setTglPengingat(config.defaultTglPengingat || 5);
+    setMinatGrupWa('Ya');
     setErrorState(null);
     setRegisteredDonatur(null);
     setRegisteredNotif(null);
@@ -310,6 +315,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
       metodeDaftar,
       kodePerantara,
       namaPerantara,
+      minatGrupWa,
     });
     setIsSubmitting(false);
 
@@ -321,6 +327,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
       setNoWaInput('');
       setEmailInput('');
       setSelectedKabId('');
+      setMinatGrupWa('Ya');
     } else {
       setErrorState({
         message: res.message,
@@ -449,11 +456,23 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
                           : 'text-amber-700 dark:text-amber-300'
                       }
                     >
-                      Notifikasi WA:{' '}
+                      Notifikasi WA (Pesan 1):{' '}
                       {registeredNotif.wa.ok
                         ? `Terkirim (Template #${(registeredNotif.wa.templateIndex ?? 0) + 1})`
                         : registeredNotif.wa.detail}
                     </p>
+                    {registeredNotif.waFollowup && (
+                      <p
+                        className={
+                          registeredNotif.waFollowup.ok
+                            ? 'text-teal-800 dark:text-teal-300 font-medium'
+                            : 'text-slate-600 dark:text-slate-300'
+                        }
+                      >
+                        Notifikasi WA (Pesan 2 · Arahan Save Nomor):{' '}
+                        {registeredNotif.waFollowup.detail}
+                      </p>
+                    )}
                     <p
                       className={
                         registeredNotif.email.ok
@@ -462,9 +481,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
                       }
                     >
                       Notifikasi Email:{' '}
-                      {registeredNotif.email.ok
-                        ? `Terkirim (Template #${(registeredNotif.email.templateIndex ?? 0) + 1})`
-                        : registeredNotif.email.detail}
+                      {registeredNotif.email.ok ? 'Terkirim' : registeredNotif.email.detail}
                     </p>
                   </div>
                 )}
@@ -477,6 +494,18 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
                     <span>Lanjut Konfirmasi Pembayaran</span>
                     <ArrowRight className="h-3.5 w-3.5 shrink-0" />
                   </button>
+                  {registeredDonatur.minatGrupWa === 'Ya' && config.waGroupLink && (
+                    <a
+                      href={config.waGroupLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-700 transition-colors whitespace-nowrap"
+                    >
+                      <Users className="h-3.5 w-3.5 shrink-0" />
+                      <span>Gabung Grup WA Donatur</span>
+                      <ExternalLink className="h-3 w-3 shrink-0" />
+                    </a>
+                  )}
                   <button
                     type="button"
                     onClick={handleResetForm}
@@ -740,6 +769,68 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
             </div>
           </div>
 
+          {/* Pilihan Bergabung Grup WhatsApp Donatur */}
+          <div className="rounded-2xl border border-emerald-200/75 dark:border-emerald-800/70 bg-emerald-50/40 dark:bg-emerald-950/25 p-4 space-y-2.5">
+            <div className="flex items-start gap-2">
+              <Users className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <span className="block text-xs font-bold text-slate-800 dark:text-slate-100">
+                  Bergabung Grup WhatsApp Donatur?{' '}
+                  <span className="text-rose-600 dark:text-rose-400">*</span>
+                </span>
+                <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
+                  Bila memilih <strong>Ya</strong>, tautan undangan{' '}
+                  <strong>{config.waGroupName || 'Grup Donatur DAIKITA'}</strong> akan otomatis
+                  dikirimkan bersama pesan notifikasi pendaftaran untuk info penyaluran &amp; kabar
+                  dakwah.
+                </p>
+              </div>
+            </div>
+            <div
+              role="radiogroup"
+              aria-label="Pilihan bergabung Grup WhatsApp Donatur"
+              className="grid grid-cols-1 sm:grid-cols-2 gap-2.5"
+            >
+              {(
+                [
+                  { value: 'Ya', label: 'Ya, Bersedia Bergabung' },
+                  { value: 'Tidak', label: 'Tidak, Cukup via Japri' },
+                ] as const
+              ).map((opt) => {
+                const selected = minatGrupWa === opt.value;
+                return (
+                  <label
+                    key={opt.value}
+                    className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none ${
+                      selected
+                        ? 'border-emerald-500 bg-white dark:bg-emerald-950/70 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20 shadow-sm'
+                        : 'border-slate-200/90 dark:border-slate-700 bg-white/85 dark:bg-slate-900/75 text-slate-700 dark:text-slate-200 hover:border-emerald-300 dark:hover:border-emerald-700'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="reg-minat-grup"
+                      value={opt.value}
+                      checked={selected}
+                      onChange={() => setMinatGrupWa(opt.value)}
+                      className="sr-only"
+                    />
+                    <span
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                        selected
+                          ? 'border-emerald-600 bg-emerald-600'
+                          : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                      }`}
+                    >
+                      {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                    </span>
+                    <span className="safe-wrap">{opt.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="pt-3 border-t border-slate-200/70 dark:border-slate-700/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-xs text-slate-500 dark:text-slate-400 safe-wrap">
               Data donatur akan tersimpan otomatis sebagai Donatur Aktif Kafalah Dai.
@@ -763,7 +854,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
           </h2>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed safe-wrap">
             {config.catatanPembayaran ||
-              `Penyaluran amanah rutin Kafalah Dai melalui rekening resmi ${config.namaLembaga}.`}
+              `Penyaluran donasi rutin Kafalah Dai melalui rekening resmi ${config.namaLembaga}.`}
           </p>
           <div className="mt-4 divide-y divide-slate-200/70 dark:divide-slate-700/70">
             {config.infoRekening.map((rek) => {
@@ -854,7 +945,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
 
         <div className="pt-5 border-t border-slate-200/70 dark:border-slate-700/70 space-y-2.5">
           <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-            Komitmen Amanah Rutin
+            Komitmen Donasi Rutin
           </h3>
           <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
             <li>

@@ -27,6 +27,7 @@ import {
   buildReceiptWaLink,
   formatBulanLabel,
   formatRupiah,
+  formatTanggalIndo,
   formatWADisplay,
   getCurrentYearMonth,
 } from '../utils/formatters';
@@ -45,6 +46,7 @@ interface TabVerifikasiProps {
 
 type TrxSortField =
   | 'waktu'
+  | 'tanggalTransfer'
   | 'nominal'
   | 'bulan'
   | 'nama'
@@ -59,9 +61,10 @@ const SALUR_FILTER_OPTIONS: SearchableOption[] = [
 
 const SORT_OPTIONS: SearchableOption[] = [
   { value: 'waktu', label: 'Urut: Waktu Input', keywords: 'waktu tanggal input' },
+  { value: 'tanggalTransfer', label: 'Urut: Tgl Transfer', keywords: 'tanggal transfer' },
   { value: 'nama', label: 'Urut: Nama Donatur', keywords: 'nama donatur' },
   { value: 'nominal', label: 'Urut: Nominal', keywords: 'nominal rupiah' },
-  { value: 'bulan', label: 'Urut: Bulan Amanah', keywords: 'bulan periode' },
+  { value: 'bulan', label: 'Urut: Bulan Donasi', keywords: 'bulan periode' },
   { value: 'statusVerifikasi', label: 'Urut: Status Verifikasi', keywords: 'status verifikasi' },
   { value: 'statusPenyaluran', label: 'Urut: Status Penyaluran', keywords: 'status penyaluran' },
 ];
@@ -134,6 +137,9 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
       switch (sortField) {
         case 'waktu':
           cmp = a.waktuInput.localeCompare(b.waktuInput);
+          break;
+        case 'tanggalTransfer':
+          cmp = (a.tanggalTransfer || '').localeCompare(b.tanggalTransfer || '');
           break;
         case 'nominal':
           cmp = a.nominalTransfer - b.nominalTransfer;
@@ -484,11 +490,16 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                         <p className="mt-0.5 text-xs font-semibold text-teal-800 dark:text-teal-300">
                           {formatBulanLabel(trx.bulanTagihan)}
                         </p>
+                        {trx.tanggalTransfer && (
+                          <p className="mt-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 tabular-nums">
+                            Tgl Transfer: {formatTanggalIndo(trx.tanggalTransfer)}
+                          </p>
+                        )}
                         <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-                          {trx.waktuInput}
+                          Input: {trx.waktuInput}
                         </p>
                         <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
-                          Input: {trx.diinputOleh || 'Donatur (Mandiri)'}
+                          Oleh: {trx.diinputOleh || 'Donatur (Mandiri)'}
                         </p>
                       </td>
 
@@ -515,6 +526,16 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                         <p className="font-bold text-emerald-800 dark:text-emerald-300 tabular-nums">
                           {formatRupiah(trx.nominalTransfer)}
                         </p>
+                        {trx.donasiLainnya > 0 && (
+                          <div className="mt-0.5 space-y-0.5 text-[10px] tabular-nums">
+                            <p className="text-slate-500 dark:text-slate-400">
+                              Komitmen: {formatRupiah(trx.nominalKomitmen)}
+                            </p>
+                            <p className="font-semibold text-sky-700 dark:text-sky-300">
+                              +{formatRupiah(trx.donasiLainnya)} Lainnya
+                            </p>
+                          </div>
+                        )}
                       </td>
 
                       <td className="py-4 px-4 whitespace-nowrap space-y-1.5">

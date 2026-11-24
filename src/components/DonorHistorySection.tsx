@@ -20,6 +20,7 @@ import {
   extractYearMonthFromDateStr,
   formatBulanLabel,
   formatRupiah,
+  formatTanggalIndo,
   formatWADisplay,
   getCurrentYearMonth,
   normalizeWA,
@@ -48,7 +49,9 @@ interface DonorMonthRow {
   komitmenRp: number;
   nominalValidRp: number;
   nominalPendingRp: number;
+  donasiLainnyaRp: number;
   nominalDisplayRp: number;
+  latestTransferDate: string;
   transactions: TransaksiDonasi[];
   latestProofUrl: string;
   keteranganList: string[];
@@ -126,6 +129,10 @@ export const DonorHistorySection: React.FC<DonorHistorySectionProps> = ({
 
       const nominalValidRp = validTrx.reduce((s, t) => s + t.nominalTransfer, 0);
       const nominalPendingRp = pendingTrx.reduce((s, t) => s + t.nominalTransfer, 0);
+      const activeSource = validTrx.length > 0 ? validTrx : pendingTrx;
+      const donasiLainnyaRp = activeSource.reduce((s, t) => s + Math.max(0, t.donasiLainnya || 0), 0);
+      const latestTransferDate =
+        [...monthTrx].reverse().find((t) => Boolean(t.tanggalTransfer))?.tanggalTransfer || '';
 
       let status: MonthRowStatus = 'Belum Bayar';
       if (validTrx.length > 0) {
@@ -135,7 +142,6 @@ export const DonorHistorySection: React.FC<DonorHistorySectionProps> = ({
       } else if (regYm && ym < regYm) {
         status = 'Sebelum Terdaftar';
       } else if (ym > currentYm) {
-        // Bulan ke depan yang belum dibayar tetap ditandai Belum Bayar agar jelas
         status = 'Belum Bayar';
       }
 
@@ -158,7 +164,9 @@ export const DonorHistorySection: React.FC<DonorHistorySectionProps> = ({
         komitmenRp: selectedDonatur.nominalKomitmen,
         nominalValidRp,
         nominalPendingRp,
+        donasiLainnyaRp,
         nominalDisplayRp: nominalValidRp > 0 ? nominalValidRp : nominalPendingRp,
+        latestTransferDate,
         transactions: monthTrx,
         latestProofUrl: trxWithProof?.linkBuktiDrive || '',
         keteranganList,
@@ -208,6 +216,7 @@ export const DonorHistorySection: React.FC<DonorHistorySectionProps> = ({
 
     return {
       totalValidRp: validAll.reduce((s, t) => s + t.nominalTransfer, 0),
+      totalLainnyaRp: validAll.reduce((s, t) => s + Math.max(0, t.donasiLainnya || 0), 0),
       totalPendingRp: pendingAll.reduce((s, t) => s + t.nominalTransfer, 0),
       lunasMonths,
       unpaidThisYear,
@@ -322,6 +331,11 @@ export const DonorHistorySection: React.FC<DonorHistorySectionProps> = ({
                 <p className="text-sm font-bold text-emerald-700 dark:text-emerald-300 tabular-nums safe-wrap">
                   {formatRupiah(donorTotals.totalValidRp)}
                 </p>
+                {donorTotals.totalLainnyaRp > 0 && (
+                  <p className="text-[10px] font-semibold text-sky-700 dark:text-sky-300 tabular-nums">
+                    Termasuk +{formatRupiah(donorTotals.totalLainnyaRp)} lainnya
+                  </p>
+                )}
               </div>
               <div className="min-w-0">
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">Bulan Lunas</p>
@@ -463,13 +477,27 @@ export const DonorHistorySection: React.FC<DonorHistorySectionProps> = ({
 
                     <td className="py-3.5 px-4 text-right whitespace-nowrap tabular-nums">
                       {row.nominalValidRp > 0 ? (
-                        <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">
-                          {formatRupiah(row.nominalValidRp)}
-                        </p>
+                        <div>
+                          <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                            {formatRupiah(row.nominalValidRp)}
+                          </p>
+                          {row.donasiLainnyaRp > 0 && (
+                            <p className="text-[10px] font-semibold text-sky-700 dark:text-sky-300">
+                              +{formatRupiah(row.donasiLainnyaRp)} lainnya
+                            </p>
+                          )}
+                        </div>
                       ) : row.nominalPendingRp > 0 ? (
-                        <p className="text-xs font-bold text-amber-700 dark:text-amber-300">
-                          {formatRupiah(row.nominalPendingRp)}
-                        </p>
+                        <div>
+                          <p className="text-xs font-bold text-amber-700 dark:text-amber-300">
+                            {formatRupiah(row.nominalPendingRp)}
+                          </p>
+                          {row.donasiLainnyaRp > 0 && (
+                            <p className="text-[10px] font-semibold text-sky-700 dark:text-sky-300">
+                              +{formatRupiah(row.donasiLainnyaRp)} lainnya
+                            </p>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
                       )}
@@ -482,6 +510,11 @@ export const DonorHistorySection: React.FC<DonorHistorySectionProps> = ({
                         </span>
                       ) : (
                         <>
+                          {row.latestTransferDate && (
+                            <p className="text-[11px] font-medium text-slate-700 dark:text-slate-300 tabular-nums">
+                              Tgl Transfer: {formatTanggalIndo(row.latestTransferDate)}
+                            </p>
+                          )}
                           {isExternalUrl && (
                             <a
                               href={row.latestProofUrl}

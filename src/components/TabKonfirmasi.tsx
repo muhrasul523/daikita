@@ -16,6 +16,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
+import { PROGRAM_START_YM, TRANSFER_MIN_DATE } from '../config';
 import {
   Donatur,
   LembagaConfig,
@@ -25,13 +26,17 @@ import {
 } from '../types';
 import {
   buildMonthSequence,
+  extractYearMonthFromDateStr,
   formatBulanLabel,
   formatBulanShortLabel,
   formatRupiah,
   formatRupiahInput,
+  formatTanggalIndo,
   formatWADisplay,
+  getAdjacentYearMonth,
   getCurrentYearMonth,
   getDriveThumbnailFallback,
+  getTodayIsoDate,
   normalizeDriveImageUrl,
   normalizeWA,
   parseRupiahInput,
@@ -67,21 +72,6 @@ interface TabKonfirmasiProps {
   onNotify: (type: 'success' | 'error' | 'info', title: string, description?: string) => void;
 }
 
-const MONTH_NUMBERS = [
-  '01',
-  '02',
-  '03',
-  '04',
-  '05',
-  '06',
-  '07',
-  '08',
-  '09',
-  '10',
-  '11',
-  '12',
-] as const;
-
 export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
   config,
   donaturList,
@@ -95,14 +85,21 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
   onGoToPendaftaran,
   onNotify,
 }) => {
-  const initialYm =
+  const todayIso = getTodayIsoDate();
+
+  const rawInitialYm =
     preselectedMonth && /^\d{4}-\d{2}$/.test(preselectedMonth)
       ? preselectedMonth
       : getCurrentYearMonth();
+  const initialYm = rawInitialYm < PROGRAM_START_YM ? PROGRAM_START_YM : rawInitialYm;
 
   const [selectedDonaturId, setSelectedDonaturId] = useState('');
+  const [tanggalTransfer, setTanggalTransfer] = useState<string>(() => getTodayIsoDate());
   const [selectedMonths, setSelectedMonths] = useState<string[]>([initialYm]);
-  const [pickerYear, setPickerYear] = useState<number>(() => Number(initialYm.slice(0, 4)));
+  const [windowStartYm, setWindowStartYm] = useState<string>(() => {
+    const firstYearEnd = getAdjacentYearMonth(PROGRAM_START_YM, 11);
+    return initialYm <= firstYearEnd ? PROGRAM_START_YM : initialYm;
+  });
   const [nominalInput, setNominalInput] = useState('');
   const [isNominalCustom, setIsNominalCustom] = useState(false);
   const [keterangan, setKeterangan] = useState('');
@@ -114,6 +111,9 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
   const [successInfo, setSuccessInfo] = useState<{
     transaksiList: TransaksiDonasi[];
     totalNominal: number;
+    totalKomitmen: number;
+    totalLainnya: number;
+    tanggalTransfer: string;
     savedFileName?: string;
   } | null>(null);
   const [copiedRek, setCopiedRek] = useState<string | null>(null);
@@ -162,6 +162,20 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     [donaturList, selectedDonaturId]
   );
 
+  // Bulan minimum yang dapat dipilih: mulai Nov 2026 atau bulan pendaftaran donatur (mana lebih akhir)
+  const minSelectableYm = useMemo(() => {
+    if (!selectedDonatur) return PROGRAM_START_YM;
+    const regYm = extractYearMonthFromDateStr(selectedDonatur.tanggalDaftar);
+    if (regYm && regYm > PROGRAM_START_YM) return regYm;
+    return PROGRAM_START_YM;
+  }, [selectedDonatur]);
+
+  // 12 bulan berurutan yang ditampilkan dalam satu layar (mis. Nov 2026 s.d. Okt 2027)
+  const visibleMonths = useMemo(
+    () => buildMonthSequence(windowStartYm < minSelectableYm ? minSelectableYm : windowStartYm, 12),
+    [windowStartYm, minSelectableYm]
+  );
+
   // Status transaksi yang sudah ada per bulan untuk donatur terpilih
   const donorMonthStatusMap = useMemo(() => {
     const map = new Map<string, 'Valid' | 'Pending'>();
@@ -190,6 +204,17 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     [selectedMonths]
   );
 
+  // Pastikan pilihan bulan dan jendela 12 bulan tidak mundur sebelum minSelectableYm
+  useEffect(() => {
+    setWindowStartYm((prev) => (prev < minSelectableYm ? minSelectableYm : prev));
+    setSelectedMonths((prev) => {
+      const valid = prev.filter((m) => m >= minSelectableYm);
+      if (valid.length > 0) return valid;
+      const cur = getCurrentYearMonth();
+      return [cur >= minSelectableYm ? cur : minSelectableYm];
+    });
+  }, [minSelectableYm]);
+
   // Isi otomatis nominal saat memilih donatur atau mengubah jumlah bulan (kecuali jika user mengedit manual)
   useEffect(() => {
     if (!selectedDonatur) {
@@ -206,9 +231,15 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     if (preselectedDonatur) {
       setSelectedDonaturId(preselectedDonatur.idDonatur);
       setIsNominalCustom(false);
+      const regYm = extractYearMonthFromDateStr(preselectedDonatur.tanggalDaftar);
+      const donorMin = regYm && regYm > PROGRAM_START_YM ? regYm : PROGRAM_START_YM;
       if (preselectedMonth && /^\d{4}-\d{2}$/.test(preselectedMonth)) {
-        setSelectedMonths([preselectedMonth]);
-        setPickerYear(Number(preselectedMonth.slice(0, 4)));
+        const safeMonth = preselectedMonth < donorMin ? donorMin : preselectedMonth;
+        setSelectedMonths([safeMonth]);
+        const endOfFirstWindow = getAdjacentYearMonth(donorMin, 11);
+        setWindowStartYm(safeMonth <= endOfFirstWindow ? donorMin : safeMonth);
+      } else {
+        setWindowStartYm(donorMin);
       }
       setErrorMsg(null);
       onClearPreselected();
@@ -221,10 +252,19 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     setErrorMsg(null);
     if (!val) {
       setNominalInput('');
+      setWindowStartYm(PROGRAM_START_YM);
+      return;
+    }
+    const found = donaturList.find((d) => d.idDonatur === val);
+    if (found) {
+      const regYm = extractYearMonthFromDateStr(found.tanggalDaftar);
+      const donorMin = regYm && regYm > PROGRAM_START_YM ? regYm : PROGRAM_START_YM;
+      setWindowStartYm(donorMin);
     }
   };
 
   const handleToggleMonth = (ym: string) => {
+    if (ym < minSelectableYm) return;
     setIsNominalCustom(false);
     setErrorMsg(null);
     setSelectedMonths((prev) => {
@@ -237,14 +277,42 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
   };
 
   const handleApplyConsecutiveMonths = (count: number) => {
-    const baseMonth = sortedSelectedMonths[0] || getCurrentYearMonth();
+    const rawBase = sortedSelectedMonths[0] || minSelectableYm;
+    const baseMonth = rawBase < minSelectableYm ? minSelectableYm : rawBase;
     const seq = buildMonthSequence(baseMonth, count);
     setSelectedMonths(seq);
     setIsNominalCustom(false);
     setErrorMsg(null);
   };
 
+  const handleShiftWindow = (deltaMonths: number) => {
+    setWindowStartYm((prev) => {
+      const next = getAdjacentYearMonth(prev, deltaMonths);
+      return next < minSelectableYm ? minSelectableYm : next;
+    });
+  };
+
   const parsedNominal = useMemo(() => parseRupiahInput(nominalInput), [nominalInput]);
+
+  // Rincian Donasi Komitmen vs Donasi Lainnya (kelebihan nominal di atas komitmen)
+  const expectedKomitmenTotal = useMemo(() => {
+    if (!selectedDonatur || selectedDonatur.nominalKomitmen <= 0) return 0;
+    return selectedDonatur.nominalKomitmen * Math.max(1, sortedSelectedMonths.length);
+  }, [selectedDonatur, sortedSelectedMonths.length]);
+
+  const donasiKomitmenRp = useMemo(() => {
+    if (expectedKomitmenTotal > 0 && parsedNominal > expectedKomitmenTotal) {
+      return expectedKomitmenTotal;
+    }
+    return parsedNominal;
+  }, [expectedKomitmenTotal, parsedNominal]);
+
+  const donasiLainnyaRp = useMemo(() => {
+    if (expectedKomitmenTotal > 0 && parsedNominal > expectedKomitmenTotal) {
+      return parsedNominal - expectedKomitmenTotal;
+    }
+    return 0;
+  }, [expectedKomitmenTotal, parsedNominal]);
 
   // Deteksi cerdas bila user mengetik nominal kelipatan komitmen (mis. komitmen 100rb -> ketik 300rb)
   const smartBatchSuggestionCount = useMemo(() => {
@@ -259,13 +327,14 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
 
   const autoRenamePreview = useMemo(() => {
     return previewAutoRenameFile({
-      bulanTagihan: sortedSelectedMonths[0] || getCurrentYearMonth(),
+      tanggalTransfer,
+      bulanTagihan: sortedSelectedMonths[0] || minSelectableYm,
       bulanList: sortedSelectedMonths,
       namaDonatur: selectedDonatur?.namaLengkap || 'Nama-Donatur',
       nominalTransfer: parsedNominal,
       extension: uploadFile?.extension || 'jpg',
     });
-  }, [sortedSelectedMonths, selectedDonatur, parsedNominal, uploadFile]);
+  }, [tanggalTransfer, sortedSelectedMonths, minSelectableYm, selectedDonatur, parsedNominal, uploadFile]);
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -320,7 +389,24 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     }
 
     if (sortedSelectedMonths.length === 0) {
-      setErrorMsg('Pilih minimal 1 periode bulan amanah / tagihan.');
+      setErrorMsg('Pilih minimal 1 periode bulan donasi / tagihan.');
+      return;
+    }
+
+    if (!tanggalTransfer || !/^\d{4}-\d{2}-\d{2}$/.test(tanggalTransfer)) {
+      setErrorMsg('Tanggal transfer wajib diisi dengan format yang valid.');
+      return;
+    }
+
+    if (tanggalTransfer < TRANSFER_MIN_DATE) {
+      setErrorMsg(`Tanggal transfer tidak boleh sebelum ${formatTanggalIndo(TRANSFER_MIN_DATE)}.`);
+      return;
+    }
+
+    if (tanggalTransfer > todayIso) {
+      setErrorMsg(
+        `Tanggal transfer tidak boleh melebihi hari ini (${formatTanggalIndo(todayIso)}).`
+      );
       return;
     }
 
@@ -334,9 +420,11 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
       idDonatur: selectedDonatur.idDonatur,
       namaDonatur: selectedDonatur.namaLengkap,
       noWa: waCheck.normalized,
+      tanggalTransfer,
       bulanTagihan: sortedSelectedMonths[0],
       bulanTagihanList: sortedSelectedMonths,
       nominalTransfer: parsedNominal,
+      nominalKomitmenPerBulan: selectedDonatur.nominalKomitmen,
       diinputOleh: autoDiinputOleh,
       keterangan: keterangan.trim() || undefined,
       fileBase64: uploadFile?.base64,
@@ -356,9 +444,13 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
       setSuccessInfo({
         transaksiList: createdList,
         totalNominal: createdList.reduce((sum, t) => sum + t.nominalTransfer, 0),
+        totalKomitmen: createdList.reduce((sum, t) => sum + (t.nominalKomitmen || t.nominalTransfer), 0),
+        totalLainnya: createdList.reduce((sum, t) => sum + (t.donasiLainnya || 0), 0),
+        tanggalTransfer: createdList[0].tanggalTransfer || tanggalTransfer,
         savedFileName: res.savedFileName,
       });
       setKeterangan('');
+      setTanggalTransfer(getTodayIsoDate());
       setIsNominalCustom(false);
       handleRemoveFile();
     } else {
@@ -408,6 +500,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                 <p className="mt-1 text-xs text-emerald-900/85 dark:text-emerald-200/90 leading-relaxed safe-wrap">
                   Atas nama <strong>{successInfo.transaksiList[0].namaDonatur}</strong> sebesar total{' '}
                   <strong className="tabular-nums">{formatRupiah(successInfo.totalNominal)}</strong>{' '}
+                  (Tgl transfer: <strong>{formatTanggalIndo(successInfo.tanggalTransfer)}</strong>)
                   untuk periode{' '}
                   <strong>
                     {successInfo.transaksiList
@@ -416,6 +509,13 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                   </strong>{' '}
                   kini berstatus <strong>Menunggu Verifikasi</strong>.
                 </p>
+                {successInfo.totalLainnya > 0 && (
+                  <p className="mt-1 text-xs text-teal-900 dark:text-teal-200 tabular-nums safe-wrap">
+                    Rincian: Donasi Komitmen{' '}
+                    <strong>{formatRupiah(successInfo.totalKomitmen)}</strong> + Donasi Lainnya{' '}
+                    <strong>{formatRupiah(successInfo.totalLainnya)}</strong>.
+                  </p>
+                )}
                 <p className="mt-1.5 text-[11px] font-mono text-emerald-800 dark:text-emerald-300 safe-wrap">
                   ID Transaksi: {successInfo.transaksiList.map((t) => t.idTransaksi).join(', ')}
                 </p>
@@ -524,41 +624,49 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
             )}
           </div>
 
-          {/* Pilih Bulan Amanah (Bisa Sekaligus Beberapa Bulan) */}
+          {/* Pilih Bulan Donasi (12 Bulan Berurutan Mulai Nov 2026 / Bulan Daftar Donatur) */}
           <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/60 dark:bg-slate-900/50 p-4 space-y-3.5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <Calendar className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span>
-                    Pilih Bulan Amanah / Tagihan{' '}
+                    Pilih Bulan Donasi / Tagihan{' '}
                     <span className="text-rose-600 dark:text-rose-400">*</span>
                   </span>
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
-                  Bisa memilih 1 bulan atau sekaligus beberapa bulan (mis. bayar 2–3 bulan).
+                  Menampilkan 12 bulan berurutan mulai{' '}
+                  <strong>{formatBulanLabel(minSelectableYm)}</strong> ke depan. Bisa pilih 1 atau
+                  beberapa bulan sekaligus.
                 </p>
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setPickerYear((y) => y - 1)}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 cursor-pointer"
-                  aria-label="Tahun sebelumnya"
+                  disabled={windowStartYm <= minSelectableYm}
+                  onClick={() => handleShiftWindow(-12)}
+                  className="inline-flex h-8 items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                  aria-label="12 bulan sebelumnya"
+                  title="12 bulan sebelumnya"
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden sm:inline">12 Bln</span>
                 </button>
-                <span className="px-2.5 text-xs font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                  {pickerYear}
+                <span className="px-2 text-xs font-bold text-slate-900 dark:text-slate-100 tabular-nums whitespace-nowrap">
+                  {formatBulanShortLabel(visibleMonths[0])} –{' '}
+                  {formatBulanShortLabel(visibleMonths[visibleMonths.length - 1])}
                 </span>
                 <button
                   type="button"
-                  onClick={() => setPickerYear((y) => y + 1)}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 cursor-pointer"
-                  aria-label="Tahun berikutnya"
+                  onClick={() => handleShiftWindow(12)}
+                  className="inline-flex h-8 items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer whitespace-nowrap"
+                  aria-label="12 bulan berikutnya"
+                  title="12 bulan berikutnya"
                 >
-                  <ChevronRight className="h-4 w-4" />
+                  <span className="hidden sm:inline">12 Bln</span>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
                 </button>
               </div>
             </div>
@@ -587,10 +695,9 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
               })}
             </div>
 
-            {/* Grid 12 Bulan */}
+            {/* Grid 12 Bulan Berurutan (lintas tahun sekaligus) */}
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-              {MONTH_NUMBERS.map((mm) => {
-                const ym = `${pickerYear}-${mm}`;
+              {visibleMonths.map((ym) => {
                 const isSelected = sortedSelectedMonths.includes(ym);
                 const existingStatus = donorMonthStatusMap.get(ym);
 
@@ -659,8 +766,31 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
             </div>
           </div>
 
-          {/* Nominal Transfer & Keterangan (Opsional) */}
+          {/* Tanggal Transfer & Nominal Transfer Total */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="min-w-0">
+              <label
+                htmlFor="konf-tgl-transfer"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
+              >
+                Tanggal Transfer <span className="text-rose-600 dark:text-rose-400">*</span>
+              </label>
+              <input
+                id="konf-tgl-transfer"
+                type="date"
+                required
+                min={TRANSFER_MIN_DATE}
+                max={todayIso}
+                value={tanggalTransfer}
+                onChange={(e) => setTanggalTransfer(e.target.value)}
+                className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-4 py-3 text-sm font-semibold text-slate-900 dark:text-slate-100 tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              />
+              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
+                Otomatis terisi hari ini ({formatTanggalIndo(todayIso)}). Dapat diubah ke tanggal
+                sebelumnya, tidak dapat memilih tanggal mendatang.
+              </p>
+            </div>
+
             <div className="min-w-0">
               <label
                 htmlFor="konf-nominal"
@@ -688,54 +818,76 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
               </div>
               {selectedDonatur && (
                 <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
-                  Otomatis: {sortedSelectedMonths.length} bln ×{' '}
+                  Komitmen: {sortedSelectedMonths.length} bln ×{' '}
                   {formatRupiah(selectedDonatur.nominalKomitmen)} ={' '}
-                  <strong>
-                    {formatRupiah(sortedSelectedMonths.length * selectedDonatur.nominalKomitmen)}
-                  </strong>
-                  {sortedSelectedMonths.length > 1 && parsedNominal > 0 && (
-                    <>
-                      {' '}
-                      (± {formatRupiah(Math.round(parsedNominal / sortedSelectedMonths.length))}/bln)
-                    </>
-                  )}
+                  <strong>{formatRupiah(expectedKomitmenTotal)}</strong>
                 </p>
               )}
+            </div>
+          </div>
 
-              {smartBatchSuggestionCount && selectedDonatur && (
-                <div className="mt-2 rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50/80 dark:bg-sky-950/40 px-3 py-2 flex items-center justify-between gap-2">
-                  <p className="text-[11px] text-sky-900 dark:text-sky-200 safe-wrap">
+          {/* Rincian Otomatis Kelebihan Transfer sebagai Donasi Lainnya */}
+          {selectedDonatur && donasiLainnyaRp > 0 && (
+            <div className="rounded-2xl border border-teal-200/90 dark:border-teal-800/75 bg-gradient-to-r from-emerald-50/80 via-teal-50/70 to-sky-50/70 dark:from-emerald-950/45 dark:via-teal-950/40 dark:to-sky-950/35 p-4 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-bold text-teal-900 dark:text-teal-200">
+                  Kelebihan Nominal Tercatat Otomatis sebagai Donasi Lainnya
+                </p>
+                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">
+                  Total: {formatRupiah(parsedNominal)}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                <div className="rounded-xl bg-white/85 dark:bg-slate-900/70 px-3 py-2 border border-emerald-200/70 dark:border-emerald-800/60 flex items-center justify-between gap-2">
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Donasi Komitmen ({sortedSelectedMonths.length} bln)
+                  </span>
+                  <strong className="text-emerald-800 dark:text-emerald-300 tabular-nums">
+                    {formatRupiah(donasiKomitmenRp)}
+                  </strong>
+                </div>
+                <div className="rounded-xl bg-white/85 dark:bg-slate-900/70 px-3 py-2 border border-sky-200/70 dark:border-sky-800/60 flex items-center justify-between gap-2">
+                  <span className="text-slate-600 dark:text-slate-300">Donasi Lainnya</span>
+                  <strong className="text-sky-700 dark:text-sky-300 tabular-nums">
+                    +{formatRupiah(donasiLainnyaRp)}
+                  </strong>
+                </div>
+              </div>
+              {smartBatchSuggestionCount && (
+                <div className="pt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-sky-900 dark:text-sky-200">
+                  <span className="safe-wrap">
                     <Sparkles className="inline h-3 w-3 mr-1 text-sky-600 dark:text-sky-400" />
-                    Nominal ini setara <strong>{smartBatchSuggestionCount} bulan</strong> komitmen (
-                    {formatRupiah(selectedDonatur.nominalKomitmen)}/bln).
-                  </p>
+                    Atau jika ingin dibagi rata menjadi <strong>{smartBatchSuggestionCount} bulan</strong>{' '}
+                    komitmen ({formatRupiah(selectedDonatur.nominalKomitmen)}/bln):
+                  </span>
                   <button
                     type="button"
                     onClick={() => handleApplyConsecutiveMonths(smartBatchSuggestionCount)}
                     className="rounded-lg bg-sky-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-sky-700 whitespace-nowrap shrink-0 cursor-pointer"
                   >
-                    Pilih {smartBatchSuggestionCount} Bln
+                    Jadikan {smartBatchSuggestionCount} Bulan
                   </button>
                 </div>
               )}
             </div>
+          )}
 
-            <div className="min-w-0">
-              <label
-                htmlFor="konf-keterangan"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
-              >
-                Keterangan (Opsional)
-              </label>
-              <textarea
-                id="konf-keterangan"
-                rows={3}
-                value={keterangan}
-                onChange={(e) => setKeterangan(e.target.value)}
-                placeholder="Catatan tambahan, mis. bayar rapel 3 bulan, titip doa, atau transfer via rekening keluarga..."
-                className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              />
-            </div>
+          {/* Keterangan (Opsional) */}
+          <div className="min-w-0">
+            <label
+              htmlFor="konf-keterangan"
+              className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
+            >
+              Keterangan (Opsional)
+            </label>
+            <textarea
+              id="konf-keterangan"
+              rows={2}
+              value={keterangan}
+              onChange={(e) => setKeterangan(e.target.value)}
+              placeholder="Catatan tambahan, mis. bayar rapel 3 bulan, titip doa, atau transfer via rekening keluarga..."
+              className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-900/85 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            />
           </div>
 
           {/* Upload Bukti Transfer (Opsional) */}

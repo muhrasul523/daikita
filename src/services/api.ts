@@ -1,22 +1,32 @@
 import {
   DEFAULT_CONFIG,
-  DEFAULT_EMAIL_TEMPLATES,
+  DEFAULT_EMAIL_TEMPLATE_DAFTAR,
+  DEFAULT_EMAIL_TEMPLATE_REMINDER,
   DEFAULT_GAS_URL,
   DEFAULT_LOGO_URL,
   DEFAULT_PANITIA,
+  DEFAULT_WA_FOLLOWUP_TEMPLATES,
+  DEFAULT_WA_REMINDER_TEMPLATES,
   DEFAULT_WA_TEMPLATES,
   STORAGE_KEYS,
+  TRANSFER_MIN_DATE,
 } from '../config';
 import {
   ApiResult,
   AppDataState,
   Donatur,
   LembagaConfig,
+  MinatGrupWa,
   NotifDeliveryResult,
   Panitia,
+  QueueStatus,
   RegisterDonaturPayload,
   SavePengaturanPayload,
+  ScheduleBroadcastItemPayload,
+  ScheduledMessageItem,
+  SendBroadcastSinglePayload,
   StatusAktif,
+  StatusGrupWa,
   StatusPenyaluran,
   StatusVerifikasi,
   SubmitPembayaranPayload,
@@ -24,8 +34,12 @@ import {
   TransaksiDonasi,
 } from '../types';
 import {
+  extractIsoDateFromDateStr,
+  getTodayIsoDate,
   normalizeJenisKelamin,
+  normalizeMinatGrup,
   normalizeRoleLabel,
+  normalizeStatusGrup,
   previewAutoRenameFile,
   validateAndNormalizeWA,
 } from '../utils/formatters';
@@ -68,15 +82,32 @@ export function isValidGasUrl(url: string): boolean {
 
 function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
   const transaksi: TransaksiDonasi[] = Array.isArray(raw?.transaksi)
-    ? raw!.transaksi.map((t) => ({
-        ...t,
-        bankTujuan: t.bankTujuan || '',
-        linkBuktiDrive: t.linkBuktiDrive || '',
-        keterangan: t.keterangan || '',
-        statusPenyaluran: (t.statusPenyaluran === 'Sudah Disalurkan'
-          ? 'Sudah Disalurkan'
-          : 'Belum Disalurkan') as StatusPenyaluran,
-      }))
+    ? raw!.transaksi.map((t) => {
+        const nominalTransfer = Number(t.nominalTransfer) || 0;
+        const donasiLainnya = Math.max(0, Number(t.donasiLainnya) || 0);
+        const nominalKomitmen =
+          Number(t.nominalKomitmen) > 0
+            ? Number(t.nominalKomitmen)
+            : Math.max(0, nominalTransfer - donasiLainnya);
+        const tanggalTransfer =
+          extractIsoDateFromDateStr(t.tanggalTransfer) ||
+          extractIsoDateFromDateStr(t.waktuInput) ||
+          '';
+
+        return {
+          ...t,
+          tanggalTransfer,
+          nominalKomitmen,
+          donasiLainnya,
+          nominalTransfer,
+          bankTujuan: t.bankTujuan || '',
+          linkBuktiDrive: t.linkBuktiDrive || '',
+          keterangan: t.keterangan || '',
+          statusPenyaluran: (t.statusPenyaluran === 'Sudah Disalurkan'
+            ? 'Sudah Disalurkan'
+            : 'Belum Disalurkan') as StatusPenyaluran,
+        };
+      })
     : [];
 
   const donatur: Donatur[] = Array.isArray(raw?.donatur)
@@ -89,6 +120,8 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
         provinsi: d.provinsi || '',
         pulau: d.pulau || '',
         kodePerantara: d.kodePerantara || '',
+        minatGrupWa: normalizeMinatGrup(d.minatGrupWa),
+        statusGrupWa: normalizeStatusGrup(d.statusGrupWa),
       }))
     : [];
 
@@ -101,7 +134,40 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
         }))
       : DEFAULT_PANITIA;
 
+  const antreanPesan: ScheduledMessageItem[] = Array.isArray(raw?.antreanPesan)
+    ? raw!.antreanPesan.map((a) => ({
+        idAntrean: String(a.idAntrean || ''),
+        waktuBuat: String(a.waktuBuat || ''),
+        jadwalKirim: String(a.jadwalKirim || ''),
+        jenisPesan: String(a.jenisPesan || 'Broadcast'),
+        idDonatur: String(a.idDonatur || ''),
+        namaDonatur: String(a.namaDonatur || ''),
+        noWa: String(a.noWa || ''),
+        isiPesan: String(a.isiPesan || ''),
+        mediaUrl: String(a.mediaUrl || ''),
+        status: (['Menunggu', 'Terkirim', 'Gagal', 'Dibatalkan'].includes(a.status)
+          ? a.status
+          : 'Menunggu') as QueueStatus,
+        keteranganHasil: String(a.keteranganHasil || ''),
+        waktuTerkirim: String(a.waktuTerkirim || ''),
+      }))
+    : [];
+
   const rawCfg = raw?.config;
+  const emailDaftar =
+    rawCfg?.emailTemplateDaftar?.subject && rawCfg?.emailTemplateDaftar?.body
+      ? rawCfg.emailTemplateDaftar
+      : Array.isArray(rawCfg?.emailTemplates) &&
+        rawCfg!.emailTemplates[0]?.subject &&
+        rawCfg!.emailTemplates[0]?.body
+      ? rawCfg!.emailTemplates[0]
+      : DEFAULT_EMAIL_TEMPLATE_DAFTAR;
+
+  const emailReminder =
+    rawCfg?.emailTemplateReminder?.subject && rawCfg?.emailTemplateReminder?.body
+      ? rawCfg.emailTemplateReminder
+      : DEFAULT_EMAIL_TEMPLATE_REMINDER;
+
   const config: LembagaConfig = rawCfg
     ? {
         ...DEFAULT_CONFIG,
@@ -133,16 +199,30 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
           Array.isArray(rawCfg.waTemplates) && rawCfg.waTemplates.length > 0
             ? rawCfg.waTemplates
             : DEFAULT_WA_TEMPLATES,
+        waFollowupTemplates:
+          Array.isArray(rawCfg.waFollowupTemplates) && rawCfg.waFollowupTemplates.length > 0
+            ? rawCfg.waFollowupTemplates
+            : DEFAULT_WA_FOLLOWUP_TEMPLATES,
+        waFollowupDelaySec:
+          Number(rawCfg.waFollowupDelaySec) >= 15 && Number(rawCfg.waFollowupDelaySec) <= 600
+            ? Math.round(Number(rawCfg.waFollowupDelaySec))
+            : DEFAULT_CONFIG.waFollowupDelaySec,
+        waReminderTemplates:
+          Array.isArray(rawCfg.waReminderTemplates) && rawCfg.waReminderTemplates.length > 0
+            ? rawCfg.waReminderTemplates
+            : DEFAULT_WA_REMINDER_TEMPLATES,
+        waGroupName: rawCfg.waGroupName || DEFAULT_CONFIG.waGroupName,
+        waGroupLink: rawCfg.waGroupLink || '',
+        waGroupId: rawCfg.waGroupId || '',
         enableEmailNotif:
           typeof rawCfg.enableEmailNotif === 'boolean'
             ? rawCfg.enableEmailNotif
             : DEFAULT_CONFIG.enableEmailNotif,
         emailSenderAlias: rawCfg.emailSenderAlias || DEFAULT_CONFIG.emailSenderAlias,
         emailSenderName: rawCfg.emailSenderName || DEFAULT_CONFIG.emailSenderName,
-        emailTemplates:
-          Array.isArray(rawCfg.emailTemplates) && rawCfg.emailTemplates.length > 0
-            ? rawCfg.emailTemplates
-            : DEFAULT_EMAIL_TEMPLATES,
+        emailTemplateDaftar: emailDaftar,
+        emailTemplateReminder: emailReminder,
+        emailTemplates: [emailDaftar, emailReminder],
       }
     : DEFAULT_CONFIG;
 
@@ -151,6 +231,7 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
     donatur,
     transaksi,
     panitia,
+    antreanPesan,
   };
 }
 
@@ -190,6 +271,23 @@ function formatNowLocal(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
+function generateLocalDonaturId(existingDonatur: Donatur[], now = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const prefix = `DK${String(now.getFullYear()).slice(-2)}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  let maxSeq = 0;
+  existingDonatur.forEach((d) => {
+    const id = String(d.idDonatur || '').trim().toUpperCase();
+    if (id.startsWith(prefix)) {
+      const suffix = id.slice(prefix.length);
+      const parsed = parseInt(suffix, 10);
+      if (Number.isFinite(parsed) && parsed > maxSeq) {
+        maxSeq = parsed;
+      }
+    }
+  });
+  return `${prefix}${String(maxSeq + 1).padStart(4, '0')}`;
 }
 
 async function callGasPost<T>(gasUrl: string, body: Record<string, unknown>): Promise<ApiResult<T>> {
@@ -329,10 +427,8 @@ export async function registerDonatur(
   }
 
   const now = new Date();
-  const ym = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const seq = String(state.donatur.length + 1).padStart(4, '0');
   const newDonatur: Donatur = {
-    idDonatur: `DNR-${ym}-${seq}`,
+    idDonatur: generateLocalDonaturId(state.donatur, now),
     tanggalDaftar: formatNowLocal(),
     namaLengkap: payload.namaLengkap.trim(),
     jenisKelamin: normalizeJenisKelamin(payload.jenisKelamin),
@@ -348,6 +444,8 @@ export async function registerDonatur(
     kodePerantara: (payload.kodePerantara || '').trim(),
     namaPerantara: payload.namaPerantara,
     statusAktif: 'Aktif',
+    minatGrupWa: normalizeMinatGrup(payload.minatGrupWa),
+    statusGrupWa: 'Belum Bergabung',
   };
 
   state.donatur.push(newDonatur);
@@ -363,6 +461,11 @@ export async function registerDonatur(
           attempted: false,
           ok: false,
           detail: 'Pengiriman WA otomatis hanya berjalan saat sinkronisasi aktif.',
+        },
+        waFollowup: {
+          attempted: false,
+          ok: false,
+          detail: 'Pesan arahan save nomor (jeda 1 menit) hanya berjalan saat sinkronisasi aktif.',
         },
         email: {
           attempted: false,
@@ -409,6 +512,21 @@ export async function submitPembayaran(
     return { status: 'error', message: waCheck.error };
   }
 
+  const todayIso = getTodayIsoDate();
+  const tglTransfer = extractIsoDateFromDateStr(payload.tanggalTransfer) || todayIso;
+  if (tglTransfer < TRANSFER_MIN_DATE) {
+    return {
+      status: 'error',
+      message: `Tanggal transfer tidak boleh sebelum ${TRANSFER_MIN_DATE}.`,
+    };
+  }
+  if (tglTransfer > todayIso) {
+    return {
+      status: 'error',
+      message: 'Tanggal transfer tidak boleh melebihi tanggal hari ini.',
+    };
+  }
+
   const rawMonths =
     Array.isArray(payload.bulanTagihanList) && payload.bulanTagihanList.length > 0
       ? payload.bulanTagihanList
@@ -422,6 +540,7 @@ export async function submitPembayaran(
   const ext = payload.fileMimeType?.includes('pdf') ? 'pdf' : 'jpg';
   const savedFileName = hasFile
     ? previewAutoRenameFile({
+        tanggalTransfer: tglTransfer,
         bulanTagihan: months[0],
         bulanList: months,
         namaDonatur: payload.namaDonatur,
@@ -434,26 +553,49 @@ export async function submitPembayaran(
   const ymd = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   const baseSeq = state.transaksi.length + 1;
   const totalRp = Math.round(payload.nominalTransfer);
+
+  const matchedDonor = state.donatur.find((d) => d.idDonatur === payload.idDonatur);
+  const komitmenPerBulan = Math.max(
+    0,
+    Math.round(payload.nominalKomitmenPerBulan ?? matchedDonor?.nominalKomitmen ?? 0)
+  );
+  const totalKomitmenExpected = komitmenPerBulan * months.length;
+  const hasExcess = komitmenPerBulan > 0 && totalRp > totalKomitmenExpected;
+  const totalDonasiLainnya = hasExcess ? totalRp - totalKomitmenExpected : 0;
+
   const basePerMonth = Math.floor(totalRp / months.length);
   const remainder = totalRp % months.length;
+
   const userNote = (payload.keterangan || '').trim();
   const batchNote =
     months.length > 1
       ? `Bayar sekaligus ${months.length} bln (Total Rp ${totalRp.toLocaleString('id-ID')})`
       : '';
-  const finalKeterangan = [userNote, batchNote].filter(Boolean).join(' · ');
+  const excessNote =
+    totalDonasiLainnya > 0
+      ? `Termasuk Donasi Lainnya Rp ${totalDonasiLainnya.toLocaleString('id-ID')}`
+      : '';
+  const finalKeterangan = [userNote, batchNote, excessNote].filter(Boolean).join(' · ');
 
   const createdRows: TransaksiDonasi[] = months.map((bulan, idx) => {
     const seq = String(baseSeq + idx).padStart(3, '0');
-    const nominalBulan = basePerMonth + (idx < remainder ? 1 : 0);
+    const nominalKomitmenBulan = hasExcess
+      ? komitmenPerBulan
+      : basePerMonth + (idx < remainder ? 1 : 0);
+    const donasiLainnyaBulan = hasExcess && idx === 0 ? totalDonasiLainnya : 0;
+    const nominalTransferBulan = nominalKomitmenBulan + donasiLainnyaBulan;
+
     return {
       idTransaksi: `TRX-${ymd}-${seq}`,
       waktuInput: formatNowLocal(),
+      tanggalTransfer: tglTransfer,
       idDonatur: payload.idDonatur || '-',
       namaDonatur: payload.namaDonatur.trim(),
       noWa: waCheck.normalized,
       bulanTagihan: bulan,
-      nominalTransfer: nominalBulan,
+      nominalKomitmen: nominalKomitmenBulan,
+      donasiLainnya: donasiLainnyaBulan,
+      nominalTransfer: nominalTransferBulan,
       bankTujuan: payload.bankTujuan || '',
       linkBuktiDrive: payload.fileBase64 || '',
       statusVerifikasi: 'Pending',
@@ -591,6 +733,218 @@ export async function updateStatusDonatur(
   };
 }
 
+export async function updateStatusGrupDonatur(
+  gasUrl: string,
+  idDonatur: string,
+  statusGrupWa: StatusGrupWa,
+  minatGrupWa?: MinatGrupWa
+): Promise<ApiResult<{ idDonatur: string; statusGrupWa: StatusGrupWa; minatGrupWa?: MinatGrupWa }>> {
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{
+        idDonatur: string;
+        statusGrupWa: StatusGrupWa;
+        minatGrupWa?: MinatGrupWa;
+      }>(url, {
+        action: 'updateStatusGrupDonatur',
+        idDonatur,
+        statusGrupWa,
+        minatGrupWa,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal memperbarui status grup WA.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  const idx = state.donatur.findIndex((d) => d.idDonatur === idDonatur);
+  if (idx === -1) {
+    return { status: 'error', message: `Donatur ${idDonatur} tidak ditemukan.` };
+  }
+  state.donatur[idx].statusGrupWa = statusGrupWa;
+  if (minatGrupWa) {
+    state.donatur[idx].minatGrupWa = minatGrupWa;
+  }
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: `Status grup WA donatur ${idDonatur} diperbarui menjadi ${statusGrupWa}.`,
+    data: { idDonatur, statusGrupWa, minatGrupWa: state.donatur[idx].minatGrupWa },
+  };
+}
+
+export async function bulkUpdateStatusGrupDonatur(
+  gasUrl: string,
+  ids: string[],
+  statusGrupWa: StatusGrupWa
+): Promise<ApiResult<{ updatedIds: string[]; statusGrupWa: StatusGrupWa }>> {
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ updatedIds: string[]; statusGrupWa: StatusGrupWa }>(url, {
+        action: 'bulkUpdateStatusGrupDonatur',
+        ids,
+        statusGrupWa,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal memperbarui status grup massal.',
+      };
+    }
+  }
+
+  const idSet = new Set(ids);
+  const state = getLocalState();
+  const updatedIds: string[] = [];
+  state.donatur = state.donatur.map((d) => {
+    if (idSet.has(d.idDonatur)) {
+      updatedIds.push(d.idDonatur);
+      return { ...d, statusGrupWa };
+    }
+    return d;
+  });
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: `${updatedIds.length} donatur berhasil diperbarui menjadi ${statusGrupWa}.`,
+    data: { updatedIds, statusGrupWa },
+  };
+}
+
+export async function sendBroadcastSingle(
+  gasUrl: string,
+  payload: SendBroadcastSinglePayload
+): Promise<ApiResult<{ ok: boolean; detail: string; emailDetail?: string }>> {
+  const url = gasUrl.trim();
+  if (!url) {
+    return {
+      status: 'error',
+      message: 'Kirim broadcast otomatis memerlukan sinkronisasi layanan aktif. Gunakan opsi Salin Teks atau Buka wa.me untuk mode lokal.',
+    };
+  }
+  try {
+    return await callGasPost<{ ok: boolean; detail: string; emailDetail?: string }>(url, {
+      action: 'sendBroadcastSingle',
+      ...payload,
+    });
+  } catch (err) {
+    return {
+      status: 'error',
+      message: err instanceof Error ? err.message : 'Gagal mengirim pesan broadcast.',
+    };
+  }
+}
+
+export async function scheduleWaBroadcast(
+  gasUrl: string,
+  items: ScheduleBroadcastItemPayload[]
+): Promise<ApiResult<{ queuedCount: number; antreanPesan: ScheduledMessageItem[] }>> {
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ queuedCount: number; antreanPesan: ScheduledMessageItem[] }>(url, {
+        action: 'scheduleBroadcast',
+        items,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal menjadwalkan broadcast.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  const nowStr = formatNowLocal();
+  const existing = state.antreanPesan || [];
+  const created: ScheduledMessageItem[] = items.map((item, idx) => ({
+    idAntrean: `MSG-${Date.now()}-${String(idx + 1).padStart(3, '0')}`,
+    waktuBuat: nowStr,
+    jadwalKirim: item.jadwalKirim,
+    jenisPesan: item.jenisPesan || 'Broadcast',
+    idDonatur: item.idDonatur,
+    namaDonatur: item.namaDonatur,
+    noWa: item.noWa,
+    isiPesan: item.isiPesan,
+    mediaUrl: item.mediaUrl || '',
+    status: 'Menunggu',
+    keteranganHasil: 'Tersimpan lokal (aktifkan sinkronisasi agar terkirim otomatis).',
+    waktuTerkirim: '',
+  }));
+  state.antreanPesan = [...created, ...existing];
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: `${created.length} pesan ditambahkan ke daftar jadwal (Mode Lokal).`,
+    data: { queuedCount: created.length, antreanPesan: state.antreanPesan },
+  };
+}
+
+export async function processScheduledQueue(
+  gasUrl: string
+): Promise<ApiResult<{ processedCount: number; antreanPesan: ScheduledMessageItem[] }>> {
+  const url = gasUrl.trim();
+  if (!url) {
+    return {
+      status: 'error',
+      message: 'Pemrosesan antrean otomatis memerlukan layanan sinkronisasi aktif.',
+    };
+  }
+  try {
+    return await callGasPost<{ processedCount: number; antreanPesan: ScheduledMessageItem[] }>(
+      url,
+      { action: 'processQueue' }
+    );
+  } catch (err) {
+    return {
+      status: 'error',
+      message: err instanceof Error ? err.message : 'Gagal memproses antrean terjadwal.',
+    };
+  }
+}
+
+export async function cancelScheduledMessage(
+  gasUrl: string,
+  idAntrean: string
+): Promise<ApiResult<{ idAntrean: string; antreanPesan?: ScheduledMessageItem[] }>> {
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ idAntrean: string; antreanPesan?: ScheduledMessageItem[] }>(url, {
+        action: 'cancelScheduledMessage',
+        idAntrean,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal membatalkan antrean pesan.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  state.antreanPesan = (state.antreanPesan || []).map((item) =>
+    item.idAntrean === idAntrean
+      ? { ...item, status: 'Dibatalkan' as QueueStatus, keteranganHasil: 'Dibatalkan pengurus.' }
+      : item
+  );
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: `Antrean ${idAntrean} dibatalkan.`,
+    data: { idAntrean, antreanPesan: state.antreanPesan },
+  };
+}
+
 export async function savePengaturan(
   gasUrl: string,
   payload: SavePengaturanPayload
@@ -611,6 +965,26 @@ export async function savePengaturan(
   }
 
   const state = getLocalState();
+  const cleanWaTemplates = payload.waTemplates.map((t) => t.trim()).filter(Boolean);
+  const cleanFollowupTemplates = payload.waFollowupTemplates.map((t) => t.trim()).filter(Boolean);
+  const cleanReminderTemplates = payload.waReminderTemplates.map((t) => t.trim()).filter(Boolean);
+
+  const emailDaftar =
+    payload.emailTemplateDaftar?.subject.trim() && payload.emailTemplateDaftar?.body.trim()
+      ? {
+          subject: payload.emailTemplateDaftar.subject.trim(),
+          body: payload.emailTemplateDaftar.body.trim(),
+        }
+      : DEFAULT_EMAIL_TEMPLATE_DAFTAR;
+
+  const emailReminder =
+    payload.emailTemplateReminder?.subject.trim() && payload.emailTemplateReminder?.body.trim()
+      ? {
+          subject: payload.emailTemplateReminder.subject.trim(),
+          body: payload.emailTemplateReminder.body.trim(),
+        }
+      : DEFAULT_EMAIL_TEMPLATE_REMINDER;
+
   const updatedConfig: LembagaConfig = {
     namaLembaga: payload.namaLembaga.trim() || DEFAULT_CONFIG.namaLembaga,
     tagline: payload.tagline.trim() || DEFAULT_CONFIG.tagline,
@@ -624,21 +998,33 @@ export async function savePengaturan(
         ? payload.defaultTglPengingat
         : 5,
     catatanPembayaran: payload.catatanPembayaran.trim(),
-    infoRekening: payload.infoRekening.length > 0 ? payload.infoRekening : DEFAULT_CONFIG.infoRekening,
+    infoRekening:
+      payload.infoRekening.length > 0 ? payload.infoRekening : DEFAULT_CONFIG.infoRekening,
     enableWaNotif: payload.enableWaNotif,
     waEndpointUrl: payload.waEndpointUrl.trim() || DEFAULT_CONFIG.waEndpointUrl,
     waApiKey: payload.waApiKey.trim(),
-    waTemplates:
-      payload.waTemplates.filter((t) => t.trim() !== '').length > 0
-        ? payload.waTemplates.filter((t) => t.trim() !== '')
-        : DEFAULT_WA_TEMPLATES,
+    waTemplates: cleanWaTemplates.length > 0 ? cleanWaTemplates : DEFAULT_WA_TEMPLATES,
+    waFollowupTemplates:
+      cleanFollowupTemplates.length > 0
+        ? cleanFollowupTemplates
+        : DEFAULT_WA_FOLLOWUP_TEMPLATES,
+    waFollowupDelaySec:
+      payload.waFollowupDelaySec >= 15 && payload.waFollowupDelaySec <= 600
+        ? Math.round(payload.waFollowupDelaySec)
+        : 60,
+    waReminderTemplates:
+      cleanReminderTemplates.length > 0
+        ? cleanReminderTemplates
+        : DEFAULT_WA_REMINDER_TEMPLATES,
+    waGroupName: payload.waGroupName.trim() || DEFAULT_CONFIG.waGroupName,
+    waGroupLink: payload.waGroupLink.trim(),
+    waGroupId: payload.waGroupId.trim(),
     enableEmailNotif: payload.enableEmailNotif,
     emailSenderAlias: payload.emailSenderAlias.trim() || DEFAULT_CONFIG.emailSenderAlias,
     emailSenderName: payload.emailSenderName.trim() || DEFAULT_CONFIG.emailSenderName,
-    emailTemplates:
-      payload.emailTemplates.filter((t) => t.subject.trim() !== '' && t.body.trim() !== '').length > 0
-        ? payload.emailTemplates.filter((t) => t.subject.trim() !== '' && t.body.trim() !== '')
-        : DEFAULT_EMAIL_TEMPLATES,
+    emailTemplateDaftar: emailDaftar,
+    emailTemplateReminder: emailReminder,
+    emailTemplates: [emailDaftar, emailReminder],
   };
   state.config = updatedConfig;
   saveLocalState(state);

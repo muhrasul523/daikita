@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DAIKITA — Mengalihkan...</title>
+    <script>
+      (function () {
+        var path = (window.location.pathname || '/').replace(/\/+$/, '').toLowerCase();
+        var search = window.location.search || '';
+        var hashRoute = '';
+        if (path.endsWith('/admin')) {
+          hashRoute = '#/admin';
+        } else if (path.endsWith('/bayar') || path.endsWith('/konfirmasi')) {
+          hashRoute = '#/bayar';
+        } else if (path.endsWith('/daftar')) {
+          hashRoute = '#/daftar';
+        }
+        window.location.replace('/' + search + hashRoute);
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

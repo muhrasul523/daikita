@@ -1,4 +1,5 @@
 import {
+  DEFAULT_ADMIN_AKSES,
   DEFAULT_CONFIG,
   DEFAULT_EMAIL_TEMPLATE_DAFTAR,
   DEFAULT_EMAIL_TEMPLATE_REMINDER,
@@ -12,15 +13,21 @@ import {
   TRANSFER_MIN_DATE,
 } from '../config';
 import {
+  AdminAkses,
+  AdminRole,
+  AdminSession,
   ApiResult,
   AppDataState,
   Donatur,
+  DonorLookupResult,
   LembagaConfig,
   MinatGrupWa,
   NotifDeliveryResult,
   Panitia,
+  PublicBootstrapData,
   QueueStatus,
   RegisterDonaturPayload,
+  SaveAdminAksesPayload,
   SavePengaturanPayload,
   ScheduleBroadcastItemPayload,
   ScheduledMessageItem,
@@ -233,12 +240,27 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
       }
     : DEFAULT_CONFIG;
 
+  const adminAkses: AdminAkses[] = Array.isArray(raw?.adminAkses)
+    ? raw!.adminAkses
+        .map((a) => ({
+          noWa: String(a.noWa || '').trim(),
+          nama: String(a.nama || '').trim(),
+          role: (String(a.role || '').trim().toLowerCase() === 'super admin'
+            ? 'Super Admin'
+            : 'Admin') as AdminRole,
+          status: normalizeStatusAktif(a.status),
+          catatan: String(a.catatan || '').trim(),
+        }))
+        .filter((a) => a.noWa !== '')
+    : [];
+
   return {
     config,
     donatur,
     transaksi,
     panitia,
     antreanPesan,
+    adminAkses,
   };
 }
 
@@ -247,12 +269,18 @@ function getLocalState(): AppDataState {
     const raw = window.localStorage.getItem(STORAGE_KEYS.LOCAL_DATA);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<AppDataState>;
-      return normalizeLoadedState(parsed);
+      const normalized = normalizeLoadedState(parsed);
+      if (!normalized.adminAkses || normalized.adminAkses.length === 0) {
+        normalized.adminAkses = DEFAULT_ADMIN_AKSES;
+      }
+      return normalized;
     }
   } catch {
     // Ignore malformed local state
   }
-  return normalizeLoadedState();
+  const fresh = normalizeLoadedState();
+  fresh.adminAkses = DEFAULT_ADMIN_AKSES;
+  return fresh;
 }
 
 function saveLocalState(state: AppDataState): void {
@@ -348,7 +376,203 @@ export async function pingGasConnection(
   }
 }
 
-export async function fetchInitialData(gasUrl: string): Promise<ApiResult<AppDataState>> {
+export async function fetchPublicConfig(
+  gasUrl: string
+): Promise<ApiResult<PublicBootstrapData>> {
+  const url = gasUrl.trim();
+  if (!url) {
+    const state = getLocalState();
+    return {
+      status: 'success',
+      message: 'Konfigurasi lokal siap.',
+      data: {
+        config: { ...state.config, waApiKey: '' },
+        panitia: state.panitia.map((p) => ({ ...p, noWaPanitia: '' })),
+      },
+    };
+  }
+
+  try {
+    const separator = url.includes('?') ? '&' : '?';
+    const response = await fetch(`${url}${separator}action=getPublicConfig`, {
+      method: 'GET',
+      redirect: 'follow',
+    });
+    const text = await response.text();
+    const parsed = JSON.parse(text) as ApiResult<PublicBootstrapData>;
+    if (parsed.status === 'success' && parsed.data) {
+      const norm = normalizeLoadedState({
+        config: parsed.data.config,
+        panitia: parsed.data.panitia,
+      });
+      return {
+        status: 'success',
+        message: parsed.message || 'Konfigurasi publik siap.',
+        data: {
+          config: norm.config,
+          panitia: norm.panitia,
+        },
+      };
+    }
+    return parsed;
+  } catch (err) {
+    return {
+      status: 'error',
+      message:
+        err instanceof Error
+          ? `Gagal memuat konfigurasi: ${err.message}`
+          : 'Gagal memuat konfigurasi layanan.',
+    };
+  }
+}
+
+export async function lookupDonaturByWa(
+  gasUrl: string,
+  noWa: string
+): Promise<ApiResult<DonorLookupResult>> {
+  const waCheck = validateAndNormalizeWA(noWa);
+  if (!waCheck.valid) {
+    return { status: 'error', message: waCheck.error };
+  }
+  const normalizedWa = waCheck.normalized;
+
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      const res = await callGasPost<DonorLookupResult>(url, {
+        action: 'lookupDonaturByWa',
+        noWa: normalizedWa,
+      });
+      if (res.status === 'success' && res.data) {
+        const normState = normalizeLoadedState({
+          donatur: res.data.donatur ? [res.data.donatur] : [],
+          transaksi: res.data.transaksi || [],
+        });
+        return {
+          status: 'success',
+          message: res.message,
+          data: {
+            found: Boolean(res.data.found),
+            normalizedWa: res.data.normalizedWa || normalizedWa,
+            donatur: normState.donatur[0],
+            transaksi: normState.transaksi,
+          },
+        };
+      }
+      return res;
+    } catch (err) {
+      return {
+        status: 'error',
+        message:
+          err instanceof Error
+            ? `Gagal memeriksa nomor WA: ${err.message}`
+            : 'Gagal memeriksa nomor WA pada server.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  const matched = state.donatur.find(
+    (d) => (validateAndNormalizeWA(d.noWa).normalized || d.noWa) === normalizedWa
+  );
+  if (!matched) {
+    return {
+      status: 'success',
+      message: 'Nomor belum terdaftar sebagai donatur.',
+      data: {
+        found: false,
+        normalizedWa,
+      },
+    };
+  }
+
+  const donorTrx = state.transaksi
+    .filter((t) => {
+      if (t.jenisDonatur === 'Umum' || t.idDonatur === 'UMUM') return false;
+      const byId = Boolean(matched.idDonatur && t.idDonatur === matched.idDonatur);
+      const byWa = (validateAndNormalizeWA(t.noWa).normalized || t.noWa) === normalizedWa;
+      return byId || byWa;
+    })
+    .sort((a, b) => (b.tanggalTransfer || b.waktuInput).localeCompare(a.tanggalTransfer || a.waktuInput));
+
+  return {
+    status: 'success',
+    message: 'Data donatur ditemukan (Mode Lokal).',
+    data: {
+      found: true,
+      normalizedWa,
+      donatur: matched,
+      transaksi: donorTrx,
+    },
+  };
+}
+
+export async function loginAdminByWa(
+  gasUrl: string,
+  noWa: string
+): Promise<ApiResult<AdminSession>> {
+  const waCheck = validateAndNormalizeWA(noWa);
+  if (!waCheck.valid) {
+    return { status: 'error', message: waCheck.error };
+  }
+  const normalizedWa = waCheck.normalized;
+
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<AdminSession>(url, {
+        action: 'loginAdmin',
+        noWa: normalizedWa,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message:
+          err instanceof Error
+            ? `Gagal memverifikasi akses admin: ${err.message}`
+            : 'Gagal menghubungi server login.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  const list = state.adminAkses || DEFAULT_ADMIN_AKSES;
+  const matched = list.find(
+    (a) => (validateAndNormalizeWA(a.noWa).normalized || a.noWa) === normalizedWa
+  );
+  if (!matched) {
+    return {
+      status: 'error',
+      code: 'ADMIN_NOT_FOUND',
+      message: `Nomor ${normalizedWa} tidak terdaftar sebagai Admin atau Super Admin (Mode Lokal).`,
+    };
+  }
+  if (matched.status !== 'Aktif') {
+    return {
+      status: 'error',
+      code: 'ADMIN_INACTIVE',
+      message: `Akses Admin untuk nomor ${normalizedWa} sedang berstatus Non Aktif.`,
+    };
+  }
+  return {
+    status: 'success',
+    message: `Login berhasil sebagai ${matched.role} (${matched.nama}).`,
+    data: {
+      token: `local-admin-${Date.now()}`,
+      admin: {
+        noWa: matched.noWa,
+        nama: matched.nama,
+        role: matched.role,
+        loginAt: formatNowLocal(),
+      },
+    },
+  };
+}
+
+export async function fetchAdminData(
+  gasUrl: string,
+  adminToken: string
+): Promise<ApiResult<AppDataState>> {
   const url = gasUrl.trim();
   if (!url) {
     return {
@@ -359,13 +583,10 @@ export async function fetchInitialData(gasUrl: string): Promise<ApiResult<AppDat
   }
 
   try {
-    const separator = url.includes('?') ? '&' : '?';
-    const response = await fetch(`${url}${separator}action=getInitialData`, {
-      method: 'GET',
-      redirect: 'follow',
+    const parsed = await callGasPost<AppDataState>(url, {
+      action: 'getAdminData',
+      adminToken,
     });
-    const text = await response.text();
-    const parsed = JSON.parse(text) as ApiResult<AppDataState>;
     if (parsed.status === 'success' && parsed.data) {
       return {
         status: 'success',
@@ -379,10 +600,17 @@ export async function fetchInitialData(gasUrl: string): Promise<ApiResult<AppDat
       status: 'error',
       message:
         err instanceof Error
-          ? `Gagal memuat data: ${err.message}`
-          : 'Gagal memuat data dari server.',
+          ? `Gagal memuat data admin: ${err.message}`
+          : 'Gagal memuat data admin dari server.',
     };
   }
+}
+
+export async function fetchInitialData(
+  gasUrl: string,
+  adminToken?: string
+): Promise<ApiResult<AppDataState>> {
+  return fetchAdminData(gasUrl, adminToken || '');
 }
 
 export async function registerDonatur(
@@ -486,7 +714,8 @@ export async function registerDonatur(
 
 export async function submitPembayaran(
   gasUrl: string,
-  payload: SubmitPembayaranPayload
+  payload: SubmitPembayaranPayload,
+  adminToken?: string
 ): Promise<
   ApiResult<{
     transaksi?: TransaksiDonasi;
@@ -503,6 +732,7 @@ export async function submitPembayaran(
         savedFileName?: string;
       }>(url, {
         action: 'submitPembayaran',
+        ...(adminToken ? { adminToken } : {}),
         ...payload,
       });
     } catch (err) {
@@ -648,13 +878,15 @@ export async function submitPembayaran(
 export async function verifikasiTransaksi(
   gasUrl: string,
   idTransaksi: string,
-  status: StatusVerifikasi
+  status: StatusVerifikasi,
+  adminToken?: string
 ): Promise<ApiResult<{ idTransaksi: string; statusVerifikasi: StatusVerifikasi }>> {
   const url = gasUrl.trim();
   if (url) {
     try {
       return await callGasPost<{ idTransaksi: string; statusVerifikasi: StatusVerifikasi }>(url, {
         action: 'verifikasiTransaksi',
+        adminToken: adminToken || '',
         idTransaksi,
         status,
       });
@@ -687,13 +919,15 @@ export async function verifikasiTransaksi(
 export async function updateStatusPenyaluran(
   gasUrl: string,
   idTransaksi: string,
-  statusPenyaluran: StatusPenyaluran
+  statusPenyaluran: StatusPenyaluran,
+  adminToken?: string
 ): Promise<ApiResult<{ idTransaksi: string; statusPenyaluran: StatusPenyaluran }>> {
   const url = gasUrl.trim();
   if (url) {
     try {
       return await callGasPost<{ idTransaksi: string; statusPenyaluran: StatusPenyaluran }>(url, {
         action: 'updateStatusPenyaluran',
+        adminToken: adminToken || '',
         idTransaksi,
         statusPenyaluran,
       });
@@ -723,13 +957,15 @@ export async function updateStatusPenyaluran(
 export async function updateStatusDonatur(
   gasUrl: string,
   idDonatur: string,
-  status: StatusAktif
+  status: StatusAktif,
+  adminToken?: string
 ): Promise<ApiResult<{ idDonatur: string; statusAktif: StatusAktif }>> {
   const url = gasUrl.trim();
   if (url) {
     try {
       return await callGasPost<{ idDonatur: string; statusAktif: StatusAktif }>(url, {
         action: 'updateStatusDonatur',
+        adminToken: adminToken || '',
         idDonatur,
         status,
       });
@@ -760,7 +996,8 @@ export async function updateStatusGrupDonatur(
   gasUrl: string,
   idDonatur: string,
   statusGrupWa: StatusGrupWa,
-  minatGrupWa?: MinatGrupWa
+  minatGrupWa?: MinatGrupWa,
+  adminToken?: string
 ): Promise<ApiResult<{ idDonatur: string; statusGrupWa: StatusGrupWa; minatGrupWa?: MinatGrupWa }>> {
   const url = gasUrl.trim();
   if (url) {
@@ -771,6 +1008,7 @@ export async function updateStatusGrupDonatur(
         minatGrupWa?: MinatGrupWa;
       }>(url, {
         action: 'updateStatusGrupDonatur',
+        adminToken: adminToken || '',
         idDonatur,
         statusGrupWa,
         minatGrupWa,
@@ -804,13 +1042,15 @@ export async function updateStatusGrupDonatur(
 export async function bulkUpdateStatusGrupDonatur(
   gasUrl: string,
   ids: string[],
-  statusGrupWa: StatusGrupWa
+  statusGrupWa: StatusGrupWa,
+  adminToken?: string
 ): Promise<ApiResult<{ updatedIds: string[]; statusGrupWa: StatusGrupWa }>> {
   const url = gasUrl.trim();
   if (url) {
     try {
       return await callGasPost<{ updatedIds: string[]; statusGrupWa: StatusGrupWa }>(url, {
         action: 'bulkUpdateStatusGrupDonatur',
+        adminToken: adminToken || '',
         ids,
         statusGrupWa,
       });
@@ -843,7 +1083,8 @@ export async function bulkUpdateStatusGrupDonatur(
 
 export async function sendBroadcastSingle(
   gasUrl: string,
-  payload: SendBroadcastSinglePayload
+  payload: SendBroadcastSinglePayload,
+  adminToken?: string
 ): Promise<ApiResult<{ ok: boolean; detail: string; emailDetail?: string }>> {
   const url = gasUrl.trim();
   if (!url) {
@@ -855,6 +1096,7 @@ export async function sendBroadcastSingle(
   try {
     return await callGasPost<{ ok: boolean; detail: string; emailDetail?: string }>(url, {
       action: 'sendBroadcastSingle',
+      adminToken: adminToken || '',
       ...payload,
     });
   } catch (err) {
@@ -867,13 +1109,15 @@ export async function sendBroadcastSingle(
 
 export async function scheduleWaBroadcast(
   gasUrl: string,
-  items: ScheduleBroadcastItemPayload[]
+  items: ScheduleBroadcastItemPayload[],
+  adminToken?: string
 ): Promise<ApiResult<{ queuedCount: number; antreanPesan: ScheduledMessageItem[] }>> {
   const url = gasUrl.trim();
   if (url) {
     try {
       return await callGasPost<{ queuedCount: number; antreanPesan: ScheduledMessageItem[] }>(url, {
         action: 'scheduleBroadcast',
+        adminToken: adminToken || '',
         items,
       });
     } catch (err) {
@@ -912,7 +1156,8 @@ export async function scheduleWaBroadcast(
 }
 
 export async function processScheduledQueue(
-  gasUrl: string
+  gasUrl: string,
+  adminToken?: string
 ): Promise<ApiResult<{ processedCount: number; antreanPesan: ScheduledMessageItem[] }>> {
   const url = gasUrl.trim();
   if (!url) {
@@ -924,7 +1169,7 @@ export async function processScheduledQueue(
   try {
     return await callGasPost<{ processedCount: number; antreanPesan: ScheduledMessageItem[] }>(
       url,
-      { action: 'processQueue' }
+      { action: 'processQueue', adminToken: adminToken || '' }
     );
   } catch (err) {
     return {
@@ -936,13 +1181,15 @@ export async function processScheduledQueue(
 
 export async function cancelScheduledMessage(
   gasUrl: string,
-  idAntrean: string
+  idAntrean: string,
+  adminToken?: string
 ): Promise<ApiResult<{ idAntrean: string; antreanPesan?: ScheduledMessageItem[] }>> {
   const url = gasUrl.trim();
   if (url) {
     try {
       return await callGasPost<{ idAntrean: string; antreanPesan?: ScheduledMessageItem[] }>(url, {
         action: 'cancelScheduledMessage',
+        adminToken: adminToken || '',
         idAntrean,
       });
     } catch (err) {
@@ -970,13 +1217,15 @@ export async function cancelScheduledMessage(
 
 export async function savePengaturan(
   gasUrl: string,
-  payload: SavePengaturanPayload
+  payload: SavePengaturanPayload,
+  adminToken?: string
 ): Promise<ApiResult<{ config: LembagaConfig }>> {
   const url = gasUrl.trim();
   if (url) {
     try {
       return await callGasPost<{ config: LembagaConfig }>(url, {
         action: 'savePengaturan',
+        adminToken: adminToken || '',
         ...payload,
       });
     } catch (err) {
@@ -1061,7 +1310,8 @@ export async function savePengaturan(
 
 export async function sendTestNotification(
   gasUrl: string,
-  payload: TestNotificationPayload
+  payload: TestNotificationPayload,
+  adminToken?: string
 ): Promise<ApiResult<{ notifStatus: NotifDeliveryResult }>> {
   const url = gasUrl.trim();
   if (!url) {
@@ -1073,6 +1323,7 @@ export async function sendTestNotification(
   try {
     return await callGasPost<{ notifStatus: NotifDeliveryResult }>(url, {
       action: 'testNotification',
+      adminToken: adminToken || '',
       ...payload,
     });
   } catch (err) {
@@ -1085,13 +1336,15 @@ export async function sendTestNotification(
 
 export async function savePanitia(
   gasUrl: string,
-  panitia: Panitia
+  panitia: Panitia,
+  adminToken?: string
 ): Promise<ApiResult<{ panitia: Panitia[] }>> {
   const url = gasUrl.trim();
   if (url) {
     try {
       return await callGasPost<{ panitia: Panitia[] }>(url, {
         action: 'savePanitia',
+        adminToken: adminToken || '',
         ...panitia,
       });
     } catch (err) {
@@ -1130,13 +1383,15 @@ export async function savePanitia(
 
 export async function deletePanitia(
   gasUrl: string,
-  kodePanitia: string
+  kodePanitia: string,
+  adminToken?: string
 ): Promise<ApiResult<{ panitia: Panitia[] }>> {
   const url = gasUrl.trim();
   if (url) {
     try {
       return await callGasPost<{ panitia: Panitia[] }>(url, {
         action: 'deletePanitia',
+        adminToken: adminToken || '',
         kodePanitia,
       });
     } catch (err) {
@@ -1157,5 +1412,130 @@ export async function deletePanitia(
     status: 'success',
     message: `Pengurus ${kodePanitia} berhasil dihapus (Mode Lokal).`,
     data: { panitia: state.panitia },
+  };
+}
+
+export async function saveAdminAkses(
+  gasUrl: string,
+  payload: SaveAdminAksesPayload,
+  adminToken?: string
+): Promise<ApiResult<{ adminAkses: AdminAkses[] }>> {
+  const waCheck = validateAndNormalizeWA(payload.noWa);
+  if (!waCheck.valid) {
+    return { status: 'error', message: waCheck.error };
+  }
+  const normalizedWa = waCheck.normalized;
+
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ adminAkses: AdminAkses[] }>(url, {
+        action: 'saveAdminAkses',
+        adminToken: adminToken || '',
+        ...payload,
+        noWa: normalizedWa,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal menyimpan data akses admin.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  const list = [...(state.adminAkses || DEFAULT_ADMIN_AKSES)];
+  const targetKey = payload.originalNoWa
+    ? validateAndNormalizeWA(payload.originalNoWa).normalized || payload.originalNoWa
+    : normalizedWa;
+  const idx = list.findIndex(
+    (a) => (validateAndNormalizeWA(a.noWa).normalized || a.noWa) === targetKey
+  );
+
+  if (idx >= 0 && list[idx].role === 'Super Admin' && list[idx].status === 'Aktif') {
+    const stillSuper = payload.role === 'Super Admin' && payload.status === 'Aktif';
+    if (!stillSuper) {
+      const others = list.filter(
+        (x, i) => i !== idx && x.role === 'Super Admin' && x.status === 'Aktif'
+      );
+      if (others.length === 0) {
+        return {
+          status: 'error',
+          message: 'Tidak dapat menurunkan atau menonaktifkan satu-satunya Super Admin yang aktif.',
+        };
+      }
+    }
+  }
+
+  const entry: AdminAkses = {
+    noWa: normalizedWa,
+    nama: payload.nama.trim(),
+    role: payload.role === 'Super Admin' ? 'Super Admin' : 'Admin',
+    status: normalizeStatusAktif(payload.status),
+    catatan: (payload.catatan || '').trim(),
+  };
+
+  if (idx >= 0) {
+    list[idx] = entry;
+  } else {
+    list.push(entry);
+  }
+  state.adminAkses = list;
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: `Akses ${entry.role} untuk ${entry.nama} disimpan (Mode Lokal).`,
+    data: { adminAkses: list },
+  };
+}
+
+export async function deleteAdminAkses(
+  gasUrl: string,
+  noWa: string,
+  adminToken?: string
+): Promise<ApiResult<{ adminAkses: AdminAkses[] }>> {
+  const normalizedWa = validateAndNormalizeWA(noWa).normalized || noWa.trim();
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ adminAkses: AdminAkses[] }>(url, {
+        action: 'deleteAdminAkses',
+        adminToken: adminToken || '',
+        noWa: normalizedWa,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal menghapus akses admin.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  const list = [...(state.adminAkses || DEFAULT_ADMIN_AKSES)];
+  const target = list.find(
+    (a) => (validateAndNormalizeWA(a.noWa).normalized || a.noWa) === normalizedWa
+  );
+  if (target && target.role === 'Super Admin' && target.status === 'Aktif') {
+    const others = list.filter(
+      (a) => a.noWa !== target.noWa && a.role === 'Super Admin' && a.status === 'Aktif'
+    );
+    if (others.length === 0) {
+      return {
+        status: 'error',
+        message: 'Tidak dapat menghapus satu-satunya Super Admin yang aktif.',
+      };
+    }
+  }
+  state.adminAkses = list.filter(
+    (a) => (validateAndNormalizeWA(a.noWa).normalized || a.noWa) !== normalizedWa
+  );
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: `Akses admin ${normalizedWa} berhasil dihapus (Mode Lokal).`,
+    data: { adminAkses: state.adminAkses },
   };
 }

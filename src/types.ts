@@ -1,14 +1,20 @@
-export type TabKey =
-  | 'pendaftaran'
+export type PublicPageKey = 'daftar' | 'bayar';
+
+export type AdminTabKey =
+  | 'donatur'
   | 'konfirmasi'
   | 'verifikasi'
   | 'mutasi'
   | 'dashboard'
   | 'grup_wa'
-  | 'broadcast';
+  | 'broadcast'
+  | 'akses_admin';
+
+export type TabKey = AdminTabKey | 'pendaftaran';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
+export type AdminRole = 'Admin' | 'Super Admin';
 export type RolePengurus = 'Publik' | 'Admin' | 'Super Admin';
 export type JenisKelamin = 'Laki-laki' | 'Perempuan' | '';
 export type MinatGrupWa = 'Ya' | 'Tidak';
@@ -19,6 +25,47 @@ export type StatusAktif = 'Aktif' | 'Non Aktif';
 export type StatusVerifikasi = 'Pending' | 'Valid' | 'Ditolak';
 export type StatusPenyaluran = 'Belum Disalurkan' | 'Sudah Disalurkan';
 export type StatusBayarBulan = 'Lunas' | 'Menunggu Verifikasi' | 'Belum Bayar';
+
+export interface AdminAkses {
+  noWa: string;
+  nama: string;
+  role: AdminRole;
+  status: StatusAktif;
+  catatan: string;
+}
+
+export interface AdminSessionUser {
+  noWa: string;
+  nama: string;
+  role: AdminRole;
+  loginAt?: string;
+}
+
+export interface AdminSession {
+  token: string;
+  admin: AdminSessionUser;
+}
+
+export interface SaveAdminAksesPayload {
+  originalNoWa?: string;
+  noWa: string;
+  nama: string;
+  role: AdminRole;
+  status: StatusAktif;
+  catatan?: string;
+}
+
+export interface PublicBootstrapData {
+  config: LembagaConfig;
+  panitia: Panitia[];
+}
+
+export interface DonorLookupResult {
+  found: boolean;
+  normalizedWa: string;
+  donatur?: Donatur;
+  transaksi?: TransaksiDonasi[];
+}
 
 export interface RekeningInfo {
   bank: string;
@@ -140,6 +187,7 @@ export interface AppDataState {
   transaksi: TransaksiDonasi[];
   panitia: Panitia[];
   antreanPesan?: ScheduledMessageItem[];
+  adminAkses?: AdminAkses[];
 }
 
 export interface RegisterDonaturPayload {

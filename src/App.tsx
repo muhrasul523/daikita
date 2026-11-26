@@ -4,11 +4,15 @@ import {
   CheckCircle2,
   Cloud,
   CloudOff,
+  ExternalLink,
+  LogOut,
   Maximize2,
   Monitor,
   Moon,
   RefreshCw,
   Settings2,
+  Shield,
+  ShieldCheck,
   SlidersHorizontal,
   Sun,
   X,
@@ -22,12 +26,17 @@ import {
   STORAGE_KEYS,
 } from './config';
 import {
+  AdminSession,
+  AdminTabKey,
   AppDataState,
   Donatur,
+  DonorLookupResult,
   MinatGrupWa,
   NotifDeliveryResult,
   Panitia,
+  PublicPageKey,
   RegisterDonaturPayload,
+  SaveAdminAksesPayload,
   SavePengaturanPayload,
   ScheduleBroadcastItemPayload,
   SendBroadcastSinglePayload,
@@ -35,7 +44,6 @@ import {
   StatusGrupWa,
   StatusVerifikasi,
   SubmitPembayaranPayload,
-  TabKey,
   TestNotificationPayload,
   ThemeMode,
   ToastMessage,
@@ -44,11 +52,16 @@ import {
 import {
   bulkUpdateStatusGrupDonatur,
   cancelScheduledMessage,
+  deleteAdminAkses,
   deletePanitia,
-  fetchInitialData,
+  fetchAdminData,
+  fetchPublicConfig,
   getSavedGasUrl,
+  loginAdminByWa,
+  lookupDonaturByWa,
   processScheduledQueue,
   registerDonatur,
+  saveAdminAkses,
   saveGasUrl,
   savePanitia,
   savePengaturan,
@@ -61,20 +74,73 @@ import {
   verifikasiTransaksi,
 } from './services/api';
 import { getDriveThumbnailFallback, normalizeDriveImageUrl } from './utils/formatters';
+import { AdminLogin } from './components/AdminLogin';
 import { ConnectionModal } from './components/ConnectionModal';
-import { TabPendaftaran } from './components/TabPendaftaran';
-import { TabKonfirmasi } from './components/TabKonfirmasi';
-import { TabVerifikasi } from './components/TabVerifikasi';
-import { TabMutasi } from './components/TabMutasi';
-import { TabDashboard } from './components/TabDashboard';
-import { TabGrupWa } from './components/TabGrupWa';
+import { PublicPortal } from './components/PublicPortal';
+import { TabAdminAkses } from './components/TabAdminAkses';
 import { TabBroadcast } from './components/TabBroadcast';
+import { TabDashboard } from './components/TabDashboard';
+import { TabDonatur } from './components/TabDonatur';
+import { TabGrupWa } from './components/TabGrupWa';
+import { TabKonfirmasi } from './components/TabKonfirmasi';
+import { TabMutasi } from './components/TabMutasi';
+import { TabVerifikasi } from './components/TabVerifikasi';
+
+type RouteState =
+  | { mode: 'public'; page: PublicPageKey }
+  | { mode: 'admin' };
+
+function parseRouteFromLocation(): RouteState {
+  try {
+    const rawHash = (window.location.hash || '').replace(/^#/, '').toLowerCase();
+    const hashPath = rawHash.split('?')[0].replace(/\/+$/, '');
+    const params = new URLSearchParams(window.location.search);
+    const modeParam = (params.get('mode') || '').toLowerCase();
+    const pageParam = (params.get('page') || '').toLowerCase();
+    const pathname = (window.location.pathname || '').toLowerCase().replace(/\/+$/, '');
+
+    if (
+      hashPath === '/admin' ||
+      hashPath.startsWith('/admin/') ||
+      hashPath === 'admin' ||
+      modeParam === 'admin' ||
+      pathname.endsWith('/admin')
+    ) {
+      return { mode: 'admin' };
+    }
+
+    if (
+      hashPath === '/bayar' ||
+      hashPath.startsWith('/bayar/') ||
+      hashPath === 'bayar' ||
+      hashPath === '/konfirmasi' ||
+      hashPath.startsWith('/konfirmasi/') ||
+      hashPath === 'konfirmasi' ||
+      pageParam === 'bayar' ||
+      pageParam === 'konfirmasi' ||
+      pathname.endsWith('/bayar') ||
+      pathname.endsWith('/konfirmasi')
+    ) {
+      return { mode: 'public', page: 'bayar' };
+    }
+  } catch {
+    // Fallback to public registration page
+  }
+  return { mode: 'public', page: 'daftar' };
+}
 
 function readReferralFromUrl(): string | null {
   try {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get('ref');
     if (ref && ref.trim()) return ref.trim();
+
+    const hashQueryIdx = (window.location.hash || '').indexOf('?');
+    if (hashQueryIdx >= 0) {
+      const hashParams = new URLSearchParams(window.location.hash.slice(hashQueryIdx + 1));
+      const hashRef = hashParams.get('ref');
+      if (hashRef && hashRef.trim()) return hashRef.trim();
+    }
   } catch {
     // Ignore malformed query string
   }
@@ -108,24 +174,26 @@ function getSavedScreenWidth(): number {
   return DEFAULT_SCREEN_WIDTH_PCT;
 }
 
-const NAV_TABS: { key: TabKey; label: string }[] = [
-  { key: 'pendaftaran', label: 'Pendaftaran' },
+const ADMIN_NAV_TABS: { key: AdminTabKey; label: string; superAdminOnly?: boolean }[] = [
+  { key: 'donatur', label: 'Donatur' },
   { key: 'konfirmasi', label: 'Konfirmasi' },
   { key: 'verifikasi', label: 'Verifikasi' },
   { key: 'mutasi', label: 'Mutasi' },
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'grup_wa', label: 'Grup WA' },
   { key: 'broadcast', label: 'Broadcast' },
+  { key: 'akses_admin', label: 'Akses Admin', superAdminOnly: true },
 ];
 
 const WIDTH_PRESETS = [75, 85, 95, 100];
 
 export default function App() {
+  const [route, setRoute] = useState<RouteState>(() => parseRouteFromLocation());
   const [referralCode] = useState<string | null>(() => readReferralFromUrl());
-  const [activeTab, setActiveTab] = useState<TabKey>(() =>
-    readReferralFromUrl() ? 'pendaftaran' : 'dashboard'
-  );
-  const [mutasiSubView, setMutasiSubView] = useState<'mutasi' | 'donatur'>('mutasi');
+
+  // Sesi admin disimpan HANYA di memory React (tidak di localStorage)
+  const [adminSession, setAdminSession] = useState<AdminSession | null>(null);
+  const [activeTab, setActiveTab] = useState<AdminTabKey>('dashboard');
 
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getSavedTheme());
   const [screenWidthPct, setScreenWidthPct] = useState<number>(() => getSavedScreenWidth());
@@ -137,7 +205,7 @@ export default function App() {
     getSavedGasUrl() ? 'connected' : 'local'
   );
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoadingAdmin, setIsLoadingAdmin] = useState<boolean>(false);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [preselectedDonatur, setPreselectedDonatur] = useState<Donatur | null>(null);
   const [preselectedMonth, setPreselectedMonth] = useState<string | null>(null);
@@ -148,11 +216,57 @@ export default function App() {
     transaksi: [],
     panitia: DEFAULT_PANITIA,
     antreanPesan: [],
+    adminAkses: [],
   });
 
   const [logoImgFailed, setLogoImgFailed] = useState(false);
   const [logoFallbackTried, setLogoFallbackTried] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const isSuperAdmin = adminSession?.admin.role === 'Super Admin';
+  const adminToken = adminSession?.token || '';
+
+  const visibleAdminTabs = useMemo(
+    () => ADMIN_NAV_TABS.filter((tab) => !tab.superAdminOnly || isSuperAdmin),
+    [isSuperAdmin]
+  );
+
+  // Sinkronkan route saat hash atau history berubah
+  useEffect(() => {
+    const syncRoute = () => {
+      setRoute(parseRouteFromLocation());
+    };
+    window.addEventListener('hashchange', syncRoute);
+    window.addEventListener('popstate', syncRoute);
+    return () => {
+      window.removeEventListener('hashchange', syncRoute);
+      window.removeEventListener('popstate', syncRoute);
+    };
+  }, []);
+
+  // Jika bukan Super Admin dan sedang di tab khusus Super Admin, alihkan ke dashboard
+  useEffect(() => {
+    if (!isSuperAdmin && activeTab === 'akses_admin') {
+      setActiveTab('dashboard');
+    }
+    if (!isSuperAdmin && isModalOpen) {
+      setIsModalOpen(false);
+    }
+  }, [isSuperAdmin, activeTab, isModalOpen]);
+
+  const navigateToPublic = useCallback((nextPage: PublicPageKey) => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('mode');
+      url.searchParams.delete('page');
+      url.hash = nextPage === 'bayar' ? '#/bayar' : '#/daftar';
+      window.history.pushState(null, '', url.toString());
+    } catch {
+      window.location.hash = nextPage === 'bayar' ? '#/bayar' : '#/daftar';
+    }
+    setRoute({ mode: 'public', page: nextPage });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   const resolvedLogoSrc = useMemo(() => {
     if (!data.config.logoUrl) return '';
@@ -165,12 +279,19 @@ export default function App() {
     setLogoFallbackTried(false);
   }, [data.config.logoUrl]);
 
-  // Sinkronkan title & seluruh link favicon browser dengan logo lembaga jika sudah diunggah
+  // Sinkronkan title & favicon browser dengan logo lembaga serta halaman aktif
   useEffect(() => {
-    document.title = `${data.config.namaLembaga || APP_BRAND_NAME} | Manajemen Donatur Rutin`;
+    const baseName = data.config.namaLembaga || APP_BRAND_NAME;
+    if (route.mode === 'admin') {
+      document.title = `Panel Admin · ${baseName}`;
+    } else if (route.page === 'bayar') {
+      document.title = `Konfirmasi Kafalah · ${baseName}`;
+    } else {
+      document.title = `Pendaftaran Donatur · ${baseName}`;
+    }
+
     const targetHref = resolvedLogoSrc && !logoImgFailed ? resolvedLogoSrc : './favicon.png';
 
-    // Hapus icon SVG bawaan agar tidak mengalahkan logo PNG/kustom pada browser
     document
       .querySelectorAll<HTMLLinkElement>("link[rel='icon'][type='image/svg+xml']")
       .forEach((el) => el.remove());
@@ -189,7 +310,7 @@ export default function App() {
       }
       el.href = targetHref;
     });
-  }, [data.config.namaLembaga, resolvedLogoSrc, logoImgFailed]);
+  }, [data.config.namaLembaga, resolvedLogoSrc, logoImgFailed, route]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -223,6 +344,15 @@ export default function App() {
     }
   }, [screenWidthPct]);
 
+  const handleToggleQuickTheme = useCallback(() => {
+    setThemeMode((prev) => {
+      const currentlyDark =
+        prev === 'dark' ||
+        (prev === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      return currentlyDark ? 'light' : 'dark';
+    });
+  }, []);
+
   const notify = useCallback(
     (type: ToastMessage['type'], title: string, description?: string) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -238,12 +368,55 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  const loadData = useCallback(
-    async (targetUrl: string, showSuccessToast = false) => {
-      setIsLoading(true);
+  const clearAdminSession = useCallback(
+    (expiredMessage?: string) => {
+      setAdminSession(null);
+      setIsModalOpen(false);
+      setPreselectedDonatur(null);
+      setPreselectedMonth(null);
+      setData((prev) => ({
+        ...prev,
+        donatur: [],
+        transaksi: [],
+        antreanPesan: [],
+        adminAkses: [],
+      }));
+      if (expiredMessage) {
+        notify('error', 'Sesi Admin Berakhir', expiredMessage);
+      }
+    },
+    [notify]
+  );
+
+  // Muat konfigurasi publik aman (tanpa data donatur/mutasi) saat startup
+  const loadPublicBootstrap = useCallback(async (targetUrl: string) => {
+    const res = await fetchPublicConfig(targetUrl);
+    if (res.status === 'success' && res.data) {
+      setData((prev) => ({
+        ...prev,
+        config: res.data!.config,
+        panitia: res.data!.panitia,
+      }));
+      setConnectionStatus(targetUrl.trim() ? 'connected' : 'local');
       setConnectionError(null);
-      const res = await fetchInitialData(targetUrl);
-      setIsLoading(false);
+    } else {
+      setConnectionStatus('error');
+      setConnectionError(res.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPublicBootstrap(gasUrl);
+  }, [gasUrl, loadPublicBootstrap]);
+
+  // Muat seluruh data operasional Admin (memerlukan token sesi valid)
+  const loadAdminWorkspaceData = useCallback(
+    async (targetUrl: string, token: string, showSuccessToast = false) => {
+      if (!token) return false;
+      setIsLoadingAdmin(true);
+      setConnectionError(null);
+      const res = await fetchAdminData(targetUrl, token);
+      setIsLoadingAdmin(false);
 
       if (res.status === 'success' && res.data) {
         setData(res.data);
@@ -254,76 +427,54 @@ export default function App() {
             targetUrl.trim() ? 'Data berhasil disinkronkan' : 'Mode Lokal aktif'
           );
         }
-      } else {
-        setConnectionStatus('error');
-        setConnectionError(res.message);
-        notify('error', 'Gagal memuat data', res.message);
+        return true;
       }
+
+      if (res.code === 'AUTH_REQUIRED') {
+        clearAdminSession(res.message || 'Silakan login kembali dengan nomor WA terdaftar.');
+        return false;
+      }
+
+      setConnectionStatus('error');
+      setConnectionError(res.message);
+      notify('error', 'Gagal memuat data admin', res.message);
+      return false;
     },
-    [notify]
+    [clearAdminSession, notify]
   );
 
-  useEffect(() => {
-    void loadData(gasUrl, false);
-  }, [gasUrl, loadData]);
-
-  const handleSaveGasUrl = async (newUrl: string) => {
-    saveGasUrl(newUrl);
-    setGasUrl(newUrl);
-    await loadData(newUrl, true);
+  // === AUTH HANDLERS ===
+  const handleAdminLogin = async (noWa: string): Promise<{ ok: boolean; message: string }> => {
+    const res = await loginAdminByWa(gasUrl, noWa);
+    if (res.status === 'success' && res.data?.token && res.data?.admin) {
+      const session = res.data;
+      setAdminSession(session);
+      setActiveTab('dashboard');
+      notify(
+        'success',
+        `Selamat datang, ${session.admin.nama}`,
+        `Masuk sebagai ${session.admin.role}`
+      );
+      await loadAdminWorkspaceData(gasUrl, session.token, false);
+      return { ok: true, message: res.message };
+    }
+    return { ok: false, message: res.message || 'Nomor WA tidak memiliki akses admin.' };
   };
 
-  const handleSavePengaturan = async (payload: SavePengaturanPayload): Promise<boolean> => {
-    const res = await savePengaturan(gasUrl, payload);
-    if (res.status === 'success' && res.data?.config) {
-      setData((prev) => ({
-        ...prev,
-        config: res.data!.config,
-      }));
-      notify('success', 'Pengaturan tersimpan', res.message);
-      return true;
-    }
-    notify('error', 'Gagal menyimpan pengaturan', res.message);
-    return false;
+  const handleAdminLogout = () => {
+    clearAdminSession();
+    notify('info', 'Keluar dari Panel Admin', 'Sesi Anda telah ditutup dengan aman.');
   };
 
-  const handleSavePanitia = async (p: Panitia): Promise<boolean> => {
-    const res = await savePanitia(gasUrl, p);
-    if (res.status === 'success' && res.data?.panitia) {
-      setData((prev) => ({
-        ...prev,
-        panitia: res.data!.panitia,
-      }));
-      notify('success', 'Data pengurus tersimpan', res.message);
-      return true;
+  // === PUBLIC PORTAL HANDLERS ===
+  const handlePublicLookupWa = async (
+    noWa: string
+  ): Promise<{ ok: boolean; message: string; result?: DonorLookupResult }> => {
+    const res = await lookupDonaturByWa(gasUrl, noWa);
+    if (res.status === 'success' && res.data) {
+      return { ok: true, message: res.message, result: res.data };
     }
-    notify('error', 'Gagal menyimpan pengurus', res.message);
-    return false;
-  };
-
-  const handleDeletePanitia = async (kodePanitia: string): Promise<boolean> => {
-    const res = await deletePanitia(gasUrl, kodePanitia);
-    if (res.status === 'success' && res.data?.panitia) {
-      setData((prev) => ({
-        ...prev,
-        panitia: res.data!.panitia,
-      }));
-      notify('success', 'Pengurus dihapus', res.message);
-      return true;
-    }
-    notify('error', 'Gagal menghapus pengurus', res.message);
-    return false;
-  };
-
-  const handleTestNotification = async (
-    payload: TestNotificationPayload
-  ): Promise<{ ok: boolean; message: string; notifStatus?: NotifDeliveryResult }> => {
-    const res = await sendTestNotification(gasUrl, payload);
-    if (res.status === 'success' && res.data?.notifStatus) {
-      notify('success', 'Pengujian selesai', res.message);
-      return { ok: true, message: res.message, notifStatus: res.data.notifStatus };
-    }
-    return { ok: false, message: res.message };
+    return { ok: false, message: res.message || 'Gagal memeriksa nomor WhatsApp.' };
   };
 
   const handleRegisterDonatur = async (
@@ -339,10 +490,12 @@ export default function App() {
     if (res.status === 'success' && res.data?.donatur) {
       const created = res.data.donatur;
       const notifStatus = res.data.notifStatus;
-      setData((prev) => ({
-        ...prev,
-        donatur: [...prev.donatur, created],
-      }));
+      if (adminSession) {
+        setData((prev) => ({
+          ...prev,
+          donatur: [...prev.donatur, created],
+        }));
+      }
       const waLabel = notifStatus?.wa.ok ? 'WA terkirim' : 'WA belum terkirim';
       const emailLabel = notifStatus?.email.ok
         ? 'Email terkirim'
@@ -356,7 +509,7 @@ export default function App() {
       );
       return { ok: true, message: res.message, donatur: created, notifStatus };
     }
-    notify('error', 'Pendaftaran ditolak', res.message);
+    notify('error', 'Pendaftaran belum dapat diproses', res.message);
     return {
       ok: false,
       message: res.message,
@@ -373,7 +526,13 @@ export default function App() {
     transaksiList?: TransaksiDonasi[];
     savedFileName?: string;
   }> => {
-    const res = await submitPembayaran(gasUrl, payload);
+    const tokenToSend = adminSession ? adminToken : undefined;
+    const res = await submitPembayaran(gasUrl, payload, tokenToSend);
+    if (res.code === 'AUTH_REQUIRED' && adminSession) {
+      clearAdminSession(res.message);
+      return { ok: false, message: res.message };
+    }
+
     const createdList =
       res.data?.transaksiList && res.data.transaksiList.length > 0
         ? res.data.transaksiList
@@ -381,10 +540,12 @@ export default function App() {
         ? [res.data.transaksi]
         : [];
     if (res.status === 'success' && createdList.length > 0) {
-      setData((prev) => ({
-        ...prev,
-        transaksi: [...prev.transaksi, ...createdList],
-      }));
+      if (adminSession) {
+        setData((prev) => ({
+          ...prev,
+          transaksi: [...prev.transaksi, ...createdList],
+        }));
+      }
       const first = createdList[0];
       notify(
         'success',
@@ -407,11 +568,130 @@ export default function App() {
     return { ok: false, message: res.message };
   };
 
+  // === ADMIN & SUPER ADMIN HANDLERS ===
+  const handleSaveGasUrl = async (newUrl: string) => {
+    saveGasUrl(newUrl);
+    setGasUrl(newUrl);
+    await loadPublicBootstrap(newUrl);
+    if (adminSession) {
+      await loadAdminWorkspaceData(newUrl, adminSession.token, true);
+    }
+  };
+
+  const handleSavePengaturan = async (payload: SavePengaturanPayload): Promise<boolean> => {
+    const res = await savePengaturan(gasUrl, payload, adminToken);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return false;
+    }
+    if (res.status === 'success' && res.data?.config) {
+      setData((prev) => ({
+        ...prev,
+        config: res.data!.config,
+      }));
+      notify('success', 'Pengaturan tersimpan', res.message);
+      return true;
+    }
+    notify('error', 'Gagal menyimpan pengaturan', res.message);
+    return false;
+  };
+
+  const handleSavePanitia = async (p: Panitia): Promise<boolean> => {
+    const res = await savePanitia(gasUrl, p, adminToken);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return false;
+    }
+    if (res.status === 'success' && res.data?.panitia) {
+      setData((prev) => ({
+        ...prev,
+        panitia: res.data!.panitia,
+      }));
+      notify('success', 'Data pengurus tersimpan', res.message);
+      return true;
+    }
+    notify('error', 'Gagal menyimpan pengurus', res.message);
+    return false;
+  };
+
+  const handleDeletePanitia = async (kodePanitia: string): Promise<boolean> => {
+    const res = await deletePanitia(gasUrl, kodePanitia, adminToken);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return false;
+    }
+    if (res.status === 'success' && res.data?.panitia) {
+      setData((prev) => ({
+        ...prev,
+        panitia: res.data!.panitia,
+      }));
+      notify('success', 'Pengurus dihapus', res.message);
+      return true;
+    }
+    notify('error', 'Gagal menghapus pengurus', res.message);
+    return false;
+  };
+
+  const handleSaveAdminAkses = async (payload: SaveAdminAksesPayload): Promise<boolean> => {
+    const res = await saveAdminAkses(gasUrl, payload, adminToken);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return false;
+    }
+    if (res.status === 'success' && res.data?.adminAkses) {
+      setData((prev) => ({
+        ...prev,
+        adminAkses: res.data!.adminAkses,
+      }));
+      notify('success', 'Akses admin diperbarui', res.message);
+      return true;
+    }
+    notify('error', 'Gagal menyimpan akses admin', res.message);
+    return false;
+  };
+
+  const handleDeleteAdminAkses = async (noWa: string): Promise<boolean> => {
+    const res = await deleteAdminAkses(gasUrl, noWa, adminToken);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return false;
+    }
+    if (res.status === 'success' && res.data?.adminAkses) {
+      setData((prev) => ({
+        ...prev,
+        adminAkses: res.data!.adminAkses,
+      }));
+      notify('success', 'Akses admin dihapus', res.message);
+      return true;
+    }
+    notify('error', 'Gagal menghapus akses admin', res.message);
+    return false;
+  };
+
+  const handleTestNotification = async (
+    payload: TestNotificationPayload
+  ): Promise<{ ok: boolean; message: string; notifStatus?: NotifDeliveryResult }> => {
+    const res = await sendTestNotification(gasUrl, payload, adminToken);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return { ok: false, message: res.message };
+    }
+    if (res.status === 'success' && res.data?.notifStatus) {
+      notify('success', 'Pengujian selesai', res.message);
+      return { ok: true, message: res.message, notifStatus: res.data.notifStatus };
+    }
+    return { ok: false, message: res.message };
+  };
+
   const handleVerifikasiTransaksi = async (
     idTransaksi: string,
     status: StatusVerifikasi
   ): Promise<boolean> => {
-    const res = await verifikasiTransaksi(gasUrl, idTransaksi, status);
+    const res = await verifikasiTransaksi(gasUrl, idTransaksi, status, adminToken);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return false;
+    }
     if (res.status === 'success') {
       setData((prev) => ({
         ...prev,
@@ -432,7 +712,11 @@ export default function App() {
   };
 
   const handleUpdateStatusDonatur = async (idDonatur: string, status: StatusAktif) => {
-    const res = await updateStatusDonatur(gasUrl, idDonatur, status);
+    const res = await updateStatusDonatur(gasUrl, idDonatur, status, adminToken);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return;
+    }
     if (res.status === 'success') {
       setData((prev) => ({
         ...prev,
@@ -451,7 +735,17 @@ export default function App() {
     statusGrupWa: StatusGrupWa,
     minatGrupWa?: MinatGrupWa
   ): Promise<boolean> => {
-    const res = await updateStatusGrupDonatur(gasUrl, idDonatur, statusGrupWa, minatGrupWa);
+    const res = await updateStatusGrupDonatur(
+      gasUrl,
+      idDonatur,
+      statusGrupWa,
+      minatGrupWa,
+      adminToken
+    );
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return false;
+    }
     if (res.status === 'success') {
       setData((prev) => ({
         ...prev,
@@ -472,7 +766,11 @@ export default function App() {
     ids: string[],
     statusGrupWa: StatusGrupWa
   ): Promise<boolean> => {
-    const res = await bulkUpdateStatusGrupDonatur(gasUrl, ids, statusGrupWa);
+    const res = await bulkUpdateStatusGrupDonatur(gasUrl, ids, statusGrupWa, adminToken);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return false;
+    }
     if (res.status === 'success') {
       const idSet = new Set(ids);
       setData((prev) => ({
@@ -491,7 +789,11 @@ export default function App() {
   const handleSendBroadcastSingle = async (
     payload: SendBroadcastSinglePayload
   ): Promise<{ ok: boolean; detail: string; emailDetail?: string }> => {
-    const res = await sendBroadcastSingle(gasUrl, payload);
+    const res = await sendBroadcastSingle(gasUrl, payload, adminToken);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return { ok: false, detail: res.message };
+    }
     if (res.status === 'success' && res.data) {
       return {
         ok: Boolean(res.data.ok),
@@ -505,7 +807,11 @@ export default function App() {
   const handleScheduleBroadcast = async (
     items: ScheduleBroadcastItemPayload[]
   ): Promise<boolean> => {
-    const res = await scheduleWaBroadcast(gasUrl, items);
+    const res = await scheduleWaBroadcast(gasUrl, items, adminToken);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return false;
+    }
     if (res.status === 'success') {
       if (res.data?.antreanPesan) {
         setData((prev) => ({
@@ -521,7 +827,11 @@ export default function App() {
   };
 
   const handleProcessQueue = async (): Promise<boolean> => {
-    const res = await processScheduledQueue(gasUrl);
+    const res = await processScheduledQueue(gasUrl, adminToken);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return false;
+    }
     if (res.status === 'success') {
       if (res.data?.antreanPesan) {
         setData((prev) => ({
@@ -537,7 +847,11 @@ export default function App() {
   };
 
   const handleCancelScheduled = async (idAntrean: string): Promise<boolean> => {
-    const res = await cancelScheduledMessage(gasUrl, idAntrean);
+    const res = await cancelScheduledMessage(gasUrl, idAntrean, adminToken);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return false;
+    }
     if (res.status === 'success') {
       setData((prev) => ({
         ...prev,
@@ -577,15 +891,109 @@ export default function App() {
     [screenWidthPct]
   );
 
+  // Toast Overlay dibagikan ke seluruh mode (Publik, Login Admin, Panel Admin)
+  const toastOverlay =
+    toasts.length > 0 ? (
+      <div
+        className={`fixed right-4 z-50 flex flex-col gap-2 max-w-sm w-[calc(100vw-2rem)] ${
+          route.mode === 'public' ? 'bottom-20 md:bottom-4' : 'bottom-4'
+        }`}
+        aria-live="polite"
+      >
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`glass-surface rounded-2xl p-4 shadow-lg flex items-start gap-3 border ${
+              toast.type === 'success'
+                ? 'border-emerald-200/90 dark:border-emerald-800'
+                : toast.type === 'error'
+                ? 'border-rose-200/90 dark:border-rose-800'
+                : 'border-sky-200/90 dark:border-sky-800'
+            }`}
+          >
+            {toast.type === 'success' ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+            ) : (
+              <AlertCircle
+                className={`h-4 w-4 shrink-0 mt-0.5 ${
+                  toast.type === 'error'
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : 'text-sky-600 dark:text-sky-400'
+                }`}
+              />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-slate-900 dark:text-slate-100 safe-wrap">
+                {toast.title}
+              </p>
+              {toast.description && (
+                <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300 safe-wrap">
+                  {toast.description}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => dismissToast(toast.id)}
+              className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 shrink-0 cursor-pointer"
+              aria-label="Tutup notifikasi"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+    ) : null;
+
+  // === ROUTE 1: PORTAL PUBLIK DONATUR (https://daikita.duwd.web.id/ & #/bayar) ===
+  if (route.mode === 'public') {
+    return (
+      <>
+        <PublicPortal
+          page={route.page}
+          onChangePage={navigateToPublic}
+          config={data.config}
+          panitia={data.panitia}
+          referralCode={referralCode}
+          themeMode={themeMode}
+          onToggleTheme={handleToggleQuickTheme}
+          onLookupWa={handlePublicLookupWa}
+          onSubmitDonatur={handleRegisterDonatur}
+          onSubmitPembayaran={handleSubmitPembayaran}
+          onNotify={notify}
+        />
+        {toastOverlay}
+      </>
+    );
+  }
+
+  // === ROUTE 2: LOGIN ADMIN & SUPER ADMIN (https://daikita.duwd.web.id/#/admin) ===
+  if (!adminSession) {
+    return (
+      <>
+        <AdminLogin
+          config={data.config}
+          isLocalMode={!gasUrl.trim()}
+          themeMode={themeMode}
+          onToggleTheme={handleToggleQuickTheme}
+          onLogin={handleAdminLogin}
+          onGoToPublic={() => navigateToPublic('daftar')}
+        />
+        {toastOverlay}
+      </>
+    );
+  }
+
+  // === ROUTE 3: WORKSPACE ADMIN & SUPER ADMIN ===
   return (
     <div className="min-h-screen flex flex-col text-slate-900 dark:text-slate-100">
       {/* 3-Zone Top Bar */}
       <header className="glass-topbar sticky top-0 z-30">
         <div
           style={containerWidthStyle}
-          className="mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-4 md:gap-8 transition-[width] duration-200"
+          className="mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-3 md:gap-6 transition-[width] duration-200"
         >
-          {/* Zone 1: Brand Logo & Wordmark */}
+          {/* Zone 1: Brand Logo & Role */}
           <button
             type="button"
             onClick={() => setActiveTab('dashboard')}
@@ -622,21 +1030,29 @@ export default function App() {
                 </svg>
               </span>
             )}
-            <span className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
-              {APP_BRAND_NAME}
-            </span>
+            <div className="min-w-0">
+              <span className="block text-sm sm:text-base font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
+                {APP_BRAND_NAME}
+              </span>
+              <span className="block text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 leading-tight">
+                {adminSession.admin.role}
+              </span>
+            </div>
           </button>
 
           {/* Zone 2: Desktop Single-Line Navigation Links */}
-          <nav className="hidden md:flex items-center gap-4 lg:gap-6" aria-label="Navigasi Utama">
-            {NAV_TABS.map((tab) => {
+          <nav
+            className="hidden lg:flex items-center gap-3.5 xl:gap-5 overflow-x-auto no-scrollbar"
+            aria-label="Navigasi Admin"
+          >
+            {visibleAdminTabs.map((tab) => {
               const isActive = activeTab === tab.key;
               return (
                 <button
                   key={tab.key}
                   type="button"
                   onClick={() => setActiveTab(tab.key)}
-                  className={`relative py-2 text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`relative py-2 text-xs xl:text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     isActive
                       ? 'text-emerald-800 dark:text-emerald-300'
                       : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -654,7 +1070,7 @@ export default function App() {
             })}
           </nav>
 
-          {/* Zone 3: Compact Display Toggle & Settings Action */}
+          {/* Zone 3: Compact Display Toggle, Super Admin Settings & Logout */}
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
@@ -679,13 +1095,25 @@ export default function App() {
               )}
             </button>
 
+            {isSuperAdmin && (
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-emerald-500 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Settings2 className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden sm:inline">Pengaturan</span>
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={() => setIsModalOpen(true)}
-              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 dark:bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-emerald-500 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              onClick={handleAdminLogout}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 dark:border-rose-900/70 bg-rose-50/80 dark:bg-rose-950/40 px-3 py-2 text-xs font-semibold text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              title="Keluar dari sesi admin"
             >
-              <Settings2 className="h-3.5 w-3.5 shrink-0" />
-              <span>Pengaturan</span>
+              <LogOut className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden sm:inline">Keluar</span>
             </button>
           </div>
         </div>
@@ -695,13 +1123,13 @@ export default function App() {
         style={containerWidthStyle}
         className="flex-1 mx-auto px-3 sm:px-6 py-5 sm:py-7 space-y-5 transition-[width] duration-200 min-w-0"
       >
-        {/* Mobile Navigation */}
+        {/* Mobile & Tablet Navigation */}
         <div
-          className="md:hidden grid grid-cols-2 sm:grid-cols-3 gap-1.5 rounded-2xl glass-surface p-1.5"
+          className="lg:hidden grid grid-cols-2 sm:grid-cols-4 gap-1.5 rounded-2xl glass-surface p-1.5"
           role="tablist"
-          aria-label="Navigasi Mobile"
+          aria-label="Navigasi Admin Mobile"
         >
-          {NAV_TABS.map((tab) => {
+          {visibleAdminTabs.map((tab) => {
             const isActive = activeTab === tab.key;
             return (
               <button
@@ -723,7 +1151,7 @@ export default function App() {
           })}
         </div>
 
-        {/* Institutional Identity, Sync Status & Display Controls (Hidden by default, toggled via Tampilan) */}
+        {/* Utility & Sync Bar (Hidden by default, toggled via Tampilan) */}
         {showUtilityBar && (
           <div className="glass-surface rounded-2xl px-4 sm:px-5 py-3.5 space-y-3">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
@@ -736,9 +1164,19 @@ export default function App() {
                   <CloudOff className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5 sm:mt-0" />
                 )}
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100 safe-wrap">
-                    {data.config.namaLembaga} — {data.config.tagline}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-bold text-slate-900 dark:text-slate-100 safe-wrap">
+                      {adminSession.admin.nama}
+                    </p>
+                    <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:text-emerald-200">
+                      {isSuperAdmin ? (
+                        <ShieldCheck className="h-3 w-3 shrink-0" />
+                      ) : (
+                        <Shield className="h-3 w-3 shrink-0" />
+                      )}
+                      {adminSession.admin.role}
+                    </span>
+                  </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
                     <span
                       className={
@@ -821,26 +1259,25 @@ export default function App() {
                   <span>Lebar {screenWidthPct}%</span>
                 </button>
 
-                {connectionStatus !== 'connected' && (
-                  <button
-                    type="button"
-                    onClick={() => setIsModalOpen(true)}
-                    className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap cursor-pointer"
-                  >
-                    Atur Koneksi
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => navigateToPublic('daftar')}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 transition-colors whitespace-nowrap cursor-pointer"
+                >
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                  <span>Portal Donatur</span>
+                </button>
 
                 <button
                   type="button"
-                  onClick={() => void loadData(gasUrl, true)}
-                  disabled={isLoading}
+                  onClick={() => void loadAdminWorkspaceData(gasUrl, adminToken, true)}
+                  disabled={isLoadingAdmin}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-50 transition-colors whitespace-nowrap cursor-pointer"
                 >
                   <RefreshCw
-                    className={`h-3.5 w-3.5 shrink-0 ${isLoading ? 'animate-spin' : ''}`}
+                    className={`h-3.5 w-3.5 shrink-0 ${isLoadingAdmin ? 'animate-spin' : ''}`}
                   />
-                  <span>{isLoading ? 'Memuat...' : 'Sinkronkan'}</span>
+                  <span>{isLoadingAdmin ? 'Memuat...' : 'Sinkronkan'}</span>
                 </button>
 
                 <button
@@ -896,13 +1333,17 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'pendaftaran' && (
-          <TabPendaftaran
+        {/* Active Admin Tab View */}
+        {activeTab === 'donatur' && (
+          <TabDonatur
             config={data.config}
-            panitia={data.panitia}
-            referralCode={referralCode}
+            donaturList={data.donatur}
+            transaksiList={data.transaksi}
+            panitiaList={data.panitia}
+            isLoading={isLoadingAdmin}
+            onUpdateStatusDonatur={handleUpdateStatusDonatur}
             onSubmitDonatur={handleRegisterDonatur}
-            onGoToKonfirmasi={handleGoToKonfirmasi}
+            onGoToKonfirmasiBulan={handleGoToKonfirmasi}
             onNotify={notify}
           />
         )}
@@ -918,7 +1359,7 @@ export default function App() {
             preselectedMonth={preselectedMonth}
             onClearPreselected={handleClearPreselected}
             onSubmitPembayaran={handleSubmitPembayaran}
-            onGoToPendaftaran={() => setActiveTab('pendaftaran')}
+            onGoToPendaftaran={() => setActiveTab('donatur')}
             onNotify={notify}
           />
         )}
@@ -927,23 +1368,13 @@ export default function App() {
           <TabVerifikasi
             config={data.config}
             transaksiList={data.transaksi}
-            isLoading={isLoading}
+            isLoading={isLoadingAdmin}
             onVerifikasi={handleVerifikasiTransaksi}
           />
         )}
 
         {activeTab === 'mutasi' && (
-          <TabMutasi
-            config={data.config}
-            donaturList={data.donatur}
-            transaksiList={data.transaksi}
-            panitiaList={data.panitia}
-            isLoading={isLoading}
-            initialSubView={mutasiSubView}
-            onUpdateStatusDonatur={handleUpdateStatusDonatur}
-            onGoToPendaftaran={() => setActiveTab('pendaftaran')}
-            onGoToKonfirmasiBulan={handleGoToKonfirmasi}
-          />
+          <TabMutasi transaksiList={data.transaksi} isLoading={isLoadingAdmin} />
         )}
 
         {activeTab === 'dashboard' && (
@@ -952,10 +1383,9 @@ export default function App() {
             donaturList={data.donatur}
             transaksiList={data.transaksi}
             panitiaList={data.panitia}
-            isLoading={isLoading}
+            isLoading={isLoadingAdmin}
             onOpenMutasi={(view) => {
-              setMutasiSubView(view);
-              setActiveTab('mutasi');
+              setActiveTab(view === 'donatur' ? 'donatur' : 'mutasi');
             }}
             onNotify={notify}
           />
@@ -966,12 +1396,22 @@ export default function App() {
             config={data.config}
             donaturList={data.donatur}
             panitiaList={data.panitia}
-            isLoading={isLoading}
+            isLoading={isLoadingAdmin}
             connectionStatus={connectionStatus}
             onUpdateStatusGrup={handleUpdateStatusGrup}
             onBulkUpdateStatusGrup={handleBulkUpdateStatusGrup}
             onSendBroadcastSingle={handleSendBroadcastSingle}
-            onOpenSettings={() => setIsModalOpen(true)}
+            onOpenSettings={() => {
+              if (isSuperAdmin) {
+                setIsModalOpen(true);
+              } else {
+                notify(
+                  'info',
+                  'Khusus Super Admin',
+                  'Pengaturan tautan Grup WA dan konfigurasi aplikasi hanya dapat diubah oleh Super Admin.'
+                );
+              }
+            }}
             onNotify={notify}
           />
         )}
@@ -991,6 +1431,16 @@ export default function App() {
             onNotify={notify}
           />
         )}
+
+        {activeTab === 'akses_admin' && isSuperAdmin && (
+          <TabAdminAkses
+            adminAksesList={data.adminAkses || []}
+            currentAdminWa={adminSession.admin.noWa}
+            onSaveAdminAkses={handleSaveAdminAkses}
+            onDeleteAdminAkses={handleDeleteAdminAkses}
+            onNotify={notify}
+          />
+        )}
       </main>
 
       <footer className="mt-10 border-t border-slate-200/70 dark:border-slate-800 bg-white/45 dark:bg-slate-950/45">
@@ -1002,76 +1452,47 @@ export default function App() {
             <strong className="text-slate-700 dark:text-slate-200">
               {data.config.namaLembaga}
             </strong>{' '}
-            · {data.config.tagline}
+            · Panel {adminSession.admin.role} ({adminSession.admin.nama})
           </p>
-          <button
-            type="button"
-            onClick={() => setIsModalOpen(true)}
-            className="font-medium text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-200 hover:underline whitespace-nowrap cursor-pointer"
-          >
-            Pengaturan Lembaga, QRIS &amp; Referral
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <button
+              type="button"
+              onClick={() => navigateToPublic('daftar')}
+              className="font-medium text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 hover:underline whitespace-nowrap cursor-pointer"
+            >
+              Buka Portal Donatur
+            </button>
+            {isSuperAdmin && (
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(true)}
+                className="font-medium text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-200 hover:underline whitespace-nowrap cursor-pointer"
+              >
+                Pengaturan Lembaga, QRIS &amp; Referral
+              </button>
+            )}
+          </div>
         </div>
       </footer>
 
-      <ConnectionModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        gasUrl={gasUrl}
-        connectionStatus={connectionStatus}
-        config={data.config}
-        panitia={data.panitia}
-        onSaveUrl={handleSaveGasUrl}
-        onSavePengaturan={handleSavePengaturan}
-        onTestNotification={handleTestNotification}
-        onSavePanitia={handleSavePanitia}
-        onDeletePanitia={handleDeletePanitia}
-        onNotify={notify}
-      />
-
-      {toasts.length > 0 && (
-        <div
-          className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-[calc(100vw-2rem)]"
-          aria-live="polite"
-        >
-          {toasts.map((toast) => (
-            <div
-              key={toast.id}
-              className={`glass-surface rounded-2xl p-4 shadow-lg flex items-start gap-3 border ${
-                toast.type === 'success'
-                  ? 'border-emerald-200/90 dark:border-emerald-800'
-                  : toast.type === 'error'
-                  ? 'border-rose-200/90 dark:border-rose-800'
-                  : 'border-sky-200/90 dark:border-sky-800'
-              }`}
-            >
-              {toast.type === 'success' ? (
-                <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-              ) : (
-                <AlertCircle className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold text-slate-900 dark:text-slate-100 safe-wrap">
-                  {toast.title}
-                </p>
-                {toast.description && (
-                  <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300 safe-wrap">
-                    {toast.description}
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => dismissToast(toast.id)}
-                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 shrink-0 cursor-pointer"
-                aria-label="Tutup notifikasi"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
+      {isSuperAdmin && (
+        <ConnectionModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          gasUrl={gasUrl}
+          connectionStatus={connectionStatus}
+          config={data.config}
+          panitia={data.panitia}
+          onSaveUrl={handleSaveGasUrl}
+          onSavePengaturan={handleSavePengaturan}
+          onTestNotification={handleTestNotification}
+          onSavePanitia={handleSavePanitia}
+          onDeletePanitia={handleDeletePanitia}
+          onNotify={notify}
+        />
       )}
+
+      {toastOverlay}
     </div>
   );
 }

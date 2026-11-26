@@ -1,4 +1,4 @@
-import { APP_PUBLIC_URL, DEFAULT_WA_REMINDER_TEMPLATES } from '../config';
+import { APP_BAYAR_URL, APP_PUBLIC_URL, DEFAULT_WA_REMINDER_TEMPLATES } from '../config';
 import {
   Donatur,
   JenisDonatur,
@@ -397,6 +397,7 @@ export function renderMessageTemplate(
   const wilayahParts = [donatur.domisili, donatur.provinsi].filter(Boolean);
   const domisiliLabel = wilayahParts.length > 0 ? wilayahParts.join(', ') : '-';
   const portalUrl =
+    APP_BAYAR_URL ||
     APP_PUBLIC_URL ||
     (typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '');
 
@@ -552,4 +553,18 @@ export function buildReferralUrl(kodePanitia: string): string {
   url.hash = '';
   url.searchParams.set('ref', kodePanitia);
   return url.toString();
+}
+
+export function sanitizeExternalUrl(raw?: string): string {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return parsed.toString();
+    }
+  } catch {
+    // Invalid URL
+  }
+  return '';
 }

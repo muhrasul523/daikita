@@ -23,7 +23,10 @@ const DRIVE_FOLDER_ID = '1KqfNK8yLOpb-7Ew6KXkfJoNU6XKmzK73';
 const NAMA_LEMBAGA = 'DAIKITA — Kafalah Dai';
 const TAGLINE_LEMBAGA = 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
 const APP_PUBLIC_URL = 'https://daikita.duwd.web.id/';
+const APP_BAYAR_URL = 'https://daikita.duwd.web.id/#/bayar';
 const DEFAULT_LOGO_URL = 'https://lh3.googleusercontent.com/d/1OOSQydygv0K9SNcQUXQTqQyduW57mv4Y';
+
+const ADMIN_SESSION_TTL_SEC = 21600; // 6 jam
 
 const DEFAULT_WA_ENDPOINT = 'https://www.rechat.id/api/v1/messages';
 const DEFAULT_WA_API_KEY = 'wag_8d4afa8dfa57f45f95961017e050b36b15de17edd2fdc542';
@@ -86,6 +89,7 @@ const SHEET_NAMES = {
   TRANSAKSI: 'Transaksi_Donasi',
   DONASI_LAINNYA: 'Donasi_Lainnya',
   PANITIA: 'Data_Panitia',
+  AKSES_ADMIN: 'Akses_Admin',
   PENGATURAN: 'Pengaturan',
   ANTREAN: 'Antrean_Pesan'
 };
@@ -151,6 +155,13 @@ const HEADERS = {
     'Jenis_Kelamin',
     'No_WA_Panitia',
     'Role'
+  ],
+  Akses_Admin: [
+    'No_WA',
+    'Nama',
+    'Role',
+    'Status',
+    'Catatan'
   ],
   Pengaturan: [
     'Kunci',
@@ -298,6 +309,54 @@ function setupDatabase() {
     ];
     initialPanitia.forEach(function (rowObj) {
       appendRowByHeaderMap_(panitiaSheet, rowObj, ['Kode_Panitia', 'Jenis_Kelamin', 'No_WA_Panitia', 'Role'], []);
+    });
+  }
+
+  const aksesAdminSheet = ensureSheetWithHeaders_(ss, SHEET_NAMES.AKSES_ADMIN, HEADERS.Akses_Admin, {
+    textHeaders: ['No_WA', 'Role', 'Status'],
+    widthByHeader: {
+      No_WA: 165,
+      Nama: 220,
+      Role: 140,
+      Status: 120,
+      Catatan: 260
+    }
+  });
+
+  if (aksesAdminSheet.getLastRow() <= 1) {
+    const panitiaRows = readSheetAsObjects_(panitiaSheet);
+    const seededMap = {};
+    const seedList = [];
+
+    panitiaRows.forEach(function (row) {
+      const roleNorm = normalizeRole_(row.Role);
+      if (roleNorm !== 'Super Admin' && roleNorm !== 'Admin') return;
+      const waNorm = safeNormalizeOrKeep_(row.No_WA_Panitia);
+      if (!waNorm || seededMap[waNorm]) return;
+      seededMap[waNorm] = true;
+      seedList.push({
+        No_WA: waNorm,
+        Nama: String(row.Nama_Panitia || 'Admin').trim(),
+        Role: roleNorm,
+        Status: 'Aktif',
+        Catatan: 'Diimpor awal dari Data_Panitia (' + String(row.Kode_Panitia || '').trim() + ')'
+      });
+    });
+
+    if (seedList.length === 0) {
+      seedList.push({
+        No_WA: '6281100000001',
+        Nama: 'Super Admin Utama',
+        Role: 'Super Admin',
+        Status: 'Aktif',
+        Catatan: 'Ganti dengan nomor WA Super Admin Anda'
+      });
+    } else if (!seedList.some(function (item) { return item.Role === 'Super Admin'; })) {
+      seedList[0].Role = 'Super Admin';
+    }
+
+    seedList.forEach(function (rowObj) {
+      appendRowByHeaderMap_(aksesAdminSheet, rowObj, ['No_WA', 'Role', 'Status'], []);
     });
   }
 
@@ -551,7 +610,7 @@ function getHeaderIndexMap_(sheet) {
 function doGet(e) {
   try {
     const params = (e && e.parameter) ? e.parameter : {};
-    const action = String(params.action || 'getInitialData').trim();
+    const action = String(params.action || 'getPublicConfig').trim();
 
     if (action === 'ping') {
       const cfg = loadConfigObject_(SpreadsheetApp.getActiveSpreadsheet());
@@ -566,11 +625,25 @@ function doGet(e) {
       });
     }
 
-    if (action === 'getInitialData') {
+    if (action === 'getPublicConfig') {
       return jsonResponse_({
         status: 'success',
-        message: 'Data berhasil disinkronkan.',
-        data: getInitialData_()
+        message: 'Konfigurasi publik siap.',
+        data: getPublicConfig_()
+      });
+    }
+
+    if (action === 'lookupDonaturByWa') {
+      return jsonResponse_(handleLookupDonaturByWa_(params));
+    }
+
+    if (action === 'getAdminData' || action === 'getInitialData') {
+      const auth = requireAdminRole_(params.adminToken, 'Admin');
+      if (!auth.ok) return jsonResponse_(auth.response);
+      return jsonResponse_({
+        status: 'success',
+        message: 'Data admin berhasil disinkronkan.',
+        data: getAdminDataset_(auth.admin)
       });
     }
 
@@ -599,12 +672,74 @@ function doPost(e) {
       });
     }
 
-    if (action === 'getInitialData') {
+    // Read-only & login actions (tidak perlu lock tulis berat)
+    if (action === 'getPublicConfig') {
       return jsonResponse_({
         status: 'success',
-        message: 'Data berhasil disinkronkan.',
-        data: getInitialData_()
+        message: 'Konfigurasi publik siap.',
+        data: getPublicConfig_()
       });
+    }
+
+    if (action === 'lookupDonaturByWa') {
+      return jsonResponse_(handleLookupDonaturByWa_(payload));
+    }
+
+    if (action === 'loginAdmin') {
+      return jsonResponse_(handleLoginAdmin_(payload));
+    }
+
+    if (action === 'verifyAdminSession') {
+      const authCheck = requireAdminRole_(payload.adminToken, 'Admin');
+      if (!authCheck.ok) return jsonResponse_(authCheck.response);
+      return jsonResponse_({
+        status: 'success',
+        message: 'Sesi admin aktif.',
+        data: { admin: authCheck.admin }
+      });
+    }
+
+    if (action === 'getAdminData' || action === 'getInitialData') {
+      const auth = requireAdminRole_(payload.adminToken, 'Admin');
+      if (!auth.ok) return jsonResponse_(auth.response);
+      return jsonResponse_({
+        status: 'success',
+        message: 'Data admin berhasil disinkronkan.',
+        data: getAdminDataset_(auth.admin)
+      });
+    }
+
+    // Validasi hak akses SEBELUM mengambil lock tulis
+    const adminOnlyActions = {
+      verifikasiTransaksi: true,
+      updateStatusPenyaluran: true,
+      updateStatusDonatur: true,
+      updateStatusGrupDonatur: true,
+      bulkUpdateStatusGrupDonatur: true,
+      sendBroadcastSingle: true,
+      scheduleBroadcast: true,
+      processQueue: true,
+      cancelScheduledMessage: true
+    };
+
+    const superAdminOnlyActions = {
+      savePengaturan: true,
+      savePanitia: true,
+      deletePanitia: true,
+      testNotification: true,
+      saveAdminAkses: true,
+      deleteAdminAkses: true
+    };
+
+    if (superAdminOnlyActions[action]) {
+      const saAuth = requireAdminRole_(payload.adminToken, 'Super Admin');
+      if (!saAuth.ok) return jsonResponse_(saAuth.response);
+    } else if (adminOnlyActions[action]) {
+      const admAuth = requireAdminRole_(payload.adminToken, 'Admin');
+      if (!admAuth.ok) return jsonResponse_(admAuth.response);
+    } else if (action === 'submitPembayaran' && String(payload.jenisDonatur || '').trim() === 'Umum') {
+      const umumAuth = requireAdminRole_(payload.adminToken, 'Admin');
+      if (!umumAuth.ok) return jsonResponse_(umumAuth.response);
     }
 
     lock = LockService.getScriptLock();
@@ -647,6 +782,12 @@ function doPost(e) {
         break;
       case 'deletePanitia':
         result = handleDeletePanitia_(payload);
+        break;
+      case 'saveAdminAkses':
+        result = handleSaveAdminAkses_(payload);
+        break;
+      case 'deleteAdminAkses':
+        result = handleDeleteAdminAkses_(payload);
         break;
       case 'testNotification':
         result = handleTestNotification_(payload);
@@ -1145,6 +1286,332 @@ function appendDonasiLainnyaRow_(ss, item) {
   ], ['Nominal_Komitmen', 'Nominal_Donasi_Lainnya', 'Total_Transfer']);
 }
 
+// ==================== AUTH ADMIN, PUBLIC CONFIG & LOOKUP DONATUR ====================
+function normalizeAdminRole_(rawRole) {
+  const r = String(rawRole || '').trim().toLowerCase();
+  if (r === 'super admin' || r === 'superadmin' || r === 'super_admin') return 'Super Admin';
+  return 'Admin';
+}
+
+function readAdminAksesList_(ss) {
+  let sheet = ss.getSheetByName(SHEET_NAMES.AKSES_ADMIN);
+  if (!sheet) {
+    setupDatabase();
+    sheet = ss.getSheetByName(SHEET_NAMES.AKSES_ADMIN);
+  }
+  if (!sheet) return [];
+  return readSheetAsObjects_(sheet).map(function (row) {
+    return {
+      noWa: safeNormalizeOrKeep_(row.No_WA),
+      nama: String(row.Nama || '').trim(),
+      role: normalizeAdminRole_(row.Role),
+      status: normalizeStatusAktif_(row.Status),
+      catatan: String(row.Catatan || '').trim()
+    };
+  }).filter(function (item) {
+    return item.noWa !== '';
+  });
+}
+
+function createAdminSession_(adminEntry) {
+  const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  const sessionObj = {
+    noWa: adminEntry.noWa,
+    nama: adminEntry.nama,
+    role: adminEntry.role,
+    loginAt: formatTimestamp_(new Date())
+  };
+  CacheService.getScriptCache().put('ADM_SESS_' + token, JSON.stringify(sessionObj), ADMIN_SESSION_TTL_SEC);
+  return {
+    token: token,
+    admin: sessionObj
+  };
+}
+
+function verifyAdminSession_(token) {
+  const cleanToken = String(token || '').trim();
+  if (!cleanToken || cleanToken.length < 16) return null;
+  const cached = CacheService.getScriptCache().get('ADM_SESS_' + cleanToken);
+  if (!cached) return null;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(cached);
+  } catch (err) {
+    return null;
+  }
+  if (!parsed || !parsed.noWa) return null;
+
+  // Verifikasi ulang ke sheet Akses_Admin agar pencabutan/ubah role berlaku langsung
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const list = readAdminAksesList_(ss);
+  const matched = list.find(function (item) {
+    return item.noWa === parsed.noWa && item.status === 'Aktif';
+  });
+  if (!matched) {
+    CacheService.getScriptCache().remove('ADM_SESS_' + cleanToken);
+    return null;
+  }
+
+  return {
+    noWa: matched.noWa,
+    nama: matched.nama || parsed.nama,
+    role: matched.role,
+    loginAt: parsed.loginAt || ''
+  };
+}
+
+function requireAdminRole_(token, requiredRole) {
+  const admin = verifyAdminSession_(token);
+  if (!admin) {
+    return {
+      ok: false,
+      response: {
+        status: 'error',
+        code: 'AUTH_REQUIRED',
+        message: 'Sesi login Admin tidak valid atau telah berakhir. Silakan login kembali dengan nomor HP terdaftar.'
+      }
+    };
+  }
+  if (requiredRole === 'Super Admin' && admin.role !== 'Super Admin') {
+    return {
+      ok: false,
+      response: {
+        status: 'error',
+        code: 'FORBIDDEN',
+        message: 'Akses ditolak. Fitur ini hanya dapat diakses oleh Super Admin.'
+      }
+    };
+  }
+  return { ok: true, admin: admin };
+}
+
+function handleLoginAdmin_(payload) {
+  const rawWa = String(payload.noWa || '').trim();
+  if (!rawWa) {
+    return { status: 'error', message: 'Masukkan nomor HP / WhatsApp terlebih dahulu.' };
+  }
+  const waCheck = validateAndNormalizeWA_(rawWa);
+  if (!waCheck.valid) {
+    return { status: 'error', message: waCheck.error };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const aksesList = readAdminAksesList_(ss);
+  const matched = aksesList.find(function (item) {
+    return item.noWa === waCheck.normalized;
+  });
+
+  if (!matched) {
+    return {
+      status: 'error',
+      code: 'ADMIN_NOT_FOUND',
+      message: 'Nomor ' + waCheck.normalized + ' tidak terdaftar sebagai Admin atau Super Admin. Hubungi Super Admin untuk mendaftarkan nomor Anda.'
+    };
+  }
+
+  if (matched.status !== 'Aktif') {
+    return {
+      status: 'error',
+      code: 'ADMIN_INACTIVE',
+      message: 'Akses Admin untuk nomor ' + waCheck.normalized + ' sedang berstatus Non Aktif.'
+    };
+  }
+
+  const session = createAdminSession_(matched);
+  return {
+    status: 'success',
+    message: 'Login berhasil sebagai ' + matched.role + ' (' + (matched.nama || matched.noWa) + ').',
+    data: session
+  };
+}
+
+function getPublicConfig_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss.getSheetByName(SHEET_NAMES.PENGATURAN) || !ss.getSheetByName(SHEET_NAMES.PANITIA)) {
+    setupDatabase();
+  }
+  const fullCfg = loadConfigObject_(ss);
+
+  // Strip kunci rahasia (waApiKey, waEndpointUrl, dll.) dari respons publik
+  const publicConfig = {
+    namaLembaga: fullCfg.namaLembaga,
+    tagline: fullCfg.tagline,
+    logoUrl: fullCfg.logoUrl,
+    qrisUrl: fullCfg.qrisUrl,
+    qrisMerchantName: fullCfg.qrisMerchantName,
+    showQris: fullCfg.showQris,
+    defaultNominal: fullCfg.defaultNominal,
+    defaultTglPengingat: fullCfg.defaultTglPengingat,
+    catatanPembayaran: fullCfg.catatanPembayaran,
+    infoRekening: fullCfg.infoRekening,
+    enableWaNotif: false,
+    waEndpointUrl: '',
+    waApiKey: '',
+    waTemplates: [],
+    waFollowupTemplates: [],
+    waFollowupDelaySec: fullCfg.waFollowupDelaySec,
+    waReminderTemplates: [],
+    waGroupName: fullCfg.waGroupName,
+    waGroupLink: fullCfg.waGroupLink,
+    waGroupId: '',
+    enableEmailNotif: false,
+    emailSenderAlias: '',
+    emailSenderName: fullCfg.emailSenderName,
+    emailTemplateDaftar: { subject: '', body: '' },
+    emailTemplateReminder: { subject: '', body: '' },
+    emailTemplates: []
+  };
+
+  const panitia = readSheetAsObjects_(ss.getSheetByName(SHEET_NAMES.PANITIA)).map(function (row) {
+    return {
+      kodePanitia: String(row.Kode_Panitia || '').trim(),
+      namaPanitia: String(row.Nama_Panitia || '').trim(),
+      jenisKelamin: normalizeJenisKelamin_(row.Jenis_Kelamin),
+      noWaPanitia: '',
+      role: normalizeRole_(row.Role)
+    };
+  }).filter(function (p) {
+    return p.kodePanitia !== '' && p.namaPanitia !== '';
+  });
+
+  return {
+    config: publicConfig,
+    panitia: panitia
+  };
+}
+
+function handleLookupDonaturByWa_(payload) {
+  const rawWa = String(payload.noWa || '').trim();
+  if (!rawWa) {
+    return { status: 'error', message: 'Masukkan nomor WhatsApp terlebih dahulu.' };
+  }
+  const waCheck = validateAndNormalizeWA_(rawWa);
+  if (!waCheck.valid) {
+    return { status: 'error', message: waCheck.error };
+  }
+
+  const normalizedWa = waCheck.normalized;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss.getSheetByName(SHEET_NAMES.DONATUR) || !ss.getSheetByName(SHEET_NAMES.TRANSAKSI)) {
+    setupDatabase();
+  }
+
+  const allDonatur = readSheetAsObjects_(ss.getSheetByName(SHEET_NAMES.DONATUR));
+  let matchedRow = null;
+  for (let i = 0; i < allDonatur.length; i++) {
+    if (safeNormalizeOrKeep_(allDonatur[i].No_WA) === normalizedWa) {
+      matchedRow = allDonatur[i];
+      break;
+    }
+  }
+
+  if (!matchedRow) {
+    return {
+      status: 'success',
+      message: 'Nomor belum terdaftar sebagai donatur.',
+      data: {
+        found: false,
+        normalizedWa: normalizedWa
+      }
+    };
+  }
+
+  const donatur = {
+    idDonatur: String(matchedRow.ID_Donatur || '').trim(),
+    tanggalDaftar: formatCellDateString_(matchedRow.Tanggal_Daftar),
+    namaLengkap: String(matchedRow.Nama_Lengkap || '').trim(),
+    jenisKelamin: normalizeJenisKelamin_(matchedRow.Jenis_Kelamin),
+    noWa: safeNormalizeOrKeep_(matchedRow.No_WA),
+    email: String(matchedRow.Email || '').trim(),
+    kabId: String(matchedRow.Kab_ID || '').trim(),
+    domisili: String(matchedRow.Domisili || '').trim(),
+    provinsi: String(matchedRow.Provinsi || '').trim(),
+    pulau: String(matchedRow.Pulau || '').trim(),
+    nominalKomitmen: parseNumber_(matchedRow.Nominal_Komitmen),
+    tglJatuhTempo: parseNumber_(matchedRow.Tgl_Jatuh_Tempo) || 1,
+    metodeDaftar: String(matchedRow.Metode_Daftar || 'Mandiri').trim(),
+    kodePerantara: String(matchedRow.Kode_Perantara || '').trim(),
+    namaPerantara: String(matchedRow.Nama_Perantara || 'Langsung (Tanpa Perantara)').trim(),
+    statusAktif: normalizeStatusAktif_(matchedRow.Status_Aktif),
+    minatGrupWa: normalizeMinatGrup_(matchedRow.Minat_Grup_WA),
+    statusGrupWa: normalizeStatusGrup_(matchedRow.Status_Grup_WA)
+  };
+
+  // Ambil hanya transaksi milik donatur tersebut saja
+  const transaksi = readSheetAsObjects_(ss.getSheetByName(SHEET_NAMES.TRANSAKSI))
+    .filter(function (row) {
+      const jenis = normalizeJenisDonatur_(row.Jenis_Donatur, row.ID_Donatur);
+      if (jenis === 'Umum') return false;
+      const idMatch = donatur.idDonatur && String(row.ID_Donatur || '').trim() === donatur.idDonatur;
+      const waMatch = safeNormalizeOrKeep_(row.No_WA) === normalizedWa;
+      return idMatch || waMatch;
+    })
+    .map(function (row) {
+      const waktuInput = formatCellDateString_(row.Waktu_Input);
+      const tanggalTransfer = formatIsoDateCell_(row.Tanggal_Transfer) || waktuInput.substring(0, 10);
+      const nominalTransfer = parseNumber_(row.Nominal_Transfer);
+      const donasiLainnya = Math.max(0, parseNumber_(row.Donasi_Lainnya));
+      const nominalKomitmenRaw = parseNumber_(row.Nominal_Komitmen);
+      const nominalKomitmen = nominalKomitmenRaw > 0
+        ? nominalKomitmenRaw
+        : Math.max(0, nominalTransfer - donasiLainnya);
+
+      return {
+        idTransaksi: String(row.ID_Transaksi || '').trim(),
+        waktuInput: waktuInput,
+        tanggalTransfer: tanggalTransfer,
+        jenisDonatur: 'Rutin',
+        idDonatur: String(row.ID_Donatur || '').trim(),
+        namaDonatur: String(row.Nama_Donatur || '').trim(),
+        noWa: safeNormalizeOrKeep_(row.No_WA),
+        bulanTagihan: formatBulanTagihan_(row.Bulan_Tagihan),
+        nominalKomitmen: nominalKomitmen,
+        donasiLainnya: donasiLainnya,
+        nominalTransfer: nominalTransfer,
+        bankTujuan: String(row.Bank_Tujuan || '').trim(),
+        linkBuktiDrive: String(row.Link_Bukti_Drive || '').trim(),
+        statusVerifikasi: String(row.Status_Verifikasi || 'Pending').trim(),
+        diinputOleh: String(row.Diinput_Oleh || '').trim(),
+        keterangan: String(row.Keterangan || '').trim()
+      };
+    })
+    .filter(function (t) {
+      return t.idTransaksi !== '';
+    })
+    .sort(function (a, b) {
+      return (b.tanggalTransfer || b.waktuInput).localeCompare(a.tanggalTransfer || a.waktuInput);
+    });
+
+  return {
+    status: 'success',
+    message: 'Data donatur ditemukan.',
+    data: {
+      found: true,
+      normalizedWa: normalizedWa,
+      donatur: donatur,
+      transaksi: transaksi
+    }
+  };
+}
+
+function getAdminDataset_(adminUser) {
+  const full = getInitialData_();
+  const isSuperAdmin = adminUser && adminUser.role === 'Super Admin';
+  const safeConfig = Object.assign({}, full.config);
+  if (!isSuperAdmin) {
+    safeConfig.waApiKey = '';
+  }
+  return {
+    config: safeConfig,
+    donatur: full.donatur,
+    transaksi: full.transaksi,
+    panitia: full.panitia,
+    antreanPesan: full.antreanPesan,
+    adminAkses: isSuperAdmin ? readAdminAksesList_(SpreadsheetApp.getActiveSpreadsheet()) : []
+  };
+}
+
 // ==================== HANDLER DATA UTAMA ====================
 function getInitialData_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1152,6 +1619,7 @@ function getInitialData_() {
       !ss.getSheetByName(SHEET_NAMES.TRANSAKSI) ||
       !ss.getSheetByName(SHEET_NAMES.DONASI_LAINNYA) ||
       !ss.getSheetByName(SHEET_NAMES.PANITIA) ||
+      !ss.getSheetByName(SHEET_NAMES.AKSES_ADMIN) ||
       !ss.getSheetByName(SHEET_NAMES.PENGATURAN) ||
       !ss.getSheetByName(SHEET_NAMES.ANTREAN)) {
     setupDatabase();
@@ -1565,7 +2033,7 @@ function renderNotifTemplate_(templateStr, donatur, config, options) {
     '{perantara}': donatur.namaPerantara || 'Langsung (Tanpa Perantara)',
     '{lembaga}': config.namaLembaga || NAMA_LEMBAGA,
     '{rekening}': formatRekeningTextServer_(config.infoRekening),
-    '{link_konfirmasi}': APP_PUBLIC_URL,
+    '{link_konfirmasi}': APP_BAYAR_URL,
     '{bulan}': bulanLabel,
     '{link_grup}': groupLink || '-',
     '{nama_grup}': groupName,
@@ -2814,6 +3282,158 @@ function handleDeletePanitia_(payload) {
   }
 
   return { status: 'error', message: 'Pengurus dengan kode ' + kodePanitia + ' tidak ditemukan.' };
+}
+
+// ==================== KELOLA AKSES ADMIN & SUPER ADMIN ====================
+function handleSaveAdminAkses_(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_NAMES.AKSES_ADMIN);
+  if (!sheet) {
+    setupDatabase();
+    sheet = ss.getSheetByName(SHEET_NAMES.AKSES_ADMIN);
+  } else {
+    ensureSheetWithHeaders_(ss, SHEET_NAMES.AKSES_ADMIN, HEADERS.Akses_Admin, {
+      textHeaders: ['No_WA', 'Role', 'Status']
+    });
+  }
+
+  const rawWa = String(payload.noWa || '').trim();
+  const originalNoWa = safeNormalizeOrKeep_(payload.originalNoWa || '');
+  const nama = String(payload.nama || '').trim();
+  const role = normalizeAdminRole_(payload.role);
+  const status = normalizeStatusAktif_(payload.status || 'Aktif');
+  const catatan = String(payload.catatan || '').trim();
+
+  if (!rawWa || !nama) {
+    return { status: 'error', message: 'Nomor HP dan nama admin wajib diisi.' };
+  }
+
+  const waCheck = validateAndNormalizeWA_(rawWa);
+  if (!waCheck.valid) {
+    return { status: 'error', message: waCheck.error };
+  }
+  const normalizedWa = waCheck.normalized;
+
+  const indexMap = getHeaderIndexMap_(sheet);
+  const waCol = indexMap.No_WA || 1;
+  const namaCol = indexMap.Nama || 2;
+  const roleCol = indexMap.Role || 3;
+  const statusCol = indexMap.Status || 4;
+  const catatanCol = indexMap.Catatan || 5;
+
+  const currentList = readAdminAksesList_(ss);
+  const values = sheet.getDataRange().getValues();
+  const targetLookupWa = originalNoWa || normalizedWa;
+
+  let existingRow = -1;
+  let existingItem = null;
+  for (let r = 1; r < values.length; r++) {
+    const rowWa = safeNormalizeOrKeep_(values[r][waCol - 1]);
+    if (rowWa === targetLookupWa) {
+      existingRow = r + 1;
+      existingItem = currentList.find(function (x) { return x.noWa === rowWa; }) || null;
+      break;
+    }
+  }
+
+  // Cegah duplikasi jika mengubah nomor WA ke nomor lain yang sudah ada
+  if (originalNoWa && originalNoWa !== normalizedWa) {
+    const clash = currentList.some(function (x) { return x.noWa === normalizedWa; });
+    if (clash) {
+      return { status: 'error', message: 'Nomor HP ' + normalizedWa + ' sudah terdaftar di daftar akses admin.' };
+    }
+  }
+
+  // Lindungi agar selalu ada minimal 1 Super Admin yang aktif
+  if (existingItem && existingItem.role === 'Super Admin' && existingItem.status === 'Aktif') {
+    const stillSuperActive = role === 'Super Admin' && status === 'Aktif';
+    if (!stillSuperActive) {
+      const otherActiveSuper = currentList.filter(function (x) {
+        return x.noWa !== existingItem.noWa && x.role === 'Super Admin' && x.status === 'Aktif';
+      });
+      if (otherActiveSuper.length === 0) {
+        return {
+          status: 'error',
+          message: 'Tidak dapat menurunkan atau menonaktifkan satu-satunya Super Admin yang aktif.'
+        };
+      }
+    }
+  }
+
+  if (existingRow > 0) {
+    sheet.getRange(existingRow, waCol).setNumberFormat('@').setValue(normalizedWa);
+    sheet.getRange(existingRow, namaCol).setValue(nama);
+    sheet.getRange(existingRow, roleCol).setNumberFormat('@').setValue(role);
+    sheet.getRange(existingRow, statusCol).setNumberFormat('@').setValue(status);
+    sheet.getRange(existingRow, catatanCol).setValue(catatan);
+  } else {
+    appendRowByHeaderMap_(sheet, {
+      No_WA: normalizedWa,
+      Nama: nama,
+      Role: role,
+      Status: status,
+      Catatan: catatan
+    }, ['No_WA', 'Role', 'Status'], []);
+  }
+  SpreadsheetApp.flush();
+
+  return {
+    status: 'success',
+    message: 'Akses ' + role + ' untuk ' + nama + ' (' + normalizedWa + ') berhasil disimpan.',
+    data: {
+      adminAkses: readAdminAksesList_(ss)
+    }
+  };
+}
+
+function handleDeleteAdminAkses_(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAMES.AKSES_ADMIN);
+  if (!sheet) {
+    return { status: 'error', message: 'Sheet Akses_Admin tidak ditemukan.' };
+  }
+
+  const targetWa = safeNormalizeOrKeep_(payload.noWa || '');
+  if (!targetWa) {
+    return { status: 'error', message: 'Nomor HP admin yang akan dihapus wajib diisi.' };
+  }
+
+  const currentList = readAdminAksesList_(ss);
+  const targetItem = currentList.find(function (x) { return x.noWa === targetWa; });
+  if (!targetItem) {
+    return { status: 'error', message: 'Nomor HP ' + targetWa + ' tidak ditemukan di Akses_Admin.' };
+  }
+
+  if (targetItem.role === 'Super Admin' && targetItem.status === 'Aktif') {
+    const otherActiveSuper = currentList.filter(function (x) {
+      return x.noWa !== targetWa && x.role === 'Super Admin' && x.status === 'Aktif';
+    });
+    if (otherActiveSuper.length === 0) {
+      return {
+        status: 'error',
+        message: 'Tidak dapat menghapus satu-satunya Super Admin yang aktif.'
+      };
+    }
+  }
+
+  const indexMap = getHeaderIndexMap_(sheet);
+  const waCol = indexMap.No_WA || 1;
+  const values = sheet.getDataRange().getValues();
+  for (let r = 1; r < values.length; r++) {
+    if (safeNormalizeOrKeep_(values[r][waCol - 1]) === targetWa) {
+      sheet.deleteRow(r + 1);
+      SpreadsheetApp.flush();
+      return {
+        status: 'success',
+        message: 'Akses admin untuk ' + targetWa + ' berhasil dihapus.',
+        data: {
+          adminAkses: readAdminAksesList_(ss)
+        }
+      };
+    }
+  }
+
+  return { status: 'error', message: 'Nomor HP ' + targetWa + ' tidak ditemukan.' };
 }
 
 // ==================== UPLOAD GOOGLE DRIVE (BUKTI & ASET LEMBAGA) ====================

@@ -1,4 +1,4 @@
-import { EmailTemplateItem, LembagaConfig, Panitia } from './types';
+import { AdminAkses, EmailTemplateItem, LembagaConfig, Panitia } from './types';
 
 /**
  * URL layanan sinkronisasi data default.
@@ -10,6 +10,8 @@ export const APP_BRAND_NAME = 'DAIKITA';
 export const APP_PROGRAM_FOCUS = 'Kafalah Dai';
 export const APP_TAGLINE = 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
 export const APP_PUBLIC_URL = 'https://daikita.duwd.web.id/';
+export const APP_BAYAR_URL = 'https://daikita.duwd.web.id/#/bayar';
+export const APP_ADMIN_URL = 'https://daikita.duwd.web.id/#/admin';
 export const DEFAULT_LOGO_URL = 'https://lh3.googleusercontent.com/d/1OOSQydygv0K9SNcQUXQTqQyduW57mv4Y';
 
 /** Bulan awal pencatatan pembayaran donasi */
@@ -317,5 +319,22 @@ export const DEFAULT_PANITIA: Panitia[] = [
     jenisKelamin: 'Perempuan',
     noWaPanitia: '6281100000003',
     role: 'Admin',
+  },
+];
+
+export const DEFAULT_ADMIN_AKSES: AdminAkses[] = [
+  {
+    noWa: '6281100000001',
+    nama: 'Admin Sekretariat',
+    role: 'Super Admin',
+    status: 'Aktif',
+    catatan: 'Super Admin bawaan (Mode Lokal)',
+  },
+  {
+    noWa: '6281100000002',
+    nama: 'Koordinator Wilayah Utara',
+    role: 'Admin',
+    status: 'Aktif',
+    catatan: 'Admin bawaan (Mode Lokal)',
   },
 ];

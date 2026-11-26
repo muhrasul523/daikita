@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
   ArrowDownAZ,
@@ -19,6 +19,7 @@ import {
 import {
   JenisDonatur,
   LembagaConfig,
+  PageSizeOption,
   StatusVerifikasi,
   TransaksiDonasi,
 } from '../types';
@@ -30,6 +31,7 @@ import {
   formatWADisplay,
   getCurrentYearMonth,
 } from '../utils/formatters';
+import { PaginationBar, slicePaginated } from './PaginationBar';
 import { SearchableOption, SearchableSelect } from './SearchableSelect';
 
 interface TabVerifikasiProps {
@@ -75,8 +77,11 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
   );
   const [filterJenis, setFilterJenis] = useState<'Semua' | JenisDonatur>('Semua');
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [sortField, setSortField] = useState<TrxSortField>('waktu');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSizeOption>(10);
 
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [confirmRejectId, setConfirmRejectId] = useState<string | null>(null);
@@ -100,7 +105,7 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
   }, [monthScopedTransaksi]);
 
   const filteredTransaksi = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = deferredSearchQuery.trim().toLowerCase();
     const filtered = monthScopedTransaksi.filter((t) => {
       if (filterStatus !== 'Semua' && t.statusVerifikasi !== filterStatus) return false;
       const jenis: JenisDonatur =
@@ -152,7 +157,16 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
       }
       return cmp * dir;
     });
-  }, [monthScopedTransaksi, filterStatus, filterJenis, searchQuery, sortField, sortDir]);
+  }, [monthScopedTransaksi, filterStatus, filterJenis, deferredSearchQuery, sortField, sortDir]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterMonthMode, selectedMonth, filterStatus, filterJenis, deferredSearchQuery, sortField, sortDir, pageSize]);
+
+  const paginatedTransaksi = useMemo(
+    () => slicePaginated(filteredTransaksi, currentPage, pageSize),
+    [filteredTransaksi, currentPage, pageSize]
+  );
 
   const handleSortHeader = (field: TrxSortField) => {
     if (sortField === field) {
@@ -438,7 +452,7 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/70 dark:divide-slate-700/70 text-sm">
-                {filteredTransaksi.map((trx, index) => {
+                {paginatedTransaksi.items.map((trx, index) => {
                   const isBusy = processingId === trx.idTransaksi;
                   const isConfirmingReject = confirmRejectId === trx.idTransaksi;
                   const isUmum = trx.jenisDonatur === 'Umum' || trx.idDonatur === 'UMUM';
@@ -454,7 +468,7 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                       className="odd:bg-white/90 even:bg-emerald-50/55 dark:odd:bg-slate-900/75 dark:even:bg-slate-800/65 hover:bg-teal-50/80 dark:hover:bg-emerald-950/45 transition-colors align-top"
                     >
                       <td className="py-4 pl-5 pr-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
-                        {index + 1}
+                        {paginatedTransaksi.startIndex + index + 1}
                       </td>
 
                       <td className="py-4 px-4 min-w-0 max-w-[200px]">
@@ -658,6 +672,19 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
               </tbody>
             </table>
           </div>
+        )}
+        {!isLoading && filteredTransaksi.length > 0 && (
+          <PaginationBar
+            totalItems={filteredTransaksi.length}
+            currentPage={paginatedTransaksi.safePage}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setCurrentPage(1);
+            }}
+            itemLabel="transaksi"
+          />
         )}
       </section>
 

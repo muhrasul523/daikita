@@ -21,7 +21,7 @@
 // ==================== KONFIGURASI DEFAULT ====================
 const DRIVE_FOLDER_ID = '1KqfNK8yLOpb-7Ew6KXkfJoNU6XKmzK73';
 
-const NAMA_LEMBAGA = 'DAIKITA - Dakwah Pelosok';
+const NAMA_LEMBAGA = 'DAIKITA — Dakwah Pelosok';
 const TAGLINE_LEMBAGA = 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
 const APP_PUBLIC_URL = 'https://daikita.duwd.web.id/';
 const APP_BAYAR_URL = 'https://daikita.duwd.web.id/#/bayar';
@@ -29,12 +29,18 @@ const APP_ADMIN_URL = 'https://daikita.duwd.web.id/#/admin';
 const DEFAULT_LOGO_URL = 'https://lh3.googleusercontent.com/d/1OOSQydygv0K9SNcQUXQTqQyduW57mv4Y';
 
 const ADMIN_SESSION_TTL_SEC = 21600; // 6 jam
+const PUB_CONFIG_CACHE_KEY = 'DAIKITA_PUB_CFG_V2';
+const PUB_CONFIG_CACHE_TTL_SEC = 300; // 5 menit
+const LOOKUP_CACHE_PREFIX = 'DAIKITA_WA_V2_';
+const LOOKUP_CACHE_TTL_SEC = 180; // 3 menit
 
 const DEFAULT_WA_ENDPOINT = 'https://www.rechat.id/api/v1/messages';
 const DEFAULT_WA_API_KEY = 'wag_8d4afa8dfa57f45f95961017e050b36b15de17edd2fdc542';
+const DEFAULT_CALL_CENTER_LABEL = 'Call Center Admin DAIKITA';
+const DEFAULT_CALL_CENTER_WA = '6281243086241';
 
 const DEFAULT_EMAIL_ALIAS = 'lajnahdai.dpp@gmail.com';
-const DEFAULT_EMAIL_SENDER_NAME = 'DAIKITA - Dakwah Pelosok';
+const DEFAULT_EMAIL_SENDER_NAME = 'DAIKITA — Dakwah Pelosok';
 
 const TRANSFER_MIN_DATE = '2026-01-01';
 
@@ -45,6 +51,9 @@ const INFO_REKENING_DEFAULT = [
     atasNama: 'LAJNAH DAI'
   }
 ];
+
+const DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE =
+  "Assalamu'alaikum Admin {lembaga}.\n\nSaya ingin melakukan konfirmasi manual penyaluran donasi *Dakwah Pelosok*:\n• Nama Donatur: *{nama}*\n• ID Donatur: {id_donatur}\n• No. WhatsApp: {no_wa}\n• Periode Donasi: *{bulan}*\n• Tanggal Transfer: {tanggal_transfer}\n• Nominal Transfer: *{nominal}*\n• Keterangan: {keterangan}\n• Bukti Transfer: {link_bukti}\n\nMohon dibantu verifikasinya ya Admin. Jazakumullahu khairan.";
 
 /** Pesan 1: Notifikasi Awal Pendaftaran Donatur Baru (rotasi anti-spam) */
 const DEFAULT_WA_TEMPLATES = [
@@ -649,6 +658,17 @@ function doPost(e) {
     const payload = parseRequestBody_(e);
     const action = String(payload.action || '').trim();
 
+    // Deteksi Webhook masuk dari ReChat (POST JSON tanpa field "action")
+    if (
+      !action &&
+      payload &&
+      (payload.event ||
+        (payload.data &&
+          (payload.data.is_group !== undefined || payload.data.chat || payload.data.from)))
+    ) {
+      return jsonResponse_(handleRechatWebhook_(payload));
+    }
+
     if (!action) {
       return jsonResponse_({
         status: 'error',
@@ -700,6 +720,7 @@ function doPost(e) {
       updateStatusDonatur: true,
       updateStatusGrupDonatur: true,
       bulkUpdateStatusGrupDonatur: true,
+      syncGroupMembers: true,
       sendBroadcastSingle: true,
       scheduleBroadcast: true,
       processQueue: true,
@@ -759,6 +780,9 @@ function doPost(e) {
       case 'bulkUpdateStatusGrupDonatur':
         result = handleBulkUpdateStatusGrupDonatur_(payload);
         break;
+      case 'syncGroupMembers':
+        result = handleSyncGroupMembers_(payload);
+        break;
       case 'savePengaturan':
         result = handleSavePengaturan_(payload);
         break;
@@ -808,13 +832,21 @@ function doPost(e) {
 }
 
 // ==================== HANDLER PENGATURAN & KONFIGURASI ====================
+function sanitizeLegacyBrandText_(val) {
+  return String(val || '')
+    .replace(/kafalah\s*da['’`]?i/gi, 'Dakwah Pelosok')
+    .replace(/\bDAIKITA\s*-\s*Dakwah Pelosok/gi, 'DAIKITA — Dakwah Pelosok')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function buildDefaultSettingsMap_() {
   return {
     namaLembaga: NAMA_LEMBAGA,
     tagline: TAGLINE_LEMBAGA,
     logoUrl: DEFAULT_LOGO_URL,
     qrisUrl: '',
-    qrisMerchantName: 'DAIKITA - Dakwah Pelosok',
+    qrisMerchantName: 'DAIKITA — Dakwah Pelosok',
     showQris: 'true',
     showRekening: 'true',
     defaultNominal: '50000',
@@ -828,11 +860,15 @@ function buildDefaultSettingsMap_() {
     waFollowupTemplates: JSON.stringify(DEFAULT_WA_FOLLOWUP_TEMPLATES),
     waFollowupDelaySec: '60',
     waReminderTemplates: JSON.stringify(DEFAULT_WA_REMINDER_TEMPLATES),
-    waGroupName: 'Donatur Tetap DAIKITA - Dakwah Pelosok',
+    showWaGroupPublic: 'true',
+    waGroupName: 'Donatur Tetap DAIKITA — Dakwah Pelosok',
     waGroupLink: '',
     waGroupId: '',
+    callCenterWa: DEFAULT_CALL_CENTER_WA,
+    callCenterLabel: DEFAULT_CALL_CENTER_LABEL,
+    waManualConfirmTemplate: DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE,
     enableAdminWaGroupNotif: 'false',
-    adminWaGroupName: 'Grup Admin DAIKITA - Dakwah Pelosok',
+    adminWaGroupName: 'Grup Admin DAIKITA — Dakwah Pelosok',
     adminWaGroupLink: '',
     adminWaGroupId: '',
     enableEmailNotif: 'true',
@@ -925,16 +961,16 @@ function loadConfigObject_(ss) {
   const delayNum = parseNumber_(rawMap.waFollowupDelaySec);
 
   return {
-    namaLembaga: String(rawMap.namaLembaga || NAMA_LEMBAGA).trim() || NAMA_LEMBAGA,
+    namaLembaga: sanitizeLegacyBrandText_(rawMap.namaLembaga || NAMA_LEMBAGA) || NAMA_LEMBAGA,
     tagline: String(rawMap.tagline || TAGLINE_LEMBAGA).trim() || TAGLINE_LEMBAGA,
     logoUrl: String(rawMap.logoUrl || DEFAULT_LOGO_URL).trim() || DEFAULT_LOGO_URL,
     qrisUrl: String(rawMap.qrisUrl || '').trim(),
-    qrisMerchantName: String(rawMap.qrisMerchantName || 'DAIKITA - Dakwah Pelosok').trim(),
+    qrisMerchantName: sanitizeLegacyBrandText_(rawMap.qrisMerchantName || NAMA_LEMBAGA) || NAMA_LEMBAGA,
     showQris: String(rawMap.showQris || 'true').toLowerCase() !== 'false',
     showRekening: String(rawMap.showRekening || 'true').toLowerCase() !== 'false',
     defaultNominal: parseNumber_(rawMap.defaultNominal) || 50000,
     defaultTglPengingat: Math.min(31, Math.max(1, parseNumber_(rawMap.defaultTglPengingat) || 5)),
-    catatanPembayaran: String(rawMap.catatanPembayaran || '').trim(),
+    catatanPembayaran: sanitizeLegacyBrandText_(rawMap.catatanPembayaran || ''),
     infoRekening: parsedRekening,
     enableWaNotif: String(rawMap.enableWaNotif || 'true').toLowerCase() !== 'false',
     waEndpointUrl: effectiveWaEndpoint,
@@ -943,16 +979,21 @@ function loadConfigObject_(ss) {
     waFollowupTemplates: parsedWaFollowupTemplates,
     waFollowupDelaySec: delayNum >= 15 && delayNum <= 600 ? delayNum : 60,
     waReminderTemplates: parsedWaReminderTemplates,
-    waGroupName: String(rawMap.waGroupName || 'Donatur Tetap DAIKITA - Dakwah Pelosok').trim(),
+    showWaGroupPublic: String(rawMap.showWaGroupPublic || 'true').toLowerCase() !== 'false',
+    waGroupName: sanitizeLegacyBrandText_(rawMap.waGroupName || 'Donatur Tetap DAIKITA — Dakwah Pelosok'),
     waGroupLink: String(rawMap.waGroupLink || '').trim(),
     waGroupId: String(rawMap.waGroupId || '').trim(),
+    callCenterWa: safeNormalizeOrKeep_(rawMap.callCenterWa || ''),
+    callCenterLabel: String(rawMap.callCenterLabel || DEFAULT_CALL_CENTER_LABEL).trim() || DEFAULT_CALL_CENTER_LABEL,
+    waManualConfirmTemplate:
+      String(rawMap.waManualConfirmTemplate || '').trim() || DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE,
     enableAdminWaGroupNotif: String(rawMap.enableAdminWaGroupNotif || 'false').toLowerCase() === 'true',
-    adminWaGroupName: String(rawMap.adminWaGroupName || 'Grup Admin DAIKITA - Dakwah Pelosok').trim(),
+    adminWaGroupName: sanitizeLegacyBrandText_(rawMap.adminWaGroupName || 'Grup Admin DAIKITA — Dakwah Pelosok'),
     adminWaGroupLink: String(rawMap.adminWaGroupLink || '').trim(),
     adminWaGroupId: String(rawMap.adminWaGroupId || '').trim(),
     enableEmailNotif: String(rawMap.enableEmailNotif || 'true').toLowerCase() !== 'false',
     emailSenderAlias: effectiveEmailAlias,
-    emailSenderName: effectiveEmailName,
+    emailSenderName: sanitizeLegacyBrandText_(effectiveEmailName) || DEFAULT_EMAIL_SENDER_NAME,
     emailTemplateDaftar: parsedEmailDaftar,
     emailTemplateReminder: parsedEmailReminder,
     emailTemplates: [parsedEmailDaftar, parsedEmailReminder]
@@ -1040,17 +1081,25 @@ function handleSavePengaturan_(payload) {
   const delayVal = parseNumber_(payload.waFollowupDelaySec);
   const safeDelay = delayVal >= 15 && delayVal <= 600 ? delayVal : current.waFollowupDelaySec || 60;
 
+  const rawCallCenterWa =
+    payload.callCenterWa !== undefined ? String(payload.callCenterWa || '').trim() : current.callCenterWa;
+  const cleanCallCenterWa = rawCallCenterWa ? safeNormalizeOrKeep_(rawCallCenterWa) : '';
+
   const updatedMap = {
-    namaLembaga: String(payload.namaLembaga || current.namaLembaga).trim() || NAMA_LEMBAGA,
+    namaLembaga: sanitizeLegacyBrandText_(payload.namaLembaga || current.namaLembaga) || NAMA_LEMBAGA,
     tagline: String(payload.tagline || current.tagline).trim() || TAGLINE_LEMBAGA,
     logoUrl: logoUrl,
     qrisUrl: qrisUrl,
-    qrisMerchantName: String(payload.qrisMerchantName !== undefined ? payload.qrisMerchantName : current.qrisMerchantName).trim(),
+    qrisMerchantName: sanitizeLegacyBrandText_(
+      payload.qrisMerchantName !== undefined ? payload.qrisMerchantName : current.qrisMerchantName
+    ),
     showQris: payload.showQris === false ? 'false' : 'true',
     showRekening: payload.showRekening === false ? 'false' : 'true',
     defaultNominal: String(parseNumber_(payload.defaultNominal) || current.defaultNominal || 50000),
     defaultTglPengingat: String(Math.min(31, Math.max(1, parseNumber_(payload.defaultTglPengingat) || current.defaultTglPengingat || 5))),
-    catatanPembayaran: String(payload.catatanPembayaran !== undefined ? payload.catatanPembayaran : current.catatanPembayaran).trim(),
+    catatanPembayaran: sanitizeLegacyBrandText_(
+      payload.catatanPembayaran !== undefined ? payload.catatanPembayaran : current.catatanPembayaran
+    ),
     infoRekening: JSON.stringify(rekeningInput.length > 0 ? rekeningInput : current.infoRekening),
     enableWaNotif: payload.enableWaNotif === false ? 'false' : 'true',
     waEndpointUrl: String(payload.waEndpointUrl !== undefined ? payload.waEndpointUrl : current.waEndpointUrl).trim() || DEFAULT_WA_ENDPOINT,
@@ -1059,16 +1108,34 @@ function handleSavePengaturan_(payload) {
     waFollowupTemplates: JSON.stringify(waFollowupInput.length > 0 ? waFollowupInput : current.waFollowupTemplates),
     waFollowupDelaySec: String(safeDelay),
     waReminderTemplates: JSON.stringify(waReminderInput.length > 0 ? waReminderInput : current.waReminderTemplates),
-    waGroupName: String(payload.waGroupName !== undefined ? payload.waGroupName : current.waGroupName).trim(),
+    showWaGroupPublic: payload.showWaGroupPublic === false ? 'false' : 'true',
+    waGroupName: sanitizeLegacyBrandText_(
+      payload.waGroupName !== undefined ? payload.waGroupName : current.waGroupName
+    ),
     waGroupLink: String(payload.waGroupLink !== undefined ? payload.waGroupLink : current.waGroupLink).trim(),
     waGroupId: String(payload.waGroupId !== undefined ? payload.waGroupId : current.waGroupId).trim(),
+    callCenterWa: cleanCallCenterWa,
+    callCenterLabel:
+      String(payload.callCenterLabel !== undefined ? payload.callCenterLabel : current.callCenterLabel).trim() ||
+      DEFAULT_CALL_CENTER_LABEL,
+    waManualConfirmTemplate:
+      String(
+        payload.waManualConfirmTemplate !== undefined
+          ? payload.waManualConfirmTemplate
+          : current.waManualConfirmTemplate
+      ).trim() || DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE,
     enableAdminWaGroupNotif: payload.enableAdminWaGroupNotif === true ? 'true' : 'false',
-    adminWaGroupName: String(payload.adminWaGroupName !== undefined ? payload.adminWaGroupName : current.adminWaGroupName).trim(),
+    adminWaGroupName: sanitizeLegacyBrandText_(
+      payload.adminWaGroupName !== undefined ? payload.adminWaGroupName : current.adminWaGroupName
+    ),
     adminWaGroupLink: String(payload.adminWaGroupLink !== undefined ? payload.adminWaGroupLink : current.adminWaGroupLink).trim(),
     adminWaGroupId: String(payload.adminWaGroupId !== undefined ? payload.adminWaGroupId : current.adminWaGroupId).trim(),
     enableEmailNotif: payload.enableEmailNotif === false ? 'false' : 'true',
     emailSenderAlias: String(payload.emailSenderAlias !== undefined ? payload.emailSenderAlias : current.emailSenderAlias).trim() || DEFAULT_EMAIL_ALIAS,
-    emailSenderName: String(payload.emailSenderName !== undefined ? payload.emailSenderName : current.emailSenderName).trim() || DEFAULT_EMAIL_SENDER_NAME,
+    emailSenderName:
+      sanitizeLegacyBrandText_(
+        payload.emailSenderName !== undefined ? payload.emailSenderName : current.emailSenderName
+      ) || DEFAULT_EMAIL_SENDER_NAME,
     emailTemplateDaftar: JSON.stringify(emailDaftarInput),
     emailTemplateReminder: JSON.stringify(emailReminderInput),
     emailTemplates: JSON.stringify([emailDaftarInput, emailReminderInput])
@@ -1076,6 +1143,7 @@ function handleSavePengaturan_(payload) {
 
   writeSettingsMap_(sheet, updatedMap);
   SpreadsheetApp.flush();
+  invalidatePublicConfigCache_();
 
   return {
     status: 'success',
@@ -1420,7 +1488,58 @@ function handleLoginAdmin_(payload) {
   };
 }
 
+function invalidatePublicConfigCache_() {
+  try {
+    CacheService.getScriptCache().remove(PUB_CONFIG_CACHE_KEY);
+  } catch (e) {
+    // abaikan error cache
+  }
+}
+
+function invalidateDonorLookupCache_(noWa) {
+  const norm = safeNormalizeOrKeep_(noWa);
+  if (!norm) return;
+  try {
+    CacheService.getScriptCache().remove(LOOKUP_CACHE_PREFIX + norm);
+  } catch (e) {
+    // abaikan error cache
+  }
+}
+
+function invalidateDonorLookupCacheList_(waList) {
+  if (!Array.isArray(waList) || waList.length === 0) return;
+  const keys = [];
+  const seen = {};
+  for (let i = 0; i < waList.length; i++) {
+    const norm = safeNormalizeOrKeep_(waList[i]);
+    if (norm && !seen[norm]) {
+      seen[norm] = true;
+      keys.push(LOOKUP_CACHE_PREFIX + norm);
+    }
+  }
+  if (keys.length === 0) return;
+  try {
+    const cache = CacheService.getScriptCache();
+    // removeAll menerima array kunci
+    for (let i = 0; i < keys.length; i += 100) {
+      cache.removeAll(keys.slice(i, i + 100));
+    }
+  } catch (e) {
+    // abaikan error cache
+  }
+}
+
 function getPublicConfig_() {
+  try {
+    const cached = CacheService.getScriptCache().get(PUB_CONFIG_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed && parsed.config) return parsed;
+    }
+  } catch (e) {
+    // lanjut baca sheet
+  }
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss.getSheetByName(SHEET_NAMES.PENGATURAN)) {
     setupDatabase();
@@ -1447,9 +1566,13 @@ function getPublicConfig_() {
     waFollowupTemplates: [],
     waFollowupDelaySec: fullCfg.waFollowupDelaySec,
     waReminderTemplates: [],
+    showWaGroupPublic: fullCfg.showWaGroupPublic,
     waGroupName: fullCfg.waGroupName,
     waGroupLink: fullCfg.waGroupLink,
     waGroupId: '',
+    callCenterWa: fullCfg.callCenterWa,
+    callCenterLabel: fullCfg.callCenterLabel,
+    waManualConfirmTemplate: fullCfg.waManualConfirmTemplate,
     enableAdminWaGroupNotif: false,
     adminWaGroupName: '',
     adminWaGroupLink: '',
@@ -1462,10 +1585,141 @@ function getPublicConfig_() {
     emailTemplates: []
   };
 
-  return {
+  const payload = {
     config: publicConfig,
     panitia: []
   };
+
+  try {
+    CacheService.getScriptCache().put(
+      PUB_CONFIG_CACHE_KEY,
+      JSON.stringify(payload),
+      PUB_CONFIG_CACHE_TTL_SEC
+    );
+  } catch (e) {
+    // abaikan error cache
+  }
+
+  return payload;
+}
+
+function rowArrayToHeaderObject_(headers, rowVals) {
+  const obj = {};
+  for (let c = 0; c < headers.length; c++) {
+    const h = String(headers[c] || '').trim();
+    if (h) obj[h] = rowVals[c];
+  }
+  return obj;
+}
+
+function findDonorRowFast_(donaturSheet, normalizedWa) {
+  const lastRow = donaturSheet.getLastRow();
+  const lastCol = donaturSheet.getLastColumn();
+  if (lastRow <= 1 || lastCol <= 0) return null;
+
+  const headers = donaturSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let waCol = 0;
+  for (let c = 0; c < headers.length; c++) {
+    if (String(headers[c] || '').trim() === 'No_WA') {
+      waCol = c + 1;
+      break;
+    }
+  }
+  if (!waCol) return null;
+
+  const colRange = donaturSheet.getRange(2, waCol, lastRow - 1, 1);
+
+  // 1. Exact match via TextFinder (sangat cepat bahkan untuk puluhan ribu baris)
+  const exactCell = colRange.createTextFinder(normalizedWa).matchEntireCell(true).findNext();
+  if (exactCell) {
+    const rowVals = donaturSheet.getRange(exactCell.getRow(), 1, 1, lastCol).getValues()[0];
+    return rowArrayToHeaderObject_(headers, rowVals);
+  }
+
+  // 2. Fallback untuk nomor lama yang mungkin masih tersimpan format 08... atau +628...
+  const suffix = normalizedWa.replace(/^62/, '');
+  if (suffix && suffix.length >= 8) {
+    const partialMatches = colRange.createTextFinder(suffix).matchEntireCell(false).findAll();
+    for (let i = 0; i < partialMatches.length; i++) {
+      const candidateVal = partialMatches[i].getValue();
+      if (safeNormalizeOrKeep_(candidateVal) === normalizedWa) {
+        const rowVals = donaturSheet.getRange(partialMatches[i].getRow(), 1, 1, lastCol).getValues()[0];
+        return rowArrayToHeaderObject_(headers, rowVals);
+      }
+    }
+  }
+
+  return null;
+}
+
+function findDonorTransactionsFast_(txSheet, idDonatur, normalizedWa) {
+  const lastRow = txSheet.getLastRow();
+  const lastCol = txSheet.getLastColumn();
+  if (lastRow <= 1 || lastCol <= 0) return [];
+
+  const headers = txSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let idCol = 0;
+  let waCol = 0;
+  for (let c = 0; c < headers.length; c++) {
+    const h = String(headers[c] || '').trim();
+    if (h === 'ID_Donatur') idCol = c + 1;
+    if (h === 'No_WA') waCol = c + 1;
+  }
+
+  const matchedRowMap = {};
+  if (idCol && idDonatur) {
+    const idHits = txSheet
+      .getRange(2, idCol, lastRow - 1, 1)
+      .createTextFinder(idDonatur)
+      .matchEntireCell(true)
+      .findAll();
+    for (let i = 0; i < idHits.length; i++) {
+      matchedRowMap[idHits[i].getRow()] = true;
+    }
+  }
+
+  if (waCol && normalizedWa) {
+    const waColRange = txSheet.getRange(2, waCol, lastRow - 1, 1);
+    const waHits = waColRange.createTextFinder(normalizedWa).matchEntireCell(true).findAll();
+    for (let i = 0; i < waHits.length; i++) {
+      matchedRowMap[waHits[i].getRow()] = true;
+    }
+    const suffix = normalizedWa.replace(/^62/, '');
+    if (waHits.length === 0 && suffix && suffix.length >= 8) {
+      const partialWaHits = waColRange.createTextFinder(suffix).matchEntireCell(false).findAll();
+      for (let i = 0; i < partialWaHits.length; i++) {
+        if (safeNormalizeOrKeep_(partialWaHits[i].getValue()) === normalizedWa) {
+          matchedRowMap[partialWaHits[i].getRow()] = true;
+        }
+      }
+    }
+  }
+
+  const rowNums = Object.keys(matchedRowMap)
+    .map(function (k) { return parseInt(k, 10); })
+    .filter(function (n) { return !isNaN(n) && n >= 2; })
+    .sort(function (a, b) { return a - b; });
+
+  if (rowNums.length === 0) return [];
+
+  // Baca baris yang cocok secara ringkas (grupkan baris berurutan atau pakai RangeList)
+  const rawObjects = [];
+  const a1Ranges = rowNums.map(function (r) {
+    return txSheet.getRange(r, 1, 1, lastCol).getA1Notation();
+  });
+
+  // Batch via getRangeList untuk meminimalkan RPC ke Google Sheets
+  const CHUNK_SIZE = 40;
+  for (let start = 0; start < a1Ranges.length; start += CHUNK_SIZE) {
+    const slice = a1Ranges.slice(start, start + CHUNK_SIZE);
+    const ranges = txSheet.getRangeList(slice).getRanges();
+    for (let i = 0; i < ranges.length; i++) {
+      const vals = ranges[i].getValues()[0];
+      rawObjects.push(rowArrayToHeaderObject_(headers, vals));
+    }
+  }
+
+  return rawObjects;
 }
 
 function handleLookupDonaturByWa_(payload) {
@@ -1479,28 +1733,52 @@ function handleLookupDonaturByWa_(payload) {
   }
 
   const normalizedWa = waCheck.normalized;
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss.getSheetByName(SHEET_NAMES.DONATUR) || !ss.getSheetByName(SHEET_NAMES.TRANSAKSI)) {
-    setupDatabase();
-  }
+  const forceRefresh = Boolean(payload.forceRefresh);
+  const cacheKey = LOOKUP_CACHE_PREFIX + normalizedWa;
 
-  const allDonatur = readSheetAsObjects_(ss.getSheetByName(SHEET_NAMES.DONATUR));
-  let matchedRow = null;
-  for (let i = 0; i < allDonatur.length; i++) {
-    if (safeNormalizeOrKeep_(allDonatur[i].No_WA) === normalizedWa) {
-      matchedRow = allDonatur[i];
-      break;
+  if (!forceRefresh) {
+    try {
+      const cachedRaw = CacheService.getScriptCache().get(cacheKey);
+      if (cachedRaw) {
+        const cachedData = JSON.parse(cachedRaw);
+        if (cachedData && typeof cachedData.found === 'boolean') {
+          return {
+            status: 'success',
+            message: cachedData.found
+              ? 'Data donatur ditemukan.'
+              : 'Nomor belum terdaftar sebagai donatur.',
+            data: cachedData
+          };
+        }
+      }
+    } catch (e) {
+      // lanjut lookup langsung ke sheet
     }
   }
 
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const donaturSheet = ss.getSheetByName(SHEET_NAMES.DONATUR);
+  const txSheet = ss.getSheetByName(SHEET_NAMES.TRANSAKSI);
+  if (!donaturSheet || !txSheet) {
+    setupDatabase();
+  }
+
+  const matchedRow = findDonorRowFast_(ss.getSheetByName(SHEET_NAMES.DONATUR), normalizedWa);
+
   if (!matchedRow) {
+    const notFoundData = {
+      found: false,
+      normalizedWa: normalizedWa
+    };
+    try {
+      CacheService.getScriptCache().put(cacheKey, JSON.stringify(notFoundData), 60);
+    } catch (e) {
+      // abaikan
+    }
     return {
       status: 'success',
       message: 'Nomor belum terdaftar sebagai donatur.',
-      data: {
-        found: false,
-        normalizedWa: normalizedWa
-      }
+      data: notFoundData
     };
   }
 
@@ -1525,8 +1803,14 @@ function handleLookupDonaturByWa_(payload) {
     statusGrupWa: normalizeStatusGrup_(matchedRow.Status_Grup_WA)
   };
 
-  // Ambil hanya transaksi milik donatur tersebut saja
-  const transaksi = readSheetAsObjects_(ss.getSheetByName(SHEET_NAMES.TRANSAKSI))
+  // Ambil hanya baris transaksi milik donatur ini via TextFinder (tanpa scan seluruh sheet)
+  const rawTxRows = findDonorTransactionsFast_(
+    ss.getSheetByName(SHEET_NAMES.TRANSAKSI),
+    donatur.idDonatur,
+    normalizedWa
+  );
+
+  const transaksi = rawTxRows
     .filter(function (row) {
       const jenis = normalizeJenisDonatur_(row.Jenis_Donatur, row.ID_Donatur);
       if (jenis === 'Umum') return false;
@@ -1570,15 +1854,26 @@ function handleLookupDonaturByWa_(payload) {
       return (b.tanggalTransfer || b.waktuInput).localeCompare(a.tanggalTransfer || a.waktuInput);
     });
 
+  const foundData = {
+    found: true,
+    normalizedWa: normalizedWa,
+    donatur: donatur,
+    transaksi: transaksi
+  };
+
+  try {
+    const serialized = JSON.stringify(foundData);
+    if (serialized.length < 95000) {
+      CacheService.getScriptCache().put(cacheKey, serialized, LOOKUP_CACHE_TTL_SEC);
+    }
+  } catch (e) {
+    // abaikan jika melebihi kapasitas cache
+  }
+
   return {
     status: 'success',
     message: 'Data donatur ditemukan.',
-    data: {
-      found: true,
-      normalizedWa: normalizedWa,
-      donatur: donatur,
-      transaksi: transaksi
-    }
+    data: foundData
   };
 }
 
@@ -1850,6 +2145,7 @@ function handleRegisterDonatur_(payload) {
     'Status_Grup_WA'
   ], ['Nominal_Komitmen']);
   SpreadsheetApp.flush();
+  invalidateDonorLookupCache_(normalizedWa);
 
   const createdDonatur = {
     idDonatur: idDonatur,
@@ -1997,6 +2293,10 @@ function handleUpdateDonaturMandiri_(payload) {
   setCell('Tgl_Jatuh_Tempo', tglJatuhTempo);
   setCell('Minat_Grup_WA', minatGrupWa, '@');
   SpreadsheetApp.flush();
+  invalidateDonorLookupCache_(originalNoWa);
+  if (newNoWa !== originalNoWa) {
+    invalidateDonorLookupCache_(newNoWa);
+  }
 
   const updatedDonatur = {
     idDonatur: idDonatur,
@@ -2163,11 +2463,13 @@ function renderNotifTemplate_(templateStr, donatur, config, options) {
   const bulanLabel = formatBulanLabelServer_(bulanYm);
 
   const groupLink = String(config.waGroupLink || '').trim();
-  const groupName = String(config.waGroupName || 'Donatur Tetap DAIKITA - Dakwah Pelosok').trim();
+  const groupName = String(config.waGroupName || 'Donatur Tetap DAIKITA — Dakwah Pelosok').trim();
+  const groupActive = config.showWaGroupPublic !== false;
   const shouldIncludeGroup =
-    opts.includeGroupLink !== undefined
+    groupActive &&
+    (opts.includeGroupLink !== undefined
       ? Boolean(opts.includeGroupLink)
-      : normalizeMinatGrup_(donatur.minatGrupWa) === 'Ya';
+      : normalizeMinatGrup_(donatur.minatGrupWa) === 'Ya');
 
   const linkGrupSection =
     shouldIncludeGroup && groupLink
@@ -2298,7 +2600,7 @@ function sendDonorNotifications_(donatur, config, options) {
     email: { attempted: false, ok: false, detail: 'Tidak dikirim.', templateIndex: 0 }
   };
 
-  const wantGroup = normalizeMinatGrup_(donatur.minatGrupWa) === 'Ya';
+  const wantGroup = config.showWaGroupPublic !== false && normalizeMinatGrup_(donatur.minatGrupWa) === 'Ya';
   const qrisMedia = config.showQris && config.qrisUrl ? config.qrisUrl : '';
 
   // 1. Kirim WhatsApp sesuai jenis pesan
@@ -3261,6 +3563,9 @@ function handleSubmitPembayaran_(payload) {
   }
 
   SpreadsheetApp.flush();
+  if (normalizedWa) {
+    invalidateDonorLookupCache_(normalizedWa);
+  }
 
   const config = loadConfigObject_(ss);
   const adminGroupNotif = sendAdminGroupNotifForPayment_(createdRows, config, {
@@ -3334,6 +3639,10 @@ function handleVerifikasiTransaksi_(payload) {
       }
 
       SpreadsheetApp.flush();
+      const txWaCol = indexMap.No_WA;
+      if (txWaCol) {
+        invalidateDonorLookupCache_(values[r][txWaCol - 1]);
+      }
       return {
         status: 'success',
         message: 'Transaksi ' + idTransaksi + ' diperbarui menjadi ' + newStatus + '.',
@@ -3390,6 +3699,7 @@ function handleUpdateStatusDonatur_(payload) {
     if (String(values[r][idCol - 1] || '').trim() === idDonatur) {
       sheet.getRange(r + 1, statusCol).setNumberFormat('@').setValue(newStatus);
       SpreadsheetApp.flush();
+      if (indexMap.No_WA) invalidateDonorLookupCache_(values[r][indexMap.No_WA - 1]);
       return {
         status: 'success',
         message: 'Status donatur ' + idDonatur + ' diubah menjadi ' + newStatus + '.',
@@ -3434,6 +3744,7 @@ function handleUpdateStatusGrupDonatur_(payload) {
       if (statusGrupCol) sheet.getRange(r + 1, statusGrupCol).setNumberFormat('@').setValue(statusGrupWa);
       if (hasMinat && minatGrupCol) sheet.getRange(r + 1, minatGrupCol).setNumberFormat('@').setValue(minatGrupWa);
       SpreadsheetApp.flush();
+      if (indexMap.No_WA) invalidateDonorLookupCache_(values[r][indexMap.No_WA - 1]);
       return {
         status: 'success',
         message: 'Status grup WA donatur ' + idDonatur + ' diperbarui menjadi ' + statusGrupWa + '.',
@@ -3469,19 +3780,23 @@ function handleBulkUpdateStatusGrupDonatur_(payload) {
 
   const indexMap = getHeaderIndexMap_(sheet);
   const idCol = indexMap.ID_Donatur || 1;
+  const waCol = indexMap.No_WA;
   const statusGrupCol = indexMap.Status_Grup_WA;
   const values = sheet.getDataRange().getValues();
   const updatedIds = [];
+  const invalidatedPhones = [];
 
   for (let r = 1; r < values.length; r++) {
     const id = String(values[r][idCol - 1] || '').trim();
     if (id && idSet[id]) {
       if (statusGrupCol) sheet.getRange(r + 1, statusGrupCol).setNumberFormat('@').setValue(statusGrupWa);
       updatedIds.push(id);
+      if (waCol) invalidatedPhones.push(values[r][waCol - 1]);
     }
   }
 
   SpreadsheetApp.flush();
+  invalidateDonorLookupCacheList_(invalidatedPhones);
   return {
     status: 'success',
     message: updatedIds.length + ' donatur diperbarui menjadi ' + statusGrupWa + '.',
@@ -3490,6 +3805,346 @@ function handleBulkUpdateStatusGrupDonatur_(payload) {
       statusGrupWa: statusGrupWa
     }
   };
+}
+
+// ==================== DETEKSI OTOMATIS ANGGOTA GRUP WA (API + SCRAB + WEBHOOK) ====================
+function extractPhonesFromAnyJson_(node, outSet) {
+  if (node === null || node === undefined) return;
+  if (typeof node === 'string' || typeof node === 'number') {
+    const str = String(node);
+    // Tangkap nomor JID (628...@s.whatsapp.net / @c.us) maupun nomor biasa
+    const matches = str.match(/(?:\+?62|0)8\d{7,13}/g);
+    if (matches) {
+      for (let i = 0; i < matches.length; i++) {
+        const norm = safeNormalizeOrKeep_(matches[i]);
+        if (norm && /^628\d{7,13}$/.test(norm)) {
+          outSet[norm] = true;
+        }
+      }
+    }
+    return;
+  }
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length; i++) {
+      extractPhonesFromAnyJson_(node[i], outSet);
+    }
+    return;
+  }
+  if (typeof node === 'object') {
+    const keys = Object.keys(node);
+    for (let i = 0; i < keys.length; i++) {
+      extractPhonesFromAnyJson_(node[keys[i]], outSet);
+    }
+  }
+}
+
+function fetchRechatGroupMemberPhones_(config) {
+  const apiKey = String(config.waApiKey || '').trim();
+  const groupId = String(config.waGroupId || '').trim();
+  if (!apiKey) {
+    return {
+      ok: false,
+      phones: [],
+      detail: 'API Key ReChat belum diisi di Pengaturan.'
+    };
+  }
+  if (!groupId) {
+    return {
+      ok: false,
+      phones: [],
+      detail: 'ID Grup WA Donatur (format xxxx@g.us) belum diisi di Pengaturan.'
+    };
+  }
+
+  const baseEndpoint = String(config.waEndpointUrl || DEFAULT_WA_ENDPOINT)
+    .trim()
+    .replace(/\/messages\/?$/i, '')
+    .replace(/\/+$/, '');
+  const encodedGroup = encodeURIComponent(groupId);
+  const candidateUrls = [
+    baseEndpoint + '/' + encodeURIComponent(apiKey) + '/groups/' + encodedGroup + '/participants',
+    baseEndpoint + '/' + encodeURIComponent(apiKey) + '/groups/' + encodedGroup,
+    baseEndpoint + '/groups/' + encodedGroup + '/participants',
+    baseEndpoint + '/groups/' + encodedGroup
+  ];
+
+  let lastStatus = 0;
+  for (let i = 0; i < candidateUrls.length; i++) {
+    try {
+      const resp = UrlFetchApp.fetch(candidateUrls[i], {
+        method: 'get',
+        headers: {
+          Authorization: 'Bearer ' + apiKey,
+          Accept: 'application/json'
+        },
+        muteHttpExceptions: true
+      });
+      const code = resp.getResponseCode();
+      lastStatus = code;
+      if (code >= 200 && code < 300) {
+        const text = resp.getContentText() || '';
+        const phoneSet = {};
+        try {
+          const parsed = JSON.parse(text);
+          extractPhonesFromAnyJson_(parsed, phoneSet);
+        } catch (parseErr) {
+          extractPhonesFromAnyJson_(text, phoneSet);
+        }
+        const phones = Object.keys(phoneSet);
+        if (phones.length > 0) {
+          return {
+            ok: true,
+            phones: phones,
+            detail: 'Berhasil menarik ' + phones.length + ' nomor anggota grup dari ReChat API.'
+          };
+        }
+      }
+    } catch (fetchErr) {
+      Logger.log('Cek endpoint grup ReChat (' + candidateUrls[i] + '): ' + fetchErr);
+    }
+  }
+
+  return {
+    ok: false,
+    phones: [],
+    detail:
+      'API ReChat belum menyediakan endpoint tarik daftar anggota grup secara langsung (HTTP ' +
+      (lastStatus || '-') +
+      '). Gunakan menu "Scrab Nomor" di ReChat lalu tempel/unggah ke kolom Cocokkan Scrab Nomor di sebelah, atau aktifkan Webhook Real-Time.'
+  };
+}
+
+function handleSyncGroupMembers_(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAMES.DONATUR);
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return { status: 'error', message: 'Belum ada data donatur terdaftar.' };
+  }
+  ensureSheetWithHeaders_(ss, SHEET_NAMES.DONATUR, HEADERS.Master_Donatur, {
+    textHeaders: ['Minat_Grup_WA', 'Status_Grup_WA']
+  });
+
+  const config = loadConfigObject_(ss);
+  const markOthersNotJoined = Boolean(payload.markOthersNotJoined);
+  const inputPhones = Array.isArray(payload.memberPhones) ? payload.memberPhones : [];
+
+  let source = 'rechat_api';
+  const memberSet = {};
+
+  if (inputPhones.length > 0) {
+    source = 'scrab_import';
+    for (let i = 0; i < inputPhones.length; i++) {
+      const norm = safeNormalizeOrKeep_(inputPhones[i]);
+      if (norm && /^628\d{7,13}$/.test(norm)) {
+        memberSet[norm] = true;
+      }
+    }
+    if (Object.keys(memberSet).length === 0) {
+      return {
+        status: 'error',
+        message: 'Tidak ada nomor WhatsApp Indonesia (628.../08...) yang valid ditemukan pada daftar yang dikirim.'
+      };
+    }
+  } else {
+    const apiRes = fetchRechatGroupMemberPhones_(config);
+    if (!apiRes.ok) {
+      return {
+        status: 'error',
+        message: apiRes.detail
+      };
+    }
+    apiRes.phones.forEach(function (p) {
+      memberSet[p] = true;
+    });
+  }
+
+  const totalExtracted = Object.keys(memberSet).length;
+  const indexMap = getHeaderIndexMap_(sheet);
+  const idCol = indexMap.ID_Donatur || 1;
+  const waCol = indexMap.No_WA;
+  const statusGrupCol = indexMap.Status_Grup_WA;
+  if (!waCol || !statusGrupCol) {
+    return { status: 'error', message: 'Kolom No_WA atau Status_Grup_WA tidak ditemukan di Master_Donatur.' };
+  }
+
+  const lastRow = sheet.getLastRow();
+  const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  const updatedColValues = [];
+  const updatedJoinedIds = [];
+  const updatedNotJoinedIds = [];
+  const invalidatedPhones = [];
+  let matchedDonors = 0;
+  let alreadyJoined = 0;
+  let hasAnyChange = false;
+
+  for (let i = 0; i < values.length; i++) {
+    const idDonatur = String(values[i][idCol - 1] || '').trim();
+    const donorWa = safeNormalizeOrKeep_(values[i][waCol - 1]);
+    const currentStatus = normalizeStatusGrup_(values[i][statusGrupCol - 1]);
+    let nextStatus = currentStatus;
+
+    if (donorWa && memberSet[donorWa]) {
+      matchedDonors++;
+      if (currentStatus === 'Sudah Bergabung') {
+        alreadyJoined++;
+      } else {
+        nextStatus = 'Sudah Bergabung';
+        updatedJoinedIds.push(idDonatur);
+        invalidatedPhones.push(donorWa);
+        hasAnyChange = true;
+      }
+    } else if (markOthersNotJoined && currentStatus === 'Sudah Bergabung') {
+      nextStatus = 'Belum Bergabung';
+      updatedNotJoinedIds.push(idDonatur);
+      if (donorWa) invalidatedPhones.push(donorWa);
+      hasAnyChange = true;
+    }
+
+    updatedColValues.push([nextStatus]);
+  }
+
+  if (hasAnyChange && updatedColValues.length > 0) {
+    sheet
+      .getRange(2, statusGrupCol, updatedColValues.length, 1)
+      .setNumberFormat('@')
+      .setValues(updatedColValues);
+    SpreadsheetApp.flush();
+    invalidateDonorLookupCacheList_(invalidatedPhones);
+  }
+
+  const summaryMsg =
+    'Deteksi selesai (' +
+    (source === 'scrab_import' ? 'Scrab Nomor' : 'ReChat API') +
+    '): ' +
+    matchedDonors +
+    ' donatur cocok di grup, ' +
+    updatedJoinedIds.length +
+    ' baru ditandai Sudah Bergabung' +
+    (updatedNotJoinedIds.length > 0 ? ', ' + updatedNotJoinedIds.length + ' diperbarui Belum Bergabung' : '') +
+    '.';
+
+  return {
+    status: 'success',
+    message: summaryMsg,
+    data: {
+      source: source,
+      totalExtracted: totalExtracted,
+      matchedDonors: matchedDonors,
+      newlyJoined: updatedJoinedIds.length,
+      newlyNotJoined: updatedNotJoinedIds.length,
+      alreadyJoined: alreadyJoined,
+      updatedJoinedIds: updatedJoinedIds,
+      updatedNotJoinedIds: updatedNotJoinedIds
+    }
+  };
+}
+
+function handleRechatWebhook_(payload) {
+  try {
+    const eventName = String(payload.event || '').trim().toLowerCase();
+    const data = payload.data || {};
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const config = loadConfigObject_(ss);
+    const targetGroupId = String(config.waGroupId || '').trim().toLowerCase();
+
+    // Hanya proses jika ID Grup WA Donatur sudah dikonfigurasi agar grup lain tidak salah tandai
+    if (!targetGroupId) {
+      return {
+        status: 'success',
+        message: 'Webhook diterima, namun ID Grup WA Donatur belum diatur di Pengaturan.'
+      };
+    }
+
+    const chatId = String(data.chat || data.group_id || data.group || '').trim().toLowerCase();
+    const isGroupEvent =
+      data.is_group === true ||
+      chatId.indexOf('@g.us') !== -1 ||
+      eventName.indexOf('group') !== -1;
+
+    if (!isGroupEvent || chatId !== targetGroupId) {
+      return {
+        status: 'success',
+        message: 'Webhook diterima (bukan aktivitas pada Grup WA Donatur target).'
+      };
+    }
+
+    // Kumpulkan nomor peserta/pengirim dari payload webhook
+    const candidateSet = {};
+    const directCandidates = [
+      data.from,
+      data.sender,
+      data.participant,
+      data.author,
+      data.phone
+    ];
+    for (let i = 0; i < directCandidates.length; i++) {
+      const norm = safeNormalizeOrKeep_(directCandidates[i]);
+      if (norm && /^628\d{7,13}$/.test(norm)) {
+        candidateSet[norm] = true;
+      }
+    }
+    if (Array.isArray(data.participants)) {
+      extractPhonesFromAnyJson_(data.participants, candidateSet);
+    }
+
+    const phones = Object.keys(candidateSet);
+    if (phones.length === 0) {
+      return {
+        status: 'success',
+        message: 'Webhook grup diterima (tidak ada nomor peserta yang terdeteksi).'
+      };
+    }
+
+    const sheet = ss.getSheetByName(SHEET_NAMES.DONATUR);
+    if (!sheet || sheet.getLastRow() <= 1) {
+      return { status: 'success', message: 'Webhook grup diterima (belum ada data donatur).' };
+    }
+
+    const indexMap = getHeaderIndexMap_(sheet);
+    const waCol = indexMap.No_WA;
+    const statusGrupCol = indexMap.Status_Grup_WA;
+    if (!waCol || !statusGrupCol) {
+      return { status: 'success', message: 'Webhook grup diterima (kolom Status_Grup_WA belum tersedia).' };
+    }
+
+    const isLeaveEvent =
+      eventName.indexOf('leave') !== -1 ||
+      eventName.indexOf('remove') !== -1 ||
+      String(data.action || '').toLowerCase() === 'remove' ||
+      String(data.action || '').toLowerCase() === 'leave';
+    const nextStatus = isLeaveEvent ? 'Belum Bergabung' : 'Sudah Bergabung';
+
+    const colRange = sheet.getRange(2, waCol, sheet.getLastRow() - 1, 1);
+    let updatedCount = 0;
+
+    for (let i = 0; i < phones.length; i++) {
+      const phone = phones[i];
+      const hit = colRange.createTextFinder(phone).matchEntireCell(true).findNext();
+      if (hit) {
+        const rowNum = hit.getRow();
+        const currVal = normalizeStatusGrup_(sheet.getRange(rowNum, statusGrupCol).getValue());
+        if (currVal !== nextStatus) {
+          sheet.getRange(rowNum, statusGrupCol).setNumberFormat('@').setValue(nextStatus);
+          invalidateDonorLookupCache_(phone);
+          updatedCount++;
+        }
+      }
+    }
+
+    if (updatedCount > 0) {
+      SpreadsheetApp.flush();
+    }
+
+    return {
+      status: 'success',
+      message: 'Webhook grup WA diproses (' + updatedCount + ' donatur diperbarui menjadi ' + nextStatus + ').'
+    };
+  } catch (err) {
+    return {
+      status: 'error',
+      message: 'Gagal memproses webhook ReChat: ' + (err && err.message ? err.message : String(err))
+    };
+  }
 }
 
 // (Sheet Data_Panitia telah dihapus dan digantikan oleh Akses_Admin)

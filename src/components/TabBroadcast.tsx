@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -28,6 +28,7 @@ import {
 import {
   Donatur,
   LembagaConfig,
+  PageSizeOption,
   ScheduleBroadcastItemPayload,
   ScheduledMessageItem,
   SendBroadcastSinglePayload,
@@ -49,6 +50,7 @@ import {
   normalizeWA,
   renderMessageTemplate,
 } from '../utils/formatters';
+import { PaginationBar, slicePaginated } from './PaginationBar';
 import { SearchableOption, SearchableSelect } from './SearchableSelect';
 
 interface TabBroadcastProps {
@@ -109,7 +111,12 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
   const [pulauFilter, setPulauFilter] = useState('');
   const [provinsiFilter, setProvinsiFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [donorPage, setDonorPage] = useState(1);
+  const [donorPageSize, setDonorPageSize] = useState<PageSizeOption>(10);
+  const [queuePage, setQueuePage] = useState(1);
+  const [queuePageSize, setQueuePageSize] = useState<PageSizeOption>(10);
 
   // Pengaturan Pesan & Jadwal
   const [messageKind, setMessageKind] = useState<BroadcastMessageKind>('reminder');
@@ -156,20 +163,34 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
     normalizeDriveImageUrl(config.qrisUrl)
   );
 
-  // Peta Status Bayar untuk bulan terpilih
+  // Peta Status Bayar untuk bulan terpilih (O(N+M) menggunakan Map)
   const donorStatusMap = useMemo(() => {
     const map = new Map<string, StatusBayarBulan>();
-    const monthTrx = transaksiList.filter((t) => t.bulanTagihan === selectedMonth);
+    const validIdSet = new Set<string>();
+    const validWaSet = new Set<string>();
+    const pendingIdSet = new Set<string>();
+    const pendingWaSet = new Set<string>();
+
+    transaksiList.forEach((t) => {
+      if (t.bulanTagihan !== selectedMonth) return;
+      const normWa = normalizeWA(t.noWa) || t.noWa;
+      if (t.statusVerifikasi === 'Valid') {
+        if (t.idDonatur && t.idDonatur !== '-') validIdSet.add(t.idDonatur);
+        if (normWa) validWaSet.add(normWa);
+      } else if (t.statusVerifikasi === 'Pending') {
+        if (t.idDonatur && t.idDonatur !== '-') pendingIdSet.add(t.idDonatur);
+        if (normWa) pendingWaSet.add(normWa);
+      }
+    });
+
     donaturList.forEach((d) => {
       const donorWa = normalizeWA(d.noWa) || d.noWa;
-      const matched = monthTrx.filter((t) => {
-        const byId = t.idDonatur && t.idDonatur !== '-' && t.idDonatur === d.idDonatur;
-        const byWa = donorWa && (normalizeWA(t.noWa) || t.noWa) === donorWa;
-        return byId || byWa;
-      });
-      if (matched.some((t) => t.statusVerifikasi === 'Valid')) {
+      if ((d.idDonatur && validIdSet.has(d.idDonatur)) || (donorWa && validWaSet.has(donorWa))) {
         map.set(d.idDonatur, 'Lunas');
-      } else if (matched.some((t) => t.statusVerifikasi === 'Pending')) {
+      } else if (
+        (d.idDonatur && pendingIdSet.has(d.idDonatur)) ||
+        (donorWa && pendingWaSet.has(donorWa))
+      ) {
         map.set(d.idDonatur, 'Menunggu Verifikasi');
       } else {
         map.set(d.idDonatur, 'Belum Bayar');
@@ -206,7 +227,7 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
   );
 
   const filteredDonors = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = deferredSearchQuery.trim().toLowerCase();
     return donaturList.filter((d) => {
       const st = donorStatusMap.get(d.idDonatur) || 'Belum Bayar';
       if (bayarFilter !== 'Semua' && st !== bayarFilter) return false;
@@ -247,8 +268,28 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
     pulauFilter,
     provinsiFilter,
     grupFilter,
-    searchQuery,
+    deferredSearchQuery,
   ]);
+
+  useEffect(() => {
+    setDonorPage(1);
+  }, [
+    selectedMonth,
+    bayarFilter,
+    aktifFilter,
+    tglFilter,
+    genderFilter,
+    pulauFilter,
+    provinsiFilter,
+    grupFilter,
+    deferredSearchQuery,
+    donorPageSize,
+  ]);
+
+  const paginatedDonors = useMemo(
+    () => slicePaginated(filteredDonors, donorPage, donorPageSize),
+    [filteredDonors, donorPage, donorPageSize]
+  );
 
   const selectedDonors = useMemo(() => {
     const idSet = new Set(selectedIds);
@@ -582,6 +623,15 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
     });
   }, [antreanPesan, queueSortField, queueSortDir]);
 
+  useEffect(() => {
+    setQueuePage(1);
+  }, [queueSortField, queueSortDir, queuePageSize]);
+
+  const paginatedQueue = useMemo(
+    () => slicePaginated(sortedQueue, queuePage, queuePageSize),
+    [sortedQueue, queuePage, queuePageSize]
+  );
+
   const pendingQueueCount = useMemo(
     () => antreanPesan.filter((q) => q.status === 'Menunggu').length,
     [antreanPesan]
@@ -789,10 +839,11 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
                 Tidak ada donatur yang cocok dengan filter di atas.
               </div>
             ) : (
-              filteredDonors.map((d, idx) => {
+              paginatedDonors.items.map((d, idx) => {
+                const absoluteIdx = paginatedDonors.startIndex + idx;
                 const checked = selectedIds.includes(d.idDonatur);
                 const st = donorStatusMap.get(d.idDonatur) || 'Belum Bayar';
-                const rowMsg = buildMessageForDonor(d, idx);
+                const rowMsg = buildMessageForDonor(d, absoluteIdx);
                 const rowWaMe = buildWaMeUrl(d.noWa, rowMsg);
 
                 return (
@@ -848,7 +899,7 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
                       </button>
                       <button
                         type="button"
-                        onClick={() => void handleCopyRowText(d, idx)}
+                        onClick={() => void handleCopyRowText(d, absoluteIdx)}
                         className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-emerald-700 cursor-pointer"
                         title="Salin teks pesan donatur ini"
                       >
@@ -869,6 +920,19 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
               })
             )}
           </div>
+          {filteredDonors.length > 0 && (
+            <PaginationBar
+              totalItems={filteredDonors.length}
+              currentPage={paginatedDonors.safePage}
+              pageSize={donorPageSize}
+              onPageChange={setDonorPage}
+              onPageSizeChange={(next) => {
+                setDonorPageSize(next);
+                setDonorPage(1);
+              }}
+              itemLabel="donatur"
+            />
+          )}
         </section>
 
         {/* KANAN: Komposer Pesan, Pengaturan Jeda & Jadwal, serta 3 Opsi Pengiriman */}
@@ -1338,7 +1402,7 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/70 dark:divide-slate-700/70 text-xs">
-                {sortedQueue.slice(0, 100).map((item) => (
+                {paginatedQueue.items.map((item) => (
                   <tr
                     key={item.idAntrean}
                     className="odd:bg-white/90 even:bg-emerald-50/40 dark:odd:bg-slate-900/75 dark:even:bg-slate-800/60 align-top"
@@ -1415,6 +1479,19 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
               </tbody>
             </table>
           </div>
+        )}
+        {sortedQueue.length > 0 && (
+          <PaginationBar
+            totalItems={sortedQueue.length}
+            currentPage={paginatedQueue.safePage}
+            pageSize={queuePageSize}
+            onPageChange={setQueuePage}
+            onPageSizeChange={(next) => {
+              setQueuePageSize(next);
+              setQueuePage(1);
+            }}
+            itemLabel="antrean"
+          />
         )}
       </section>
     </div>

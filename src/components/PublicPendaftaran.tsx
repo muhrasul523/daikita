@@ -154,9 +154,13 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
   const manualOverridePosRef = useRef<number | null>(null);
   const namaInputRef = useRef<HTMLInputElement | null>(null);
 
-  const safeGroupLink = useMemo(() => sanitizeExternalUrl(config.waGroupLink), [config.waGroupLink]);
+  const showGroupUi = config.showWaGroupPublic !== false;
+  const safeGroupLink = useMemo(
+    () => (showGroupUi ? sanitizeExternalUrl(config.waGroupLink) : ''),
+    [showGroupUi, config.waGroupLink]
+  );
   const waGroupLabel = useMemo(() => {
-    const raw = (config.waGroupName || 'Donatur Tetap DAIKITA - Dakwah Pelosok').trim();
+    const raw = (config.waGroupName || 'Donatur Tetap DAIKITA — Dakwah Pelosok').trim();
     return /^grup\s+whatsapp/i.test(raw) ? raw : `Grup WhatsApp "${raw}"`;
   }, [config.waGroupName]);
 
@@ -419,7 +423,7 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
       metodeDaftar: 'Mandiri',
       kodePerantara: '',
       namaPerantara: '-',
-      minatGrupWa,
+      minatGrupWa: showGroupUi ? minatGrupWa : 'Tidak',
     });
     setIsSubmitting(false);
 
@@ -819,11 +823,15 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
                   </div>
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                      Tanggal Pengingat &amp; Grup WA
+                      {showGroupUi ? 'Tanggal Pengingat & Grup WA' : 'Tanggal Pengingat Bulanan'}
                     </p>
                     <p className="mt-0.5 font-semibold text-slate-800 dark:text-slate-200 safe-wrap">
-                      Setiap tgl {existingMatch.donatur.tglJatuhTempo} · Grup WA:{' '}
-                      {existingMatch.donatur.minatGrupWa === 'Ya' ? 'Bersedia' : 'Cukup Japri'}
+                      Setiap tgl {existingMatch.donatur.tglJatuhTempo}
+                      {showGroupUi
+                        ? ` · Grup WA: ${
+                            existingMatch.donatur.minatGrupWa === 'Ya' ? 'Bersedia' : 'Cukup Japri'
+                          }`
+                        : ''}
                     </p>
                   </div>
                 </div>
@@ -1050,41 +1058,43 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <span className="block text-xs font-bold text-slate-700 dark:text-slate-200">
-                    Bergabung ke {waGroupLabel}?
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup">
-                    {(
-                      [
-                        { value: 'Ya', label: 'Ya, Bersedia Bergabung' },
-                        { value: 'Tidak', label: 'Tidak, Cukup via Japri' },
-                      ] as const
-                    ).map((opt) => {
-                      const selected = editMinatGrup === opt.value;
-                      return (
-                        <label
-                          key={opt.value}
-                          className={`min-h-[44px] flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold cursor-pointer select-none ${
-                            selected
-                              ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200'
-                              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="edit-minat-grup"
-                            value={opt.value}
-                            checked={selected}
-                            onChange={() => setEditMinatGrup(opt.value)}
-                            className="sr-only"
-                          />
-                          <span className="safe-wrap">{opt.label}</span>
-                        </label>
-                      );
-                    })}
+                {showGroupUi && (
+                  <div className="space-y-2">
+                    <span className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+                      Bergabung ke {waGroupLabel}?
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup">
+                      {(
+                        [
+                          { value: 'Ya', label: 'Ya, Bersedia Bergabung' },
+                          { value: 'Tidak', label: 'Tidak, Cukup via Japri' },
+                        ] as const
+                      ).map((opt) => {
+                        const selected = editMinatGrup === opt.value;
+                        return (
+                          <label
+                            key={opt.value}
+                            className={`min-h-[44px] flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold cursor-pointer select-none ${
+                              selected
+                                ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200'
+                                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="edit-minat-grup"
+                              value={opt.value}
+                              checked={selected}
+                              onChange={() => setEditMinatGrup(opt.value)}
+                              className="sr-only"
+                            />
+                            <span className="safe-wrap">{opt.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="flex flex-wrap gap-2.5 pt-1">
                   <button
@@ -1378,64 +1388,66 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
                 </div>
               </div>
 
-              {/* Minat Bergabung Grup WhatsApp (jelas tertulis Grup WhatsApp) */}
-              <div className="rounded-2xl border border-emerald-200/75 dark:border-emerald-800/70 bg-emerald-50/45 dark:bg-emerald-950/25 p-4 space-y-3">
-                <div className="flex items-start gap-2.5">
-                  <Users className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
-                  <div className="min-w-0">
-                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-100 safe-wrap">
-                      Bergabung ke {waGroupLabel}?
-                    </span>
-                    <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
-                      Dapatkan kabar penyaluran donasi dan perkembangan program Dakwah Pelosok
-                      melalui Grup WhatsApp resmi donatur.
-                    </p>
+              {/* Minat Bergabung Grup WhatsApp (hanya tampil jika diaktifkan di Pengaturan) */}
+              {showGroupUi && (
+                <div className="rounded-2xl border border-emerald-200/75 dark:border-emerald-800/70 bg-emerald-50/45 dark:bg-emerald-950/25 p-4 space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <Users className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <span className="block text-xs font-bold text-slate-800 dark:text-slate-100 safe-wrap">
+                        Bergabung ke {waGroupLabel}?
+                      </span>
+                      <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
+                        Dapatkan kabar penyaluran donasi dan perkembangan program Dakwah Pelosok
+                        melalui Grup WhatsApp resmi donatur.
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <div
-                  role="radiogroup"
-                  aria-label="Pilihan bergabung Grup WhatsApp Donatur"
-                  className="grid grid-cols-1 sm:grid-cols-2 gap-2.5"
-                >
-                  {(
-                    [
-                      { value: 'Ya', label: 'Ya, Bersedia Bergabung' },
-                      { value: 'Tidak', label: 'Tidak, Cukup via Japri' },
-                    ] as const
-                  ).map((opt) => {
-                    const selected = minatGrupWa === opt.value;
-                    return (
-                      <label
-                        key={opt.value}
-                        className={`min-h-[46px] flex items-center gap-2.5 rounded-2xl border px-3.5 py-2.5 text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none ${
-                          selected
-                            ? 'border-emerald-500 bg-white dark:bg-emerald-950/70 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20 shadow-sm'
-                            : 'border-slate-200/90 dark:border-slate-700 bg-white/85 dark:bg-slate-900/75 text-slate-700 dark:text-slate-200'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="pub-minat-grup"
-                          value={opt.value}
-                          checked={selected}
-                          onChange={() => setMinatGrupWa(opt.value)}
-                          className="sr-only"
-                        />
-                        <span
-                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                  <div
+                    role="radiogroup"
+                    aria-label="Pilihan bergabung Grup WhatsApp Donatur"
+                    className="grid grid-cols-1 sm:grid-cols-2 gap-2.5"
+                  >
+                    {(
+                      [
+                        { value: 'Ya', label: 'Ya, Bersedia Bergabung' },
+                        { value: 'Tidak', label: 'Tidak, Cukup via Japri' },
+                      ] as const
+                    ).map((opt) => {
+                      const selected = minatGrupWa === opt.value;
+                      return (
+                        <label
+                          key={opt.value}
+                          className={`min-h-[46px] flex items-center gap-2.5 rounded-2xl border px-3.5 py-2.5 text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none ${
                             selected
-                              ? 'border-emerald-600 bg-emerald-600'
-                              : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                              ? 'border-emerald-500 bg-white dark:bg-emerald-950/70 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20 shadow-sm'
+                              : 'border-slate-200/90 dark:border-slate-700 bg-white/85 dark:bg-slate-900/75 text-slate-700 dark:text-slate-200'
                           }`}
                         >
-                          {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-                        </span>
-                        <span className="safe-wrap">{opt.label}</span>
-                      </label>
-                    );
-                  })}
+                          <input
+                            type="radio"
+                            name="pub-minat-grup"
+                            value={opt.value}
+                            checked={selected}
+                            onChange={() => setMinatGrupWa(opt.value)}
+                            className="sr-only"
+                          />
+                          <span
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                              selected
+                                ? 'border-emerald-600 bg-emerald-600'
+                                : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                            }`}
+                          >
+                            {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                          </span>
+                          <span className="safe-wrap">{opt.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <button
                 type="submit"

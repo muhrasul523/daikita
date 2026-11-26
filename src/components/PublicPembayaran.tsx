@@ -15,6 +15,7 @@ import {
   Eye,
   FileText,
   History,
+  MessageCircle,
   Phone,
   QrCode,
   RefreshCw,
@@ -35,6 +36,7 @@ import {
   TransaksiDonasi,
 } from '../types';
 import {
+  buildManualConfirmWaUrl,
   buildMonthSequence,
   extractYearMonthFromDateStr,
   formatBulanLabel,
@@ -48,6 +50,7 @@ import {
   getDriveThumbnailFallback,
   getTodayIsoDate,
   normalizeDriveImageUrl,
+  normalizeWA,
   parseRupiahInput,
   previewAutoRenameFile,
   sanitizeExternalUrl,
@@ -67,7 +70,10 @@ interface PublicPembayaranProps {
     wa?: string;
   } | null;
   onClearPrefill?: () => void;
-  onLookupWa: (noWa: string) => Promise<{
+  onLookupWa: (
+    noWa: string,
+    options?: { forceRefresh?: boolean }
+  ) => Promise<{
     ok: boolean;
     message: string;
     result?: DonorLookupResult;
@@ -110,7 +116,12 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
   onNotify,
 }) => {
   const todayIso = getTodayIsoDate();
-  const safeGroupLink = useMemo(() => sanitizeExternalUrl(config.waGroupLink), [config.waGroupLink]);
+  const showGroupUi = config.showWaGroupPublic !== false;
+  const safeGroupLink = useMemo(
+    () => (showGroupUi ? sanitizeExternalUrl(config.waGroupLink) : ''),
+    [showGroupUi, config.waGroupLink]
+  );
+  const hasCallCenter = useMemo(() => Boolean(normalizeWA(config.callCenterWa || '')), [config.callCenterWa]);
 
   // Lookup state
   const [waInput, setWaInput] = useState('');
@@ -257,6 +268,36 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
     });
   }, [uploadFile, activeDonatur, tanggalTransfer, sortedSelectedMonths, parsedNominal, safeCurYm]);
 
+  const manualConfirmFormWaUrl = useMemo(() => {
+    if (!hasCallCenter || !activeDonatur) return '';
+    const bulanText =
+      sortedSelectedMonths.length > 0
+        ? sortedSelectedMonths.map((m) => formatBulanLabel(m)).join(', ')
+        : formatBulanLabel(safeCurYm);
+    return buildManualConfirmWaUrl(
+      {
+        nama: activeDonatur.namaLengkap,
+        idDonatur: activeDonatur.idDonatur,
+        noWa: activeDonatur.noWa,
+        bulanLabel: bulanText,
+        tanggalTransfer,
+        nominal: parsedNominal,
+        keterangan: keterangan.trim(),
+        linkBukti: 'Akan dilampirkan langsung di chat WA ini',
+      },
+      config
+    );
+  }, [
+    hasCallCenter,
+    activeDonatur,
+    sortedSelectedMonths,
+    safeCurYm,
+    tanggalTransfer,
+    parsedNominal,
+    keterangan,
+    config,
+  ]);
+
   // Available years for monthly recap
   const availableYears = useMemo(() => {
     const set = new Set<number>([Number(safeCurYm.slice(0, 4))]);
@@ -367,7 +408,7 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
   const handleRefreshDonor = async () => {
     if (!activeDonatur) return;
     setIsLookingUp(true);
-    const res = await onLookupWa(activeDonatur.noWa);
+    const res = await onLookupWa(activeDonatur.noWa, { forceRefresh: true });
     setIsLookingUp(false);
     if (res.ok && res.result?.found && res.result.donatur) {
       setActiveDonatur(res.result.donatur);
@@ -637,7 +678,8 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
               Masukkan nomor WhatsApp yang terdaftar untuk mengunggah bukti transfer, melihat status
-              verifikasi, rekap donasi per bulan, serta bergabung ke Grup WhatsApp donatur.
+              verifikasi, dan memantau rekap donasi per bulan
+              {showGroupUi ? ', serta bergabung ke Grup WhatsApp donatur' : ''}.
             </p>
           </div>
 
@@ -920,6 +962,35 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {hasCallCenter && activeDonatur && (
+                    <a
+                      href={buildManualConfirmWaUrl(
+                        {
+                          nama: activeDonatur.namaLengkap,
+                          idDonatur: activeDonatur.idDonatur,
+                          noWa: activeDonatur.noWa,
+                          bulanLabel: submitSuccess.transaksiList
+                            .map((t) => formatBulanLabel(t.bulanTagihan))
+                            .join(', '),
+                          tanggalTransfer: submitSuccess.tanggalTransfer,
+                          nominal: submitSuccess.totalNominal,
+                          keterangan: submitSuccess.transaksiList[0]?.keterangan || '',
+                          linkBukti:
+                            sanitizeExternalUrl(
+                              submitSuccess.transaksiList[0]?.linkBuktiDrive || ''
+                            ) || 'Tanpa lampiran',
+                        },
+                        config
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-h-[42px] inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2 text-xs font-bold text-white hover:bg-teal-700 transition-colors"
+                    >
+                      <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+                      <span>Konfirmasi Manual via WA Admin</span>
+                      <ExternalLink className="h-3 w-3 shrink-0" />
+                    </a>
+                  )}
                   <button
                     type="button"
                     onClick={() => setPortalTab('riwayat')}
@@ -1215,16 +1286,31 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={isSubmitting || isCompressing}
-                className="w-full min-h-[52px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-[0_10px_24px_-8px_rgba(5,150,105,0.5)] hover:opacity-95 active:scale-[0.99] disabled:opacity-55 transition-all cursor-pointer"
-              >
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <span>
-                  {isSubmitting ? 'Mengirim Konfirmasi...' : 'Kirim Konfirmasi Pembayaran'}
-                </span>
-              </button>
+              <div className="space-y-2.5">
+                <button
+                  type="submit"
+                  disabled={isSubmitting || isCompressing}
+                  className="w-full min-h-[52px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-[0_10px_24px_-8px_rgba(5,150,105,0.5)] hover:opacity-95 active:scale-[0.99] disabled:opacity-55 transition-all cursor-pointer"
+                >
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <span>
+                    {isSubmitting ? 'Mengirim Konfirmasi...' : 'Kirim Konfirmasi Pembayaran'}
+                  </span>
+                </button>
+
+                {hasCallCenter && manualConfirmFormWaUrl && (
+                  <a
+                    href={manualConfirmFormWaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50/80 dark:bg-emerald-950/45 px-5 py-3 text-xs sm:text-sm font-bold text-emerald-900 dark:text-emerald-200 hover:bg-emerald-100/90 dark:hover:bg-emerald-900/50 transition-colors"
+                  >
+                    <MessageCircle className="h-4 w-4 shrink-0" />
+                    <span>Konfirmasi Manual via WhatsApp Admin</span>
+                    <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                  </a>
+                )}
+              </div>
             </form>
           </section>
 
@@ -1497,28 +1583,54 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
                             </p>
                           )}
                         </div>
-                        {proofUrl ? (
-                          <a
-                            href={proofUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex min-h-[36px] items-center gap-1 text-xs font-bold text-sky-700 dark:text-sky-400 hover:underline whitespace-nowrap"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                            <span>Lihat Bukti</span>
-                          </a>
-                        ) : hasLocal ? (
-                          <button
-                            type="button"
-                            onClick={() => setPreviewTrx(trx)}
-                            className="inline-flex min-h-[36px] items-center gap-1 text-xs font-bold text-sky-700 dark:text-sky-400 hover:underline whitespace-nowrap cursor-pointer"
-                          >
-                            <Eye className="h-3.5 w-3.5 shrink-0" />
-                            <span>Lihat Bukti</span>
-                          </button>
-                        ) : (
-                          <span className="text-[11px] text-slate-400">Tanpa lampiran</span>
-                        )}
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          {proofUrl ? (
+                            <a
+                              href={proofUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex min-h-[36px] items-center gap-1 text-xs font-bold text-sky-700 dark:text-sky-400 hover:underline whitespace-nowrap"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                              <span>Lihat Bukti</span>
+                            </a>
+                          ) : hasLocal ? (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewTrx(trx)}
+                              className="inline-flex min-h-[36px] items-center gap-1 text-xs font-bold text-sky-700 dark:text-sky-400 hover:underline whitespace-nowrap cursor-pointer"
+                            >
+                              <Eye className="h-3.5 w-3.5 shrink-0" />
+                              <span>Lihat Bukti</span>
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">Tanpa lampiran</span>
+                          )}
+
+                          {hasCallCenter && (
+                            <a
+                              href={buildManualConfirmWaUrl(
+                                {
+                                  nama: activeDonatur.namaLengkap,
+                                  idDonatur: activeDonatur.idDonatur,
+                                  noWa: activeDonatur.noWa,
+                                  bulanLabel: formatBulanLabel(trx.bulanTagihan),
+                                  tanggalTransfer: trx.tanggalTransfer || trx.waktuInput,
+                                  nominal: trx.nominalTransfer,
+                                  keterangan: trx.keterangan || '',
+                                  linkBukti: proofUrl || 'Tanpa lampiran',
+                                },
+                                config
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex min-h-[34px] items-center gap-1 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/50 px-2.5 py-1 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors whitespace-nowrap"
+                            >
+                              <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+                              <span>Konfirmasi WA</span>
+                            </a>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -7,40 +7,54 @@ import {
   CheckCircle2,
   Copy,
   ExternalLink,
+  FileSpreadsheet,
   MessageCircle,
+  RefreshCw,
   Search,
   Send,
   Settings2,
+  Sparkles,
+  Upload,
   UserCheck,
   UserX,
   Users,
+  Webhook,
 } from 'lucide-react';
 import {
   Donatur,
   LembagaConfig,
   MinatGrupWa,
+  PageSizeOption,
   SendBroadcastSinglePayload,
   StatusGrupWa,
+  SyncGroupMembersResult,
 } from '../types';
 import {
   buildGroupInviteMessage,
   buildWaMeUrl,
+  extractPhoneNumbersFromText,
   formatWADisplay,
   normalizeMinatGrup,
   normalizeStatusGrup,
 } from '../utils/formatters';
+import { PaginationBar, slicePaginated } from './PaginationBar';
 
 interface TabGrupWaProps {
   config: LembagaConfig;
   donaturList: Donatur[];
   isLoading: boolean;
   connectionStatus: 'connected' | 'local' | 'error';
+  gasUrl?: string;
   onUpdateStatusGrup: (
     idDonatur: string,
     statusGrupWa: StatusGrupWa,
     minatGrupWa?: MinatGrupWa
   ) => Promise<boolean>;
   onBulkUpdateStatusGrup: (ids: string[], statusGrupWa: StatusGrupWa) => Promise<boolean>;
+  onSyncGroupMembers: (options?: {
+    memberPhones?: string[];
+    markOthersNotJoined?: boolean;
+  }) => Promise<{ ok: boolean; message: string; result?: SyncGroupMembersResult }>;
   onSendBroadcastSingle: (
     payload: SendBroadcastSinglePayload
   ) => Promise<{ ok: boolean; detail: string }>;
@@ -62,8 +76,10 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
   donaturList,
   isLoading,
   connectionStatus,
+  gasUrl,
   onUpdateStatusGrup,
   onBulkUpdateStatusGrup,
+  onSyncGroupMembers,
   onSendBroadcastSingle,
   onOpenSettings,
   onNotify,
@@ -71,14 +87,36 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
   const [groupFilter, setGroupFilter] = useState<GroupFilterKey>('minat_belum');
   const [genderFilter, setGenderFilter] = useState<'Semua' | 'Laki-laki' | 'Perempuan'>('Semua');
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [sortField, setSortField] = useState<GroupSortField>('daftar');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSizeOption>(10);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [sendingWaId, setSendingWaId] = useState<string | null>(null);
   const [isBulkSaving, setIsBulkSaving] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // State Deteksi Otomatis Anggota Grup WA
+  const [isSyncingApi, setIsSyncingApi] = useState(false);
+  const [showScrabPanel, setShowScrabPanel] = useState(false);
+  const [showWebhookTip, setShowWebhookTip] = useState(false);
+  const [scrabText, setScrabText] = useState('');
+  const [markOthersNotJoined, setMarkOthersNotJoined] = useState(false);
+  const [isSyncingScrab, setIsSyncingScrab] = useState(false);
+  const [copiedWebhookUrl, setCopiedWebhookUrl] = useState(false);
+  const [lastSyncBanner, setLastSyncBanner] = useState<{
+    ok: boolean;
+    message: string;
+    result?: SyncGroupMembersResult;
+  } | null>(null);
+
+  const extractedScrabPhones = useMemo(
+    () => extractPhoneNumbersFromText(scrabText),
+    [scrabText]
+  );
 
   const normalizedDonors = useMemo(
     () =>
@@ -104,7 +142,7 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
   }, [normalizedDonors]);
 
   const filteredDonors = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = deferredSearchQuery.trim().toLowerCase();
     const list = normalizedDonors.filter((d) => {
       if (groupFilter === 'minat_belum') {
         if (!(d.minatGrupWa === 'Ya' && d.statusGrupWa !== 'Sudah Bergabung')) return false;
@@ -154,10 +192,19 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
     normalizedDonors,
     groupFilter,
     genderFilter,
-    searchQuery,
+    deferredSearchQuery,
     sortField,
     sortDir,
   ]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [groupFilter, genderFilter, deferredSearchQuery, sortField, sortDir, pageSize]);
+
+  const paginatedDonors = useMemo(
+    () => slicePaginated(filteredDonors, currentPage, pageSize),
+    [filteredDonors, currentPage, pageSize]
+  );
 
   const allFilteredSelected =
     filteredDonors.length > 0 && filteredDonors.every((d) => selectedIds.includes(d.idDonatur));
@@ -272,6 +319,70 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
     }
   };
 
+  const handleAutoSyncApi = async () => {
+    setIsSyncingApi(true);
+    setLastSyncBanner(null);
+    const res = await onSyncGroupMembers({ markOthersNotJoined });
+    setIsSyncingApi(false);
+    setLastSyncBanner(res);
+    if (!res.ok) {
+      setShowScrabPanel(true);
+    }
+  };
+
+  const handleScrabFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = typeof reader.result === 'string' ? reader.result : '';
+      setScrabText(content);
+      const count = extractPhoneNumbersFromText(content).length;
+      onNotify(
+        count > 0 ? 'success' : 'info',
+        count > 0
+          ? `${count} nomor WA terbaca dari ${file.name}`
+          : `Tidak ditemukan nomor WA valid di ${file.name}`
+      );
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleSyncFromScrab = async () => {
+    if (extractedScrabPhones.length === 0) {
+      onNotify(
+        'error',
+        'Belum ada nomor WA valid',
+        'Tempel hasil Scrab Nomor dari ReChat atau unggah file .txt/.csv terlebih dahulu.'
+      );
+      return;
+    }
+    setIsSyncingScrab(true);
+    setLastSyncBanner(null);
+    const res = await onSyncGroupMembers({
+      memberPhones: extractedScrabPhones,
+      markOthersNotJoined,
+    });
+    setIsSyncingScrab(false);
+    setLastSyncBanner(res);
+    if (res.ok) {
+      setScrabText('');
+    }
+  };
+
+  const handleCopyWebhookUrl = async () => {
+    if (!gasUrl) return;
+    try {
+      await navigator.clipboard.writeText(gasUrl);
+      setCopiedWebhookUrl(true);
+      onNotify('success', 'URL Webhook disalin', 'Tempelkan di ReChat → Integrasi → Webhook.');
+      setTimeout(() => setCopiedWebhookUrl(false), 2000);
+    } catch {
+      onNotify('error', 'Gagal menyalin URL Webhook.');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
@@ -280,8 +391,8 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
             Pantauan Grup WhatsApp Donatur
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300 safe-wrap">
-            Pantau donatur yang berminat bergabung ke grup WhatsApp, tandai yang sudah bergabung,
-            dan kirimkan undangan grup secara cepat.
+            Deteksi otomatis donatur yang sudah bergabung ke grup WhatsApp melalui sinkronisasi
+            ReChat, webhook grup, atau cocokkan hasil Scrab Nomor secara instan.
           </p>
         </div>
         {onOpenSettings && (
@@ -304,7 +415,7 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900 dark:text-slate-100 safe-wrap">
-              {config.waGroupName || 'Grup Donatur DAIKITA - Dakwah Pelosok'}
+              {config.waGroupName || 'Grup Donatur DAIKITA — Dakwah Pelosok'}
             </p>
             <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 safe-wrap">
               {config.waGroupLink ? (
@@ -357,6 +468,194 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
             </a>
           )}
         </div>
+      </section>
+
+      {/* Panel Deteksi Otomatis Anggota Grup WA */}
+      <section className="glass-surface rounded-3xl p-5 sm:p-6 space-y-4 border border-emerald-200/80 dark:border-emerald-800/70">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                Deteksi Otomatis Anggota Grup WhatsApp
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 safe-wrap">
+                Tidak perlu menandai satu per satu. Sistem mendeteksi anggota grup secara otomatis
+                melalui API ReChat, Webhook Real-Time, atau pencocokan massal dari fitur{' '}
+                <strong>Kontak → Scrab Nomor</strong> ReChat.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={isSyncingApi || connectionStatus !== 'connected'}
+              onClick={() => void handleAutoSyncApi()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-50 whitespace-nowrap cursor-pointer"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${isSyncingApi ? 'animate-spin' : ''}`} />
+              <span>{isSyncingApi ? 'Mendeteksi...' : 'Deteksi Otomatis via API'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowScrabPanel((v) => !v)}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                showScrabPanel
+                  ? 'border-teal-400 bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-200'
+                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:border-emerald-300'
+              }`}
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
+              <span>Cocokkan Scrab Nomor</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowWebhookTip((v) => !v)}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                showWebhookTip
+                  ? 'border-sky-400 bg-sky-50 dark:bg-sky-950/60 text-sky-800 dark:text-sky-200'
+                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-sky-300'
+              }`}
+            >
+              <Webhook className="h-3.5 w-3.5 shrink-0" />
+              <span>Webhook Real-Time</span>
+            </button>
+          </div>
+        </div>
+
+        {lastSyncBanner && (
+          <div
+            className={`rounded-2xl border px-4 py-3 text-xs space-y-1 safe-wrap ${
+              lastSyncBanner.ok
+                ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/45 text-emerald-900 dark:text-emerald-100'
+                : 'border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/45 text-amber-900 dark:text-amber-100'
+            }`}
+          >
+            <p className="font-bold">{lastSyncBanner.message}</p>
+            {lastSyncBanner.result && (
+              <p className="text-[11px] opacity-90 tabular-nums">
+                Terbaca di grup: <strong>{lastSyncBanner.result.totalExtracted}</strong> nomor ·
+                Cocok dengan donatur: <strong>{lastSyncBanner.result.matchedDonors}</strong> ·
+                Baru ditandai bergabung: <strong>{lastSyncBanner.result.newlyJoined}</strong>
+                {lastSyncBanner.result.newlyNotJoined > 0
+                  ? ` · Ditandai belum gabung: ${lastSyncBanner.result.newlyNotJoined}`
+                  : ''}
+              </p>
+            )}
+          </div>
+        )}
+
+        {showScrabPanel && (
+          <div className="rounded-2xl border border-teal-200/80 dark:border-teal-800/70 bg-teal-50/45 dark:bg-teal-950/30 p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-teal-950 dark:text-teal-100">
+                  Pencocokan Instan dari ReChat → Kontak → Scrab Nomor
+                </p>
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 safe-wrap">
+                  Salin seluruh daftar nomor anggota grup dari menu <strong>Scrab Nomor</strong> di
+                  ReChat (format bebas: dipisah baris, koma, CSV, atau teks mentah) lalu tempel di
+                  bawah atau unggah file `.txt`/`.csv`.
+                </p>
+              </div>
+              <label className="inline-flex items-center gap-1.5 rounded-xl border border-teal-300 dark:border-teal-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-teal-800 dark:text-teal-200 hover:bg-teal-50 cursor-pointer shrink-0">
+                <Upload className="h-3.5 w-3.5 shrink-0" />
+                <span>Unggah .txt / .csv</span>
+                <input
+                  type="file"
+                  accept=".txt,.csv,text/plain,text/csv"
+                  onChange={handleScrabFileUpload}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            <textarea
+              rows={4}
+              value={scrabText}
+              onChange={(e) => setScrabText(e.target.value)}
+              placeholder={'Tempel daftar nomor anggota grup di sini, contoh:\n6281234567890\n085211223344, +62 813-9988-7766'}
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-xs font-mono text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+            />
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-teal-900 dark:text-teal-200 tabular-nums">
+                  Nomor WA valid terdeteksi: <strong>{extractedScrabPhones.length}</strong> nomor
+                </p>
+                <label className="inline-flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={markOthersNotJoined}
+                    onChange={(e) => setMarkOthersNotJoined(e.target.checked)}
+                    className="rounded accent-emerald-600"
+                  />
+                  <span>
+                    Tandai donatur yang tidak ada dalam daftar sebagai &ldquo;Belum Bergabung&rdquo;
+                  </span>
+                </label>
+              </div>
+
+              <button
+                type="button"
+                disabled={isSyncingScrab || extractedScrabPhones.length === 0}
+                onClick={() => void handleSyncFromScrab()}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <UserCheck className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {isSyncingScrab
+                    ? 'Mencocokkan...'
+                    : `Cocokkan & Perbarui (${extractedScrabPhones.length})`}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showWebhookTip && (
+          <div className="rounded-2xl border border-sky-200/80 dark:border-sky-800/70 bg-sky-50/45 dark:bg-sky-950/30 p-4 space-y-2.5 text-xs">
+            <p className="font-bold text-sky-950 dark:text-sky-100">
+              Deteksi Real-Time Otomatis via Webhook ReChat
+            </p>
+            <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
+              Pastikan <strong>ID Grup WA Donatur</strong> sudah diisi di menu Pengaturan (format{' '}
+              <code className="font-mono">120363...@g.us</code>), lalu daftarkan URL layanan di
+              bawah ini ke menu <strong>ReChat → Integrasi → Webhook</strong> (centang{' '}
+              <em>Pesan masuk</em>). Setiap donatur yang bergabung atau mengirim pesan di grup akan
+              otomatis ditandai <strong>Sudah Bergabung</strong> tanpa klik manual.
+            </p>
+            {gasUrl && (
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <code className="flex-1 rounded-xl border border-sky-200 dark:border-sky-800 bg-white dark:bg-slate-900 px-3 py-2 text-[11px] font-mono text-sky-900 dark:text-sky-200 break-all">
+                  {gasUrl}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyWebhookUrl()}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-sky-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  {copiedWebhookUrl ? (
+                    <>
+                      <Check className="h-3.5 w-3.5 shrink-0" />
+                      <span>Disalin</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3.5 w-3.5 shrink-0" />
+                      <span>Salin URL Webhook</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* 5 Kartu Ringkasan KPI */}
@@ -577,7 +876,7 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/70 dark:divide-slate-700/70 text-sm">
-                {filteredDonors.map((d) => {
+                {paginatedDonors.items.map((d) => {
                   const isChecked = selectedIds.includes(d.idDonatur);
                   const isBusy = updatingId === d.idDonatur;
                   const isSending = sendingWaId === d.idDonatur;
@@ -711,6 +1010,19 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
               </tbody>
             </table>
           </div>
+        )}
+        {!isLoading && filteredDonors.length > 0 && (
+          <PaginationBar
+            totalItems={filteredDonors.length}
+            currentPage={paginatedDonors.safePage}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setCurrentPage(1);
+            }}
+            itemLabel="donatur"
+          />
         )}
       </section>
     </div>

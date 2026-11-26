@@ -42,6 +42,7 @@ import {
   StatusGrupWa,
   StatusVerifikasi,
   SubmitPembayaranPayload,
+  SyncGroupMembersResult,
   TestNotificationPayload,
   ThemeMode,
   ToastMessage,
@@ -54,6 +55,7 @@ import {
   deleteAdminAkses,
   fetchAdminData,
   fetchPublicConfig,
+  getCachedPublicConfig,
   getSavedGasUrl,
   loginAdminByWa,
   lookupDonaturByWa,
@@ -66,6 +68,7 @@ import {
   sendBroadcastSingle,
   sendTestNotification,
   submitPembayaran,
+  syncGroupMembers,
   updateDonaturMandiri,
   updateStatusDonatur,
   updateStatusGrupDonatur,
@@ -189,14 +192,14 @@ export default function App() {
   const [preselectedDonatur, setPreselectedDonatur] = useState<Donatur | null>(null);
   const [preselectedMonth, setPreselectedMonth] = useState<string | null>(null);
 
-  const [data, setData] = useState<AppDataState>({
-    config: DEFAULT_CONFIG,
+  const [data, setData] = useState<AppDataState>(() => ({
+    config: getCachedPublicConfig()?.config || DEFAULT_CONFIG,
     donatur: [],
     transaksi: [],
     panitia: [],
     antreanPesan: [],
     adminAkses: [],
-  });
+  }));
 
   const [logoImgFailed, setLogoImgFailed] = useState(false);
   const [logoFallbackTried, setLogoFallbackTried] = useState(false);
@@ -446,9 +449,10 @@ export default function App() {
 
   // === PUBLIC PORTAL HANDLERS ===
   const handlePublicLookupWa = async (
-    noWa: string
+    noWa: string,
+    options?: { forceRefresh?: boolean }
   ): Promise<{ ok: boolean; message: string; result?: DonorLookupResult }> => {
-    const res = await lookupDonaturByWa(gasUrl, noWa);
+    const res = await lookupDonaturByWa(gasUrl, noWa, options);
     if (res.status === 'success' && res.data) {
       return { ok: true, message: res.message, result: res.data };
     }
@@ -747,6 +751,39 @@ export default function App() {
     }
     notify('error', 'Gagal memperbarui status grup massal', res.message);
     return false;
+  };
+
+  const handleSyncGroupMembers = async (options?: {
+    memberPhones?: string[];
+    markOthersNotJoined?: boolean;
+  }): Promise<{ ok: boolean; message: string; result?: SyncGroupMembersResult }> => {
+    const res = await syncGroupMembers(gasUrl, adminToken, options);
+    if (res.code === 'AUTH_REQUIRED') {
+      clearAdminSession(res.message);
+      return { ok: false, message: res.message };
+    }
+    if (res.status === 'success' && res.data) {
+      const joinedSet = new Set(res.data.updatedJoinedIds || []);
+      const notJoinedSet = new Set(res.data.updatedNotJoinedIds || []);
+      if (joinedSet.size > 0 || notJoinedSet.size > 0) {
+        setData((prev) => ({
+          ...prev,
+          donatur: prev.donatur.map((d) => {
+            if (joinedSet.has(d.idDonatur)) {
+              return { ...d, statusGrupWa: 'Sudah Bergabung' };
+            }
+            if (notJoinedSet.has(d.idDonatur)) {
+              return { ...d, statusGrupWa: 'Belum Bergabung' };
+            }
+            return d;
+          }),
+        }));
+      }
+      notify('success', 'Sinkronisasi Grup WA selesai', res.message);
+      return { ok: true, message: res.message, result: res.data };
+    }
+    notify('info', 'Sinkronisasi otomatis belum selesai', res.message);
+    return { ok: false, message: res.message, result: res.data };
   };
 
   const handleSendBroadcastSingle = async (
@@ -1371,8 +1408,10 @@ export default function App() {
             donaturList={data.donatur}
             isLoading={isLoadingAdmin}
             connectionStatus={connectionStatus}
+            gasUrl={gasUrl}
             onUpdateStatusGrup={handleUpdateStatusGrup}
             onBulkUpdateStatusGrup={handleBulkUpdateStatusGrup}
+            onSyncGroupMembers={handleSyncGroupMembers}
             onSendBroadcastSingle={handleSendBroadcastSingle}
             onOpenSettings={isSuperAdmin ? () => setIsModalOpen(true) : undefined}
             onNotify={notify}

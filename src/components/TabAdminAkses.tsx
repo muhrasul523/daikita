@@ -14,10 +14,12 @@ import { APP_ADMIN_URL, APP_BAYAR_URL, APP_PUBLIC_URL } from '../config';
 import {
   AdminAkses,
   AdminRole,
+  PageSizeOption,
   SaveAdminAksesPayload,
   StatusAktif,
 } from '../types';
 import { formatWADisplay, validateAndNormalizeWA } from '../utils/formatters';
+import { PaginationBar, slicePaginated } from './PaginationBar';
 
 interface TabAdminAksesProps {
   adminAksesList: AdminAkses[];
@@ -43,8 +45,14 @@ export const TabAdminAkses: React.FC<TabAdminAksesProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [deletingWa, setDeletingWa] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSizeOption>(10);
 
   const waCheck = useMemo(() => validateAndNormalizeWA(noWa), [noWa]);
+  const paginatedAdmins = useMemo(
+    () => slicePaginated(adminAksesList, currentPage, pageSize),
+    [adminAksesList, currentPage, pageSize]
+  );
 
   const counts = useMemo(
     () => ({
@@ -407,7 +415,7 @@ export const TabAdminAkses: React.FC<TabAdminAksesProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200/70 dark:divide-slate-700/70 text-xs">
-                    {adminAksesList.map((item) => {
+                    {paginatedAdmins.items.map((item) => {
                       const isSelf = item.noWa === currentAdminWa;
                       const isDeleting = deletingWa === item.noWa;
                       return (
@@ -487,6 +495,19 @@ export const TabAdminAkses: React.FC<TabAdminAksesProps> = ({
                   </tbody>
                 </table>
               </div>
+            )}
+            {adminAksesList.length > 0 && (
+              <PaginationBar
+                totalItems={adminAksesList.length}
+                currentPage={paginatedAdmins.safePage}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(next) => {
+                  setPageSize(next);
+                  setCurrentPage(1);
+                }}
+                itemLabel="pengurus"
+              />
             )}
           </div>
         </div>

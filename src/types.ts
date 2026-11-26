@@ -102,9 +102,14 @@ export interface LembagaConfig {
   /** Template WA Notifikasi Pengingat / Reminder Bulanan */
   waReminderTemplates: string[];
   /** Pengaturan Grup WhatsApp Donatur */
+  showWaGroupPublic: boolean;
   waGroupName: string;
   waGroupLink: string;
   waGroupId: string;
+  /** Pengaturan Call Center Admin & Konfirmasi Manual WA */
+  callCenterWa: string;
+  callCenterLabel: string;
+  waManualConfirmTemplate: string;
   /** Pengaturan Grup WhatsApp Khusus Admin (Notifikasi Pendaftar & Penyaluran Donasi) */
   enableAdminWaGroupNotif: boolean;
   adminWaGroupName: string;
@@ -286,9 +291,13 @@ export interface SavePengaturanPayload {
   waFollowupTemplates: string[];
   waFollowupDelaySec: number;
   waReminderTemplates: string[];
+  showWaGroupPublic: boolean;
   waGroupName: string;
   waGroupLink: string;
   waGroupId: string;
+  callCenterWa: string;
+  callCenterLabel: string;
+  waManualConfirmTemplate: string;
   enableAdminWaGroupNotif: boolean;
   adminWaGroupName: string;
   adminWaGroupLink: string;
@@ -333,6 +342,19 @@ export interface ScheduleBroadcastItemPayload {
   mediaUrl?: string;
   jadwalKirim: string; // YYYY-MM-DD HH:mm:ss
   jenisPesan: string;
+}
+
+export type PageSizeOption = 10 | 20 | 50 | 100 | 500 | 'all';
+
+export interface SyncGroupMembersResult {
+  source: 'rechat_api' | 'scrab_import' | 'local';
+  totalExtracted: number;
+  matchedDonors: number;
+  newlyJoined: number;
+  newlyNotJoined: number;
+  alreadyJoined: number;
+  updatedJoinedIds: string[];
+  updatedNotJoinedIds: string[];
 }
 
 export interface ApiResult<T = unknown> {

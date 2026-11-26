@@ -78,21 +78,39 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
       normWa: normalizeWA(d.noWa) || d.noWa,
     }));
 
-    return monthKeys.map((ym) => {
-      const monthTrx = transaksiList.filter((t) => t.bulanTagihan === ym);
-      const validTrx = monthTrx.filter((t) => t.statusVerifikasi === 'Valid');
-      const pendingTrx = monthTrx.filter((t) => t.statusVerifikasi === 'Pending');
+    const trxByMonth = new Map<string, TransaksiDonasi[]>();
+    transaksiList.forEach((t) => {
+      if (!t.bulanTagihan) return;
+      const list = trxByMonth.get(t.bulanTagihan);
+      if (list) list.push(t);
+      else trxByMonth.set(t.bulanTagihan, [t]);
+    });
 
-      const danaValidRp = validTrx.reduce((s, t) => s + t.nominalTransfer, 0);
-      const danaUmumValidRp = validTrx
-        .filter((t) => t.jenisDonatur === 'Umum' || t.idDonatur === 'UMUM')
-        .reduce((s, t) => s + t.nominalTransfer, 0);
-      const danaLainnyaValidRp = validTrx
-        .filter((t) => t.jenisDonatur !== 'Umum' && t.idDonatur !== 'UMUM')
-        .reduce((s, t) => s + Math.max(0, t.donasiLainnya || 0), 0);
+    return monthKeys.map((ym) => {
+      const monthTrx = trxByMonth.get(ym) || [];
+      const validTrx: TransaksiDonasi[] = [];
+      let danaValidRp = 0;
+      let danaUmumValidRp = 0;
+      let danaLainnyaValidRp = 0;
+      let danaPendingRp = 0;
+
+      for (let i = 0; i < monthTrx.length; i++) {
+        const t = monthTrx[i];
+        if (t.statusVerifikasi === 'Valid') {
+          validTrx.push(t);
+          danaValidRp += t.nominalTransfer;
+          if (t.jenisDonatur === 'Umum' || t.idDonatur === 'UMUM') {
+            danaUmumValidRp += t.nominalTransfer;
+          } else {
+            danaLainnyaValidRp += Math.max(0, t.donasiLainnya || 0);
+          }
+        } else if (t.statusVerifikasi === 'Pending') {
+          danaPendingRp += t.nominalTransfer;
+        }
+      }
+
       const danaTambahanValidRp = danaLainnyaValidRp + danaUmumValidRp;
       const danaKomitmenValidRp = Math.max(0, danaValidRp - danaTambahanValidRp);
-      const danaPendingRp = pendingTrx.reduce((s, t) => s + t.nominalTransfer, 0);
 
       let donaturBaru = 0;
       let totalDonaturAktif = 0;

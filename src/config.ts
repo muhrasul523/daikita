@@ -6,7 +6,7 @@ import { AdminAkses, EmailTemplateItem, LembagaConfig, Panitia } from './types';
 export const DEFAULT_GAS_URL =
   'https://script.google.com/macros/s/AKfycbza8ngK4Wtqqw9vtAH96d-LejP2mp9KNXvUQVrFg77WGCKooQCEbgfxEyozSQ38FP72nA/exec';
 
-export const APP_BRAND_NAME = 'DAIKITA - Dakwah Pelosok';
+export const APP_BRAND_NAME = 'DAIKITA — Dakwah Pelosok';
 export const APP_PROGRAM_FOCUS = 'Dakwah Pelosok';
 export const APP_TAGLINE = 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
 export const APP_PUBLIC_URL = 'https://daikita.duwd.web.id/';
@@ -26,6 +26,7 @@ export const STORAGE_KEYS = {
   LOCAL_DATA: 'donatur_rutin_local_sandbox_v1',
   THEME_PREF: 'daikita_theme_pref_v1',
   SCREEN_WIDTH: 'daikita_screen_width_pct_v1',
+  PUBLIC_CONFIG_CACHE: 'daikita_public_config_cache_v1',
 } as const;
 
 /**
@@ -123,7 +124,7 @@ _Syukran wa jazakumullahu khairan._`,
 
   `Bismillah, izin mengingatkan kembali {sapaan} *{nama}* 😊
 
-Agar tautan web konfirmasi & tautan grup dapat diklik dan {sapaan} selalu menerima notifikasi pengingat rutin serta info program *Dakwah Pelosok*, silakan *simpan nomor ini* di buku kontak HP {sapaan} (contoh: *DAIKITA - Dakwah Pelosok*).
+Agar tautan web konfirmasi & tautan grup dapat diklik dan {sapaan} selalu menerima notifikasi pengingat rutin serta info program *Dakwah Pelosok*, silakan *simpan nomor ini* di buku kontak HP {sapaan} (contoh: *DAIKITA — Dakwah Pelosok*).
 {link_grup_section}
 Jika ada pertanyaan atau konfirmasi transfer, silakan balas langsung pesan ini ya {sapaan}.
 _Jazakumullahu khairan._`,
@@ -258,12 +259,29 @@ export const DEFAULT_EMAIL_TEMPLATES: EmailTemplateItem[] = [
   DEFAULT_EMAIL_TEMPLATE_REMINDER,
 ];
 
+/**
+ * Template Konfirmasi Manual Penyaluran Donasi via WhatsApp ke Admin / Call Center
+ */
+export const DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE = `Assalamu'alaikum Admin {lembaga}.
+
+Saya ingin melakukan konfirmasi manual penyaluran donasi *Dakwah Pelosok*:
+• Nama Donatur: *{nama}*
+• ID Donatur: {id_donatur}
+• No. WhatsApp: {no_wa}
+• Periode Donasi: *{bulan}*
+• Tanggal Transfer: {tanggal_transfer}
+• Nominal Transfer: *{nominal}*
+• Keterangan: {keterangan}
+• Bukti Transfer: {link_bukti}
+
+Mohon dibantu verifikasinya ya Admin. Jazakumullahu khairan.`;
+
 export const DEFAULT_CONFIG: LembagaConfig = {
-  namaLembaga: 'DAIKITA - Dakwah Pelosok',
+  namaLembaga: 'DAIKITA — Dakwah Pelosok',
   tagline: APP_TAGLINE,
   logoUrl: DEFAULT_LOGO_URL,
   qrisUrl: '',
-  qrisMerchantName: 'DAIKITA - Dakwah Pelosok',
+  qrisMerchantName: 'DAIKITA — Dakwah Pelosok',
   showQris: true,
   showRekening: true,
   defaultNominal: 50000,
@@ -284,16 +302,20 @@ export const DEFAULT_CONFIG: LembagaConfig = {
   waFollowupTemplates: DEFAULT_WA_FOLLOWUP_TEMPLATES,
   waFollowupDelaySec: 60,
   waReminderTemplates: DEFAULT_WA_REMINDER_TEMPLATES,
-  waGroupName: 'Donatur Tetap DAIKITA - Dakwah Pelosok',
+  showWaGroupPublic: true,
+  waGroupName: 'Donatur Tetap DAIKITA — Dakwah Pelosok',
   waGroupLink: '',
   waGroupId: '',
+  callCenterWa: '',
+  callCenterLabel: 'Call Center Admin DAIKITA',
+  waManualConfirmTemplate: DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE,
   enableAdminWaGroupNotif: false,
-  adminWaGroupName: 'Grup Admin DAIKITA - Dakwah Pelosok',
+  adminWaGroupName: 'Grup Admin DAIKITA — Dakwah Pelosok',
   adminWaGroupLink: '',
   adminWaGroupId: '',
   enableEmailNotif: true,
   emailSenderAlias: 'lajnahdai.dpp@gmail.com',
-  emailSenderName: 'DAIKITA - Dakwah Pelosok',
+  emailSenderName: 'DAIKITA — Dakwah Pelosok',
   emailTemplateDaftar: DEFAULT_EMAIL_TEMPLATE_DAFTAR,
   emailTemplateReminder: DEFAULT_EMAIL_TEMPLATE_REMINDER,
   emailTemplates: DEFAULT_EMAIL_TEMPLATES,

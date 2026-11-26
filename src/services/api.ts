@@ -7,6 +7,7 @@ import {
   DEFAULT_LOGO_URL,
   DEFAULT_PANITIA,
   DEFAULT_WA_FOLLOWUP_TEMPLATES,
+  DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE,
   DEFAULT_WA_REMINDER_TEMPLATES,
   DEFAULT_WA_TEMPLATES,
   STORAGE_KEYS,
@@ -37,6 +38,7 @@ import {
   StatusPenyaluran,
   StatusVerifikasi,
   SubmitPembayaranPayload,
+  SyncGroupMembersResult,
   TestNotificationPayload,
   TransaksiDonasi,
   UpdateDonaturMandiriPayload,
@@ -51,8 +53,115 @@ import {
   normalizeStatusAktif,
   normalizeStatusGrup,
   previewAutoRenameFile,
+  sanitizeLegacyBrandText,
   validateAndNormalizeWA,
 } from '../utils/formatters';
+
+const LOOKUP_CACHE_TTL_MS = 120_000;
+const LOOKUP_SESSION_KEY = 'daikita_lookup_cache_v1';
+const PUBLIC_CFG_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface LookupCacheEntry {
+  ts: number;
+  data: DonorLookupResult;
+}
+
+const memoryLookupCache = new Map<string, LookupCacheEntry>();
+
+function readCachedLookup(normalizedWa: string): DonorLookupResult | null {
+  const now = Date.now();
+  const mem = memoryLookupCache.get(normalizedWa);
+  if (mem && now - mem.ts < LOOKUP_CACHE_TTL_MS) {
+    return mem.data;
+  }
+  try {
+    const raw = window.sessionStorage.getItem(LOOKUP_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, LookupCacheEntry>;
+    const entry = parsed[normalizedWa];
+    if (entry && now - entry.ts < LOOKUP_CACHE_TTL_MS) {
+      memoryLookupCache.set(normalizedWa, entry);
+      return entry.data;
+    }
+  } catch {
+    // Ignore sessionStorage errors
+  }
+  return null;
+}
+
+function writeCachedLookup(normalizedWa: string, data: DonorLookupResult): void {
+  const entry: LookupCacheEntry = { ts: Date.now(), data };
+  memoryLookupCache.set(normalizedWa, entry);
+  try {
+    const raw = window.sessionStorage.getItem(LOOKUP_SESSION_KEY);
+    const parsed: Record<string, LookupCacheEntry> = raw ? JSON.parse(raw) : {};
+    parsed[normalizedWa] = entry;
+    // Batasi maksimal 40 entri agar sessionStorage tetap ringan
+    const keys = Object.keys(parsed);
+    if (keys.length > 40) {
+      keys
+        .sort((a, b) => (parsed[a]?.ts || 0) - (parsed[b]?.ts || 0))
+        .slice(0, keys.length - 40)
+        .forEach((k) => {
+          delete parsed[k];
+        });
+    }
+    window.sessionStorage.setItem(LOOKUP_SESSION_KEY, JSON.stringify(parsed));
+  } catch {
+    // Ignore sessionStorage errors
+  }
+}
+
+export function invalidateLookupCache(noWa?: string): void {
+  if (!noWa) {
+    memoryLookupCache.clear();
+    try {
+      window.sessionStorage.removeItem(LOOKUP_SESSION_KEY);
+    } catch {
+      // Ignore
+    }
+    return;
+  }
+  const normalized = validateAndNormalizeWA(noWa).normalized || noWa.trim();
+  memoryLookupCache.delete(normalized);
+  try {
+    const raw = window.sessionStorage.getItem(LOOKUP_SESSION_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Record<string, LookupCacheEntry>;
+    delete parsed[normalized];
+    window.sessionStorage.setItem(LOOKUP_SESSION_KEY, JSON.stringify(parsed));
+  } catch {
+    // Ignore
+  }
+}
+
+export function getCachedPublicConfig(): PublicBootstrapData | null {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEYS.PUBLIC_CONFIG_CACHE);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { ts: number; data: PublicBootstrapData };
+    if (!parsed || !parsed.data || !parsed.data.config) return null;
+    if (Date.now() - (parsed.ts || 0) > PUBLIC_CFG_CACHE_TTL_MS) return null;
+    const norm = normalizeLoadedState({
+      config: parsed.data.config,
+      panitia: parsed.data.panitia,
+    });
+    return { config: norm.config, panitia: norm.panitia };
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedPublicConfig(data: PublicBootstrapData): void {
+  try {
+    window.localStorage.setItem(
+      STORAGE_KEYS.PUBLIC_CONFIG_CACHE,
+      JSON.stringify({ ts: Date.now(), data })
+    );
+  } catch {
+    // Ignore storage quota errors
+  }
+}
 
 export function getSavedGasUrl(): string {
   try {
@@ -187,9 +296,13 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
     ? {
         ...DEFAULT_CONFIG,
         ...rawCfg,
+        namaLembaga:
+          sanitizeLegacyBrandText(rawCfg.namaLembaga) || DEFAULT_CONFIG.namaLembaga,
+        tagline: sanitizeLegacyBrandText(rawCfg.tagline) || DEFAULT_CONFIG.tagline,
         logoUrl: rawCfg.logoUrl || DEFAULT_LOGO_URL,
         qrisUrl: rawCfg.qrisUrl || '',
-        qrisMerchantName: rawCfg.qrisMerchantName || DEFAULT_CONFIG.qrisMerchantName,
+        qrisMerchantName:
+          sanitizeLegacyBrandText(rawCfg.qrisMerchantName) || DEFAULT_CONFIG.qrisMerchantName,
         showQris: typeof rawCfg.showQris === 'boolean' ? rawCfg.showQris : DEFAULT_CONFIG.showQris,
         showRekening:
           typeof rawCfg.showRekening === 'boolean'
@@ -203,7 +316,8 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
           Number(rawCfg.defaultTglPengingat) >= 1 && Number(rawCfg.defaultTglPengingat) <= 31
             ? Number(rawCfg.defaultTglPengingat)
             : DEFAULT_CONFIG.defaultTglPengingat,
-        catatanPembayaran: rawCfg.catatanPembayaran || DEFAULT_CONFIG.catatanPembayaran,
+        catatanPembayaran:
+          sanitizeLegacyBrandText(rawCfg.catatanPembayaran) || DEFAULT_CONFIG.catatanPembayaran,
         infoRekening:
           Array.isArray(rawCfg.infoRekening) && rawCfg.infoRekening.length > 0
             ? rawCfg.infoRekening
@@ -230,14 +344,26 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
           Array.isArray(rawCfg.waReminderTemplates) && rawCfg.waReminderTemplates.length > 0
             ? rawCfg.waReminderTemplates
             : DEFAULT_WA_REMINDER_TEMPLATES,
-        waGroupName: rawCfg.waGroupName || DEFAULT_CONFIG.waGroupName,
+        showWaGroupPublic:
+          typeof rawCfg.showWaGroupPublic === 'boolean'
+            ? rawCfg.showWaGroupPublic
+            : DEFAULT_CONFIG.showWaGroupPublic,
+        waGroupName:
+          sanitizeLegacyBrandText(rawCfg.waGroupName) || DEFAULT_CONFIG.waGroupName,
         waGroupLink: rawCfg.waGroupLink || '',
         waGroupId: rawCfg.waGroupId || '',
+        callCenterWa: String(rawCfg.callCenterWa || '').trim(),
+        callCenterLabel:
+          sanitizeLegacyBrandText(rawCfg.callCenterLabel) || DEFAULT_CONFIG.callCenterLabel,
+        waManualConfirmTemplate:
+          String(rawCfg.waManualConfirmTemplate || '').trim() ||
+          DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE,
         enableAdminWaGroupNotif:
           typeof rawCfg.enableAdminWaGroupNotif === 'boolean'
             ? rawCfg.enableAdminWaGroupNotif
             : DEFAULT_CONFIG.enableAdminWaGroupNotif,
-        adminWaGroupName: rawCfg.adminWaGroupName || DEFAULT_CONFIG.adminWaGroupName,
+        adminWaGroupName:
+          sanitizeLegacyBrandText(rawCfg.adminWaGroupName) || DEFAULT_CONFIG.adminWaGroupName,
         adminWaGroupLink: rawCfg.adminWaGroupLink || '',
         adminWaGroupId: rawCfg.adminWaGroupId || '',
         enableEmailNotif:
@@ -245,7 +371,8 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
             ? rawCfg.enableEmailNotif
             : DEFAULT_CONFIG.enableEmailNotif,
         emailSenderAlias: rawCfg.emailSenderAlias || DEFAULT_CONFIG.emailSenderAlias,
-        emailSenderName: rawCfg.emailSenderName || DEFAULT_CONFIG.emailSenderName,
+        emailSenderName:
+          sanitizeLegacyBrandText(rawCfg.emailSenderName) || DEFAULT_CONFIG.emailSenderName,
         emailTemplateDaftar: emailDaftar,
         emailTemplateReminder: emailReminder,
         emailTemplates: [emailDaftar, emailReminder],
@@ -417,13 +544,15 @@ export async function fetchPublicConfig(
         config: parsed.data.config,
         panitia: parsed.data.panitia,
       });
+      const bootstrap: PublicBootstrapData = {
+        config: norm.config,
+        panitia: norm.panitia,
+      };
+      saveCachedPublicConfig(bootstrap);
       return {
         status: 'success',
         message: parsed.message || 'Konfigurasi publik siap.',
-        data: {
-          config: norm.config,
-          panitia: norm.panitia,
-        },
+        data: bootstrap,
       };
     }
     return parsed;
@@ -440,7 +569,8 @@ export async function fetchPublicConfig(
 
 export async function lookupDonaturByWa(
   gasUrl: string,
-  noWa: string
+  noWa: string,
+  options?: { forceRefresh?: boolean }
 ): Promise<ApiResult<DonorLookupResult>> {
   const waCheck = validateAndNormalizeWA(noWa);
   if (!waCheck.valid) {
@@ -450,25 +580,40 @@ export async function lookupDonaturByWa(
 
   const url = gasUrl.trim();
   if (url) {
+    if (!options?.forceRefresh) {
+      const cached = readCachedLookup(normalizedWa);
+      if (cached) {
+        return {
+          status: 'success',
+          message: cached.found
+            ? 'Data donatur ditemukan (instan).'
+            : 'Nomor belum terdaftar sebagai donatur.',
+          data: cached,
+        };
+      }
+    }
     try {
       const res = await callGasPost<DonorLookupResult>(url, {
         action: 'lookupDonaturByWa',
         noWa: normalizedWa,
+        ...(options?.forceRefresh ? { forceRefresh: true } : {}),
       });
       if (res.status === 'success' && res.data) {
         const normState = normalizeLoadedState({
           donatur: res.data.donatur ? [res.data.donatur] : [],
           transaksi: res.data.transaksi || [],
         });
+        const lookupData: DonorLookupResult = {
+          found: Boolean(res.data.found),
+          normalizedWa: res.data.normalizedWa || normalizedWa,
+          donatur: normState.donatur[0],
+          transaksi: normState.transaksi,
+        };
+        writeCachedLookup(normalizedWa, lookupData);
         return {
           status: 'success',
           message: res.message,
-          data: {
-            found: Boolean(res.data.found),
-            normalizedWa: res.data.normalizedWa || normalizedWa,
-            donatur: normState.donatur[0],
-            transaksi: normState.transaksi,
-          },
+          data: lookupData,
         };
       }
       return res;
@@ -638,7 +783,7 @@ export async function registerDonatur(
   const url = gasUrl.trim();
   if (url) {
     try {
-      return await callGasPost<{
+      const res = await callGasPost<{
         donatur?: Donatur;
         existingDonatur?: Partial<Donatur>;
         notifStatus?: NotifDeliveryResult;
@@ -646,6 +791,8 @@ export async function registerDonatur(
         action: 'registerDonatur',
         ...payload,
       });
+      invalidateLookupCache(payload.noWa);
+      return res;
     } catch (err) {
       return {
         status: 'error',
@@ -731,10 +878,13 @@ export async function updateDonaturMandiri(
   const url = gasUrl.trim();
   if (url) {
     try {
-      return await callGasPost<{ donatur?: Donatur }>(url, {
+      const res = await callGasPost<{ donatur?: Donatur }>(url, {
         action: 'updateDonaturMandiri',
         ...payload,
       });
+      invalidateLookupCache(payload.originalNoWa);
+      invalidateLookupCache(payload.noWa);
+      return res;
     } catch (err) {
       return {
         status: 'error',
@@ -808,7 +958,7 @@ export async function submitPembayaran(
   const url = gasUrl.trim();
   if (url) {
     try {
-      return await callGasPost<{
+      const res = await callGasPost<{
         transaksi?: TransaksiDonasi;
         transaksiList?: TransaksiDonasi[];
         savedFileName?: string;
@@ -817,6 +967,8 @@ export async function submitPembayaran(
         ...(adminToken ? { adminToken } : {}),
         ...payload,
       });
+      if (payload.noWa) invalidateLookupCache(payload.noWa);
+      return res;
     } catch (err) {
       return {
         status: 'error',
@@ -1163,6 +1315,93 @@ export async function bulkUpdateStatusGrupDonatur(
   };
 }
 
+export async function syncGroupMembers(
+  gasUrl: string,
+  adminToken?: string,
+  options?: {
+    memberPhones?: string[];
+    markOthersNotJoined?: boolean;
+  }
+): Promise<ApiResult<SyncGroupMembersResult>> {
+  const url = gasUrl.trim();
+  const cleanPhones = Array.isArray(options?.memberPhones)
+    ? Array.from(
+        new Set(
+          options!.memberPhones
+            .map((p) => validateAndNormalizeWA(p).normalized || '')
+            .filter(Boolean)
+        )
+      )
+    : [];
+
+  if (url) {
+    try {
+      const res = await callGasPost<SyncGroupMembersResult>(url, {
+        action: 'syncGroupMembers',
+        adminToken: adminToken || '',
+        memberPhones: cleanPhones,
+        markOthersNotJoined: Boolean(options?.markOthersNotJoined),
+      });
+      invalidateLookupCache();
+      return res;
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal menyinkronkan anggota Grup WA.',
+      };
+    }
+  }
+
+  if (cleanPhones.length === 0) {
+    return {
+      status: 'error',
+      message:
+        'Mode Lokal tidak terhubung ke API ReChat. Gunakan fitur "Cocokkan dari Scrab Nomor ReChat" untuk menempel daftar nomor anggota grup.',
+    };
+  }
+
+  const phoneSet = new Set(cleanPhones);
+  const state = getLocalState();
+  const updatedJoinedIds: string[] = [];
+  const updatedNotJoinedIds: string[] = [];
+  let matchedDonors = 0;
+  let alreadyJoined = 0;
+
+  state.donatur = state.donatur.map((d) => {
+    const norm = validateAndNormalizeWA(d.noWa).normalized || d.noWa;
+    const isInGroup = phoneSet.has(norm);
+    if (isInGroup) {
+      matchedDonors += 1;
+      if (d.statusGrupWa === 'Sudah Bergabung') {
+        alreadyJoined += 1;
+      } else {
+        updatedJoinedIds.push(d.idDonatur);
+        return { ...d, statusGrupWa: 'Sudah Bergabung' as StatusGrupWa };
+      }
+    } else if (options?.markOthersNotJoined && d.statusGrupWa === 'Sudah Bergabung') {
+      updatedNotJoinedIds.push(d.idDonatur);
+      return { ...d, statusGrupWa: 'Belum Bergabung' as StatusGrupWa };
+    }
+    return d;
+  });
+
+  saveLocalState(state);
+  return {
+    status: 'success',
+    message: `Deteksi selesai (Mode Lokal): ${matchedDonors} donatur cocok sebagai anggota grup, ${updatedJoinedIds.length} baru ditandai Sudah Bergabung.`,
+    data: {
+      source: 'local',
+      totalExtracted: cleanPhones.length,
+      matchedDonors,
+      newlyJoined: updatedJoinedIds.length,
+      newlyNotJoined: updatedNotJoinedIds.length,
+      alreadyJoined,
+      updatedJoinedIds,
+      updatedNotJoinedIds,
+    },
+  };
+}
+
 export async function sendBroadcastSingle(
   gasUrl: string,
   payload: SendBroadcastSinglePayload,
@@ -1305,11 +1544,20 @@ export async function savePengaturan(
   const url = gasUrl.trim();
   if (url) {
     try {
-      return await callGasPost<{ config: LembagaConfig }>(url, {
+      const res = await callGasPost<{ config: LembagaConfig }>(url, {
         action: 'savePengaturan',
         adminToken: adminToken || '',
         ...payload,
       });
+      if (res.status === 'success' && res.data?.config) {
+        const norm = normalizeLoadedState({ config: res.data.config });
+        saveCachedPublicConfig({ config: { ...norm.config, waApiKey: '' }, panitia: [] });
+        return {
+          ...res,
+          data: { config: norm.config },
+        };
+      }
+      return res;
     } catch (err) {
       return {
         status: 'error',
@@ -1340,11 +1588,11 @@ export async function savePengaturan(
       : DEFAULT_EMAIL_TEMPLATE_REMINDER;
 
   const updatedConfig: LembagaConfig = {
-    namaLembaga: payload.namaLembaga.trim() || DEFAULT_CONFIG.namaLembaga,
-    tagline: payload.tagline.trim() || DEFAULT_CONFIG.tagline,
+    namaLembaga: sanitizeLegacyBrandText(payload.namaLembaga.trim()) || DEFAULT_CONFIG.namaLembaga,
+    tagline: sanitizeLegacyBrandText(payload.tagline.trim()) || DEFAULT_CONFIG.tagline,
     logoUrl: payload.logoBase64 || payload.logoUrl || '',
     qrisUrl: payload.qrisBase64 || payload.qrisUrl || '',
-    qrisMerchantName: payload.qrisMerchantName.trim(),
+    qrisMerchantName: sanitizeLegacyBrandText(payload.qrisMerchantName.trim()),
     showQris: payload.showQris,
     showRekening: payload.showRekening,
     defaultNominal: payload.defaultNominal > 0 ? payload.defaultNominal : 50000,
@@ -1352,7 +1600,7 @@ export async function savePengaturan(
       payload.defaultTglPengingat >= 1 && payload.defaultTglPengingat <= 31
         ? payload.defaultTglPengingat
         : 5,
-    catatanPembayaran: payload.catatanPembayaran.trim(),
+    catatanPembayaran: sanitizeLegacyBrandText(payload.catatanPembayaran.trim()),
     infoRekening:
       payload.infoRekening.length > 0 ? payload.infoRekening : DEFAULT_CONFIG.infoRekening,
     enableWaNotif: payload.enableWaNotif,
@@ -1371,22 +1619,31 @@ export async function savePengaturan(
       cleanReminderTemplates.length > 0
         ? cleanReminderTemplates
         : DEFAULT_WA_REMINDER_TEMPLATES,
-    waGroupName: payload.waGroupName.trim() || DEFAULT_CONFIG.waGroupName,
+    showWaGroupPublic: payload.showWaGroupPublic,
+    waGroupName: sanitizeLegacyBrandText(payload.waGroupName.trim()) || DEFAULT_CONFIG.waGroupName,
     waGroupLink: payload.waGroupLink.trim(),
     waGroupId: payload.waGroupId.trim(),
+    callCenterWa: payload.callCenterWa.trim(),
+    callCenterLabel:
+      sanitizeLegacyBrandText(payload.callCenterLabel.trim()) || DEFAULT_CONFIG.callCenterLabel,
+    waManualConfirmTemplate:
+      payload.waManualConfirmTemplate.trim() || DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE,
     enableAdminWaGroupNotif: payload.enableAdminWaGroupNotif,
-    adminWaGroupName: payload.adminWaGroupName.trim() || DEFAULT_CONFIG.adminWaGroupName,
+    adminWaGroupName:
+      sanitizeLegacyBrandText(payload.adminWaGroupName.trim()) || DEFAULT_CONFIG.adminWaGroupName,
     adminWaGroupLink: payload.adminWaGroupLink.trim(),
     adminWaGroupId: payload.adminWaGroupId.trim(),
     enableEmailNotif: payload.enableEmailNotif,
     emailSenderAlias: payload.emailSenderAlias.trim() || DEFAULT_CONFIG.emailSenderAlias,
-    emailSenderName: payload.emailSenderName.trim() || DEFAULT_CONFIG.emailSenderName,
+    emailSenderName:
+      sanitizeLegacyBrandText(payload.emailSenderName.trim()) || DEFAULT_CONFIG.emailSenderName,
     emailTemplateDaftar: emailDaftar,
     emailTemplateReminder: emailReminder,
     emailTemplates: [emailDaftar, emailReminder],
   };
   state.config = updatedConfig;
   saveLocalState(state);
+  saveCachedPublicConfig({ config: { ...updatedConfig, waApiKey: '' }, panitia: state.panitia });
 
   return {
     status: 'success',

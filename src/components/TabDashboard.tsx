@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
   ArrowRight,
@@ -10,7 +10,7 @@ import {
   Users,
 } from 'lucide-react';
 import { WILAYAH_KABUPATEN } from '../data/wilayah';
-import { Donatur, LembagaConfig, StatusAktif, TransaksiDonasi } from '../types';
+import { Donatur, LembagaConfig, PageSizeOption, StatusAktif, TransaksiDonasi } from '../types';
 import {
   extractYearMonthFromDateStr,
   formatBulanLabel,
@@ -21,6 +21,7 @@ import {
   normalizeWA,
 } from '../utils/formatters';
 import { DashboardCharts } from './DashboardCharts';
+import { PaginationBar, slicePaginated } from './PaginationBar';
 
 interface TabDashboardProps {
   config: LembagaConfig;
@@ -93,6 +94,8 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
   const [summaryTab, setSummaryTab] = useState<SummaryTab>('pulau');
   const [summarySortField, setSummarySortField] = useState<SummarySortField>('validBulanRp');
   const [summarySortDir, setSummarySortDir] = useState<'asc' | 'desc'>('desc');
+  const [summaryPage, setSummaryPage] = useState(1);
+  const [summaryPageSize, setSummaryPageSize] = useState<PageSizeOption>(10);
 
   const monthTransaksi = useMemo(
     () => transaksiList.filter((t) => t.bulanTagihan === selectedMonth),
@@ -340,7 +343,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     };
   }, [donaturList, tierStatusFilter]);
 
-  // ===== Rekap Berdasarkan Wilayah (Pulau / Provinsi / Kabupaten) =====
+  // ===== Rekap Berdasarkan Wilayah (Pulau / Provinsi / Kabupaten — O(N+M) Map Indexed) =====
   const summaryRows = useMemo(() => {
     const getCategoryKey = (d: Donatur): string => {
       const w = resolveDonorWilayah(d);
@@ -364,55 +367,76 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
       validMonthRoutine.map((t) => normalizeWA(t.noWa) || t.noWa).filter(Boolean)
     );
 
-    const keySet = new Set<string>();
-    donaturList.forEach((d) => keySet.add(getCategoryKey(d)));
+    interface RegionBucket {
+      label: string;
+      subtitle: string;
+      activeCount: number;
+      totalDonatur: number;
+      potensiBulanRp: number;
+      lunasBulanIni: number;
+      validBulanRp: number;
+      validSemuaRp: number;
+    }
 
-    const rows = Array.from(keySet).map((label) => {
-      const groupDonors = donaturList.filter((d) => getCategoryKey(d) === label);
-      const activeGroup = groupDonors.filter((d) => d.statusAktif === 'Aktif');
-      const potensiBulanRp = activeGroup.reduce((s, d) => s + (d.nominalKomitmen || 0), 0);
+    const buckets = new Map<string, RegionBucket>();
+    const donorIdToRegion = new Map<string, string>();
+    const donorWaToRegion = new Map<string, string>();
 
-      const lunasBulanIni = activeGroup.filter((d) => {
-        const wa = normalizeWA(d.noWa) || d.noWa;
-        return validMonthIds.has(d.idDonatur) || (wa && validMonthWas.has(wa));
-      }).length;
-
-      const donorIdSet = new Set(groupDonors.map((d) => d.idDonatur));
-      const donorWaSet = new Set(groupDonors.map((d) => normalizeWA(d.noWa) || d.noWa));
-
-      const validTrxGroup = transaksiList.filter((t) => {
-        if (t.statusVerifikasi !== 'Valid') return false;
-        if (t.jenisDonatur === 'Umum' || t.idDonatur === 'UMUM') return false;
-        const byId = t.idDonatur && t.idDonatur !== '-' && donorIdSet.has(t.idDonatur);
-        const byWa = donorWaSet.has(normalizeWA(t.noWa) || t.noWa);
-        return byId || byWa;
-      });
-
-      const validBulanRp = validTrxGroup
-        .filter((t) => t.bulanTagihan === selectedMonth)
-        .reduce((s, t) => s + t.nominalTransfer, 0);
-      const validSemuaRp = validTrxGroup.reduce((s, t) => s + t.nominalTransfer, 0);
-
-      let subtitle = '';
-      if (summaryTab === 'kabupaten' && groupDonors.length > 0) {
-        const w = resolveDonorWilayah(groupDonors[0]);
-        if (w.provinsi) subtitle = `${w.provinsi}${w.pulau ? ` · ${w.pulau}` : ''}`;
-      } else if (summaryTab === 'provinsi' && groupDonors.length > 0) {
-        const w = resolveDonorWilayah(groupDonors[0]);
-        if (w.pulau) subtitle = `Pulau ${w.pulau}`;
+    donaturList.forEach((d) => {
+      const label = getCategoryKey(d);
+      let bucket = buckets.get(label);
+      if (!bucket) {
+        let subtitle = '';
+        const w = resolveDonorWilayah(d);
+        if (summaryTab === 'kabupaten' && w.provinsi) {
+          subtitle = `${w.provinsi}${w.pulau ? ` · ${w.pulau}` : ''}`;
+        } else if (summaryTab === 'provinsi' && w.pulau) {
+          subtitle = `Pulau ${w.pulau}`;
+        }
+        bucket = {
+          label,
+          subtitle,
+          activeCount: 0,
+          totalDonatur: 0,
+          potensiBulanRp: 0,
+          lunasBulanIni: 0,
+          validBulanRp: 0,
+          validSemuaRp: 0,
+        };
+        buckets.set(label, bucket);
       }
 
-      return {
-        label,
-        subtitle,
-        activeCount: activeGroup.length,
-        totalDonatur: groupDonors.length,
-        potensiBulanRp,
-        lunasBulanIni,
-        validBulanRp,
-        validSemuaRp,
-      };
+      bucket.totalDonatur += 1;
+      const wa = normalizeWA(d.noWa) || d.noWa;
+      if (d.idDonatur && d.idDonatur !== '-') donorIdToRegion.set(d.idDonatur, label);
+      if (wa) donorWaToRegion.set(wa, label);
+
+      if (d.statusAktif === 'Aktif') {
+        bucket.activeCount += 1;
+        bucket.potensiBulanRp += d.nominalKomitmen || 0;
+        if (validMonthIds.has(d.idDonatur) || (wa && validMonthWas.has(wa))) {
+          bucket.lunasBulanIni += 1;
+        }
+      }
     });
+
+    transaksiList.forEach((t) => {
+      if (t.statusVerifikasi !== 'Valid') return;
+      if (t.jenisDonatur === 'Umum' || t.idDonatur === 'UMUM') return;
+      const wa = normalizeWA(t.noWa) || t.noWa;
+      const regionLabel =
+        (t.idDonatur && t.idDonatur !== '-' ? donorIdToRegion.get(t.idDonatur) : undefined) ||
+        (wa ? donorWaToRegion.get(wa) : undefined);
+      if (!regionLabel) return;
+      const bucket = buckets.get(regionLabel);
+      if (!bucket) return;
+      bucket.validSemuaRp += t.nominalTransfer;
+      if (t.bulanTagihan === selectedMonth) {
+        bucket.validBulanRp += t.nominalTransfer;
+      }
+    });
+
+    const rows = Array.from(buckets.values());
 
     const dir = summarySortDir === 'asc' ? 1 : -1;
     return rows.sort((a, b) => {
@@ -449,6 +473,15 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     summarySortField,
     summarySortDir,
   ]);
+
+  useEffect(() => {
+    setSummaryPage(1);
+  }, [summaryTab, selectedMonth, summarySortField, summarySortDir, summaryPageSize]);
+
+  const paginatedSummaryRows = useMemo(
+    () => slicePaginated(summaryRows, summaryPage, summaryPageSize),
+    [summaryRows, summaryPage, summaryPageSize]
+  );
 
   const handleSummarySortHeader = (field: SummarySortField) => {
     if (summarySortField === field) {
@@ -997,13 +1030,13 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                   </td>
                 </tr>
               ) : (
-                summaryRows.map((row, index) => (
+                paginatedSummaryRows.items.map((row, index) => (
                   <tr
                     key={row.label}
                     className="odd:bg-white/90 even:bg-sky-50/45 dark:odd:bg-slate-900/75 dark:even:bg-slate-800/65 hover:bg-emerald-50/60 dark:hover:bg-teal-950/45 transition-colors"
                   >
                     <td className="py-3.5 pl-5 pr-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
-                      {index + 1}
+                      {paginatedSummaryRows.startIndex + index + 1}
                     </td>
                     <td className="py-3.5 px-4 min-w-0">
                       <p className="font-semibold text-slate-900 dark:text-slate-100 safe-wrap">
@@ -1039,6 +1072,19 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
             </tbody>
           </table>
         </div>
+        {summaryRows.length > 0 && (
+          <PaginationBar
+            totalItems={summaryRows.length}
+            currentPage={paginatedSummaryRows.safePage}
+            pageSize={summaryPageSize}
+            onPageChange={setSummaryPage}
+            onPageSizeChange={(next) => {
+              setSummaryPageSize(next);
+              setSummaryPage(1);
+            }}
+            itemLabel="wilayah"
+          />
+        )}
       </section>
     </div>
   );

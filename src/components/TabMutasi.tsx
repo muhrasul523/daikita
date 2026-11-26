@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
   ArrowDownAZ,
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import {
   JenisDonatur,
+  PageSizeOption,
   StatusVerifikasi,
   TransaksiDonasi,
 } from '../types';
@@ -28,6 +29,7 @@ import {
   getCurrentYearMonth,
   sanitizeExternalUrl,
 } from '../utils/formatters';
+import { PaginationBar, slicePaginated } from './PaginationBar';
 import { SearchableOption, SearchableSelect } from './SearchableSelect';
 
 interface TabMutasiProps {
@@ -77,8 +79,11 @@ export const TabMutasi: React.FC<TabMutasiProps> = ({ transaksiList, isLoading }
   const [jenisFilter, setJenisFilter] = useState<'Semua' | JenisDonatur>('Semua');
   const [kategoriFilter, setKategoriFilter] = useState<KategoriDanaFilter>('Semua');
   const [mutasiSearch, setMutasiSearch] = useState('');
+  const deferredMutasiSearch = useDeferredValue(mutasiSearch);
   const [mutasiSortField, setMutasiSortField] = useState<MutasiSortField>('tanggalTransfer');
   const [mutasiSortDir, setMutasiSortDir] = useState<'asc' | 'desc'>('desc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSizeOption>(10);
   const [previewModalTrx, setPreviewModalTrx] = useState<TransaksiDonasi | null>(null);
 
   const periodScopedTransaksi = useMemo(() => {
@@ -99,7 +104,7 @@ export const TabMutasi: React.FC<TabMutasiProps> = ({ transaksiList, isLoading }
   );
 
   const filteredMutasi = useMemo(() => {
-    const q = mutasiSearch.trim().toLowerCase();
+    const q = deferredMutasiSearch.trim().toLowerCase();
     const filtered = periodScopedTransaksi.filter((t) => {
       const isUmum = t.jenisDonatur === 'Umum' || t.idDonatur === 'UMUM';
       const jenis: JenisDonatur = isUmum ? 'Umum' : 'Rutin';
@@ -168,10 +173,29 @@ export const TabMutasi: React.FC<TabMutasiProps> = ({ transaksiList, isLoading }
     statusVerifFilter,
     jenisFilter,
     kategoriFilter,
-    mutasiSearch,
+    deferredMutasiSearch,
     mutasiSortField,
     mutasiSortDir,
   ]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    periodMode,
+    mutasiMonth,
+    statusVerifFilter,
+    jenisFilter,
+    kategoriFilter,
+    deferredMutasiSearch,
+    mutasiSortField,
+    mutasiSortDir,
+    pageSize,
+  ]);
+
+  const paginatedMutasi = useMemo(
+    () => slicePaginated(filteredMutasi, currentPage, pageSize),
+    [filteredMutasi, currentPage, pageSize]
+  );
 
   const mutasiTotals = useMemo(() => {
     let totalTransferRp = 0;
@@ -516,7 +540,7 @@ export const TabMutasi: React.FC<TabMutasiProps> = ({ transaksiList, isLoading }
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/70 dark:divide-slate-700/70 text-sm">
-                {filteredMutasi.map((trx, index) => {
+                {paginatedMutasi.items.map((trx, index) => {
                   const isUmum = trx.jenisDonatur === 'Umum' || trx.idDonatur === 'UMUM';
                   const hasWa = Boolean(trx.noWa && trx.noWa !== '-');
                   const externalUrl = sanitizeExternalUrl(trx.linkBuktiDrive);
@@ -535,7 +559,7 @@ export const TabMutasi: React.FC<TabMutasiProps> = ({ transaksiList, isLoading }
                       className="odd:bg-white/90 even:bg-emerald-50/55 dark:odd:bg-slate-900/75 dark:even:bg-slate-800/65 hover:bg-teal-50/80 dark:hover:bg-emerald-950/45 transition-colors align-top"
                     >
                       <td className="py-3.5 pl-5 pr-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
-                        {index + 1}
+                        {paginatedMutasi.startIndex + index + 1}
                       </td>
 
                       <td className="py-3.5 px-4 whitespace-nowrap">
@@ -668,6 +692,19 @@ export const TabMutasi: React.FC<TabMutasiProps> = ({ transaksiList, isLoading }
               </tbody>
             </table>
           </div>
+        )}
+        {!isLoading && filteredMutasi.length > 0 && (
+          <PaginationBar
+            totalItems={filteredMutasi.length}
+            currentPage={paginatedMutasi.safePage}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setCurrentPage(1);
+            }}
+            itemLabel="mutasi"
+          />
         )}
       </section>
 

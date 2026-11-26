@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowDownAZ,
@@ -22,6 +22,7 @@ import {
   Donatur,
   LembagaConfig,
   NotifDeliveryResult,
+  PageSizeOption,
   RegisterDonaturPayload,
   StatusAktif,
   StatusBayarBulan,
@@ -39,6 +40,7 @@ import {
   normalizeWA,
 } from '../utils/formatters';
 import { DonorHistorySection } from './DonorHistorySection';
+import { PaginationBar, slicePaginated } from './PaginationBar';
 import { SearchableOption, SearchableSelect } from './SearchableSelect';
 import { TabPendaftaran } from './TabPendaftaran';
 
@@ -108,8 +110,11 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
   const [aktifFilter, setAktifFilter] = useState<'Semua' | StatusAktif>('Semua');
   const [genderFilter, setGenderFilter] = useState<'Semua' | 'Laki-laki' | 'Perempuan'>('Semua');
   const [donorSearch, setDonorSearch] = useState('');
+  const deferredDonorSearch = useDeferredValue(donorSearch);
   const [donorSortField, setDonorSortField] = useState<DonorSortField>('nama');
   const [donorSortDir, setDonorSortDir] = useState<'asc' | 'desc'>('asc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSizeOption>(10);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const [historyDonaturId, setHistoryDonaturId] = useState('');
@@ -187,32 +192,62 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
   );
 
   const donorRows: DonorWithMonthlyStatus[] = useMemo(() => {
+    const trxByIdMap = new Map<string, TransaksiDonasi[]>();
+    const trxByWaMap = new Map<string, TransaksiDonasi[]>();
+
+    donorMonthTransaksi.forEach((t) => {
+      if (t.jenisDonatur === 'Umum' || t.idDonatur === 'UMUM') return;
+      if (t.idDonatur && t.idDonatur !== '-') {
+        const list = trxByIdMap.get(t.idDonatur);
+        if (list) list.push(t);
+        else trxByIdMap.set(t.idDonatur, [t]);
+      }
+      const normWa = normalizeWA(t.noWa) || t.noWa;
+      if (normWa) {
+        const list = trxByWaMap.get(normWa);
+        if (list) list.push(t);
+        else trxByWaMap.set(normWa, [t]);
+      }
+    });
+
     return donaturList.map((donatur) => {
       const donorWa = normalizeWA(donatur.noWa) || donatur.noWa;
-      const matchingTrx = donorMonthTransaksi.filter((t) => {
-        if (t.jenisDonatur === 'Umum' || t.idDonatur === 'UMUM') return false;
-        const idMatch =
-          donatur.idDonatur &&
-          t.idDonatur &&
-          t.idDonatur !== '-' &&
-          t.idDonatur === donatur.idDonatur;
-        const waMatch = donorWa && (normalizeWA(t.noWa) || t.noWa) === donorWa;
-        return idMatch || waMatch;
-      });
+      const byId = donatur.idDonatur ? trxByIdMap.get(donatur.idDonatur) : undefined;
+      const byWa = donorWa ? trxByWaMap.get(donorWa) : undefined;
 
-      const validTrx = matchingTrx.filter((t) => t.statusVerifikasi === 'Valid');
-      const pendingTrx = matchingTrx.filter((t) => t.statusVerifikasi === 'Pending');
+      let matchingTrx: TransaksiDonasi[] = [];
+      if (byId && byWa) {
+        const seen = new Set<string>();
+        matchingTrx = [...byId, ...byWa].filter((t) => {
+          if (seen.has(t.idTransaksi)) return false;
+          seen.add(t.idTransaksi);
+          return true;
+        });
+      } else {
+        matchingTrx = byId || byWa || [];
+      }
 
-      const totalValidBulanIni = validTrx.reduce((sum, t) => sum + t.nominalTransfer, 0);
-      const totalLainnyaBulanIni = validTrx.reduce(
-        (sum, t) => sum + Math.max(0, t.donasiLainnya || 0),
-        0
-      );
-      const totalPendingBulanIni = pendingTrx.reduce((sum, t) => sum + t.nominalTransfer, 0);
+      let validCount = 0;
+      let pendingCount = 0;
+      let totalValidBulanIni = 0;
+      let totalLainnyaBulanIni = 0;
+      let totalPendingBulanIni = 0;
+
+      for (let i = 0; i < matchingTrx.length; i++) {
+        const t = matchingTrx[i];
+        if (t.statusVerifikasi === 'Valid') {
+          validCount += 1;
+          totalValidBulanIni += t.nominalTransfer;
+          totalLainnyaBulanIni += Math.max(0, t.donasiLainnya || 0);
+        } else if (t.statusVerifikasi === 'Pending') {
+          pendingCount += 1;
+          totalPendingBulanIni += t.nominalTransfer;
+        }
+      }
 
       let statusBulan: StatusBayarBulan = 'Belum Bayar';
-      if (validTrx.length > 0) statusBulan = 'Lunas';
-      else if (pendingTrx.length > 0) statusBulan = 'Menunggu Verifikasi';
+      if (validCount > 0) statusBulan = 'Lunas';
+      else if (pendingCount > 0) statusBulan = 'Menunggu Verifikasi';
 
       return {
         donatur,
@@ -235,7 +270,7 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
   );
 
   const filteredAndSortedDonors = useMemo(() => {
-    const q = donorSearch.trim().toLowerCase();
+    const q = deferredDonorSearch.trim().toLowerCase();
     const filtered = donorRows.filter((row) => {
       const w = resolveDonorWilayah(row.donatur);
       if (statusBayarFilter !== 'Semua' && row.statusBulan !== statusBayarFilter) return false;
@@ -307,10 +342,31 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
     pulauFilter,
     provinsiFilter,
     kabupatenFilter,
-    donorSearch,
+    deferredDonorSearch,
     donorSortField,
     donorSortDir,
   ]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    donorMonth,
+    statusBayarFilter,
+    aktifFilter,
+    genderFilter,
+    pulauFilter,
+    provinsiFilter,
+    kabupatenFilter,
+    deferredDonorSearch,
+    donorSortField,
+    donorSortDir,
+    pageSize,
+  ]);
+
+  const paginatedDonors = useMemo(
+    () => slicePaginated(filteredAndSortedDonors, currentPage, pageSize),
+    [filteredAndSortedDonors, currentPage, pageSize]
+  );
 
   const summaryStats = useMemo(() => {
     const aktifCount = filteredAndSortedDonors.filter(
@@ -737,7 +793,7 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/70 dark:divide-slate-700/70 text-sm">
-                {filteredAndSortedDonors.map((row, index) => {
+                {paginatedDonors.items.map((row, index) => {
                   const { donatur, statusBulan, totalValidBulanIni, totalLainnyaBulanIni } = row;
                   const wilayah = resolveDonorWilayah(donatur);
                   const isNonAktif = donatur.statusAktif === 'Non Aktif';
@@ -751,7 +807,7 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
                       className="odd:bg-white/90 even:bg-emerald-50/55 dark:odd:bg-slate-900/75 dark:even:bg-slate-800/65 hover:bg-teal-50/80 dark:hover:bg-emerald-950/45 transition-colors align-top"
                     >
                       <td className="py-4 pl-5 pr-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
-                        {index + 1}
+                        {paginatedDonors.startIndex + index + 1}
                       </td>
 
                       <td className="py-4 px-4 min-w-0 max-w-[230px]">
@@ -888,6 +944,19 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
               </tbody>
             </table>
           </div>
+        )}
+        {!isLoading && filteredAndSortedDonors.length > 0 && (
+          <PaginationBar
+            totalItems={filteredAndSortedDonors.length}
+            currentPage={paginatedDonors.safePage}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setCurrentPage(1);
+            }}
+            itemLabel="donatur"
+          />
         )}
       </section>
 

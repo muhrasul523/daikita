@@ -91,7 +91,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
             )}
             <div className="min-w-0">
               <p className="text-sm sm:text-base font-bold tracking-tight text-slate-900 dark:text-white truncate">
-                {APP_BRAND_NAME} · Portal Pengurus
+                {config.namaLembaga || APP_BRAND_NAME} · Portal Pengurus
               </p>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                 Admin &amp; Super Admin

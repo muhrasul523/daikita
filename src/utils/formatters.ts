@@ -1,4 +1,10 @@
-import { APP_BAYAR_URL, APP_PUBLIC_URL, DEFAULT_WA_REMINDER_TEMPLATES } from '../config';
+import {
+  APP_BAYAR_URL,
+  APP_BRAND_NAME,
+  APP_PUBLIC_URL,
+  DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE,
+  DEFAULT_WA_REMINDER_TEMPLATES,
+} from '../config';
 import {
   Donatur,
   JenisDonatur,
@@ -404,11 +410,11 @@ export function renderMessageTemplate(
   const bulanYm = options?.bulanTagihan || getCurrentYearMonth();
   const bulanLabel = formatBulanLabel(bulanYm);
   const groupLink = (config.waGroupLink || '').trim();
-  const groupName = (config.waGroupName || 'Donatur Tetap DAIKITA - Dakwah Pelosok').trim();
+  const groupName = (config.waGroupName || 'Donatur Tetap DAIKITA — Dakwah Pelosok').trim();
   const shouldIncludeGroup =
     options?.includeGroupLink !== undefined
       ? options.includeGroupLink
-      : normalizeMinatGrup(donatur.minatGrupWa) === 'Ya';
+      : config.showWaGroupPublic !== false && normalizeMinatGrup(donatur.minatGrupWa) === 'Ya';
 
   const linkGrupSection =
     shouldIncludeGroup && groupLink
@@ -430,7 +436,7 @@ export function renderMessageTemplate(
     '{nominal}': formatRupiah(donatur.nominalKomitmen || 0),
     '{tgl_pengingat}': String(donatur.tglJatuhTempo || config.defaultTglPengingat || 5),
     '{perantara}': '-',
-    '{lembaga}': config.namaLembaga || 'DAIKITA - Dakwah Pelosok',
+    '{lembaga}': sanitizeLegacyBrandText(config.namaLembaga || APP_BRAND_NAME),
     '{rekening}': formatRekeningLines(config.infoRekening),
     '{link_konfirmasi}': portalUrl,
     '{bulan}': bulanLabel,
@@ -481,12 +487,12 @@ export function buildReminderWaLink(
  */
 export function buildGroupInviteMessage(donatur: Donatur, config: LembagaConfig): string {
   const sapaan = getSapaanByGender(donatur.jenisKelamin);
-  const groupName = config.waGroupName || 'Donatur Tetap DAIKITA - Dakwah Pelosok';
+  const groupName = sanitizeLegacyBrandText(config.waGroupName || 'Donatur Tetap DAIKITA — Dakwah Pelosok');
   const groupLink = config.waGroupLink || '(Link grup belum diatur di Pengaturan)';
   return [
     `Assalamu'alaikum Warahmatullahi Wabarakatuh ${sapaan} *${donatur.namaLengkap}*.`,
     ``,
-    `Terima kasih atas partisipasi ${sapaan} sebagai Donatur Tetap *Dakwah Pelosok* di *${config.namaLembaga}*.`,
+    `Terima kasih atas partisipasi ${sapaan} sebagai Donatur Tetap *Dakwah Pelosok* di *${sanitizeLegacyBrandText(config.namaLembaga)}*.`,
     `Silakan bergabung ke *Grup WhatsApp ${groupName}* untuk mendapatkan info penyaluran donasi & kabar dakwah pelosok melalui tautan berikut:`,
     groupLink,
     ``,
@@ -567,4 +573,96 @@ export function sanitizeExternalUrl(raw?: string): string {
     // Invalid URL
   }
   return '';
+}
+
+/**
+ * Menghapus istilah merek lama dan menyeragamkan penulisan menjadi "DAIKITA — Dakwah Pelosok"
+ */
+export function sanitizeLegacyBrandText(raw?: string): string {
+  const text = String(raw || '');
+  if (!text) return '';
+  return text
+    .replace(/kafalah\s+da['’]?i/gi, 'Dakwah Pelosok')
+    .replace(/penyaluran\s+kafalah/gi, 'penyaluran donasi')
+    .replace(/\bkafalah\b/gi, 'Dakwah Pelosok')
+    .replace(/DAIKITA\s*[-–—]\s*Dakwah\s+Pelosok/gi, APP_BRAND_NAME);
+}
+
+export interface ManualConfirmWaParams {
+  nama: string;
+  idDonatur?: string;
+  noWa?: string;
+  bulanLabel?: string;
+  tanggalTransfer?: string;
+  nominal?: number;
+  keterangan?: string;
+  linkBukti?: string;
+}
+
+/**
+ * Merender template pesan Konfirmasi Manual Penyaluran Donasi via WhatsApp ke Admin
+ */
+export function renderManualConfirmWaMessage(
+  templateStr: string | undefined,
+  params: ManualConfirmWaParams,
+  config: LembagaConfig
+): string {
+  const baseTemplate =
+    (templateStr || '').trim() ||
+    (config.waManualConfirmTemplate || '').trim() ||
+    DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE;
+
+  const vars: Record<string, string> = {
+    '{nama}': params.nama || 'Donatur',
+    '{id_donatur}': params.idDonatur || '-',
+    '{no_wa}': params.noWa ? formatWADisplay(params.noWa) : '-',
+    '{bulan}': params.bulanLabel || formatBulanLabel(getCurrentYearMonth()),
+    '{tanggal_transfer}': params.tanggalTransfer ? formatTanggalIndo(params.tanggalTransfer) : formatTanggalIndo(getTodayIsoDate()),
+    '{nominal}': params.nominal && params.nominal > 0 ? formatRupiah(params.nominal) : 'Rp -',
+    '{keterangan}': (params.keterangan || '').trim() || '-',
+    '{link_bukti}': (params.linkBukti || '').trim() || 'Akan dilampirkan langsung di chat WA ini',
+    '{lembaga}': sanitizeLegacyBrandText(config.namaLembaga || APP_BRAND_NAME),
+  };
+
+  let out = baseTemplate;
+  Object.keys(vars).forEach((token) => {
+    out = out.split(token).join(vars[token]);
+  });
+
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * Membangun tautan wa.me ke Call Center Admin untuk konfirmasi manual pembayaran
+ */
+export function buildManualConfirmWaUrl(
+  params: ManualConfirmWaParams,
+  config: LembagaConfig
+): string {
+  const adminWa = normalizeWA(config.callCenterWa || '');
+  if (!adminWa) return '';
+  const msg = renderManualConfirmWaMessage(config.waManualConfirmTemplate, params, config);
+  return buildWaMeUrl(adminWa, msg);
+}
+
+/**
+ * Mengekstrak daftar nomor WA unik (format 628... / internasional) dari teks bebas,
+ * CSV, atau hasil ekspor menu "Scrab Nomor" ReChat.
+ */
+export function extractPhoneNumbersFromText(rawText: string): string[] {
+  const text = String(rawText || '');
+  if (!text.trim()) return [];
+  const matches = text.match(/(?:\+|00)?\d[\d\s\-().]{6,20}\d/g) || [];
+  const seen = new Set<string>();
+  const results: string[] = [];
+
+  matches.forEach((rawCandidate) => {
+    const clean = normalizeWA(rawCandidate);
+    if (clean && !seen.has(clean)) {
+      seen.add(clean);
+      results.push(clean);
+    }
+  });
+
+  return results;
 }

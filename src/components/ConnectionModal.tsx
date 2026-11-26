@@ -7,6 +7,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  Headphones,
   Image as ImageIcon,
   KeyRound,
   Landmark,
@@ -30,6 +31,7 @@ import {
   DEFAULT_EMAIL_TEMPLATE_DAFTAR,
   DEFAULT_EMAIL_TEMPLATE_REMINDER,
   DEFAULT_WA_FOLLOWUP_TEMPLATES,
+  DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE,
   DEFAULT_WA_REMINDER_TEMPLATES,
   DEFAULT_WA_TEMPLATES,
 } from '../config';
@@ -87,6 +89,18 @@ const TEMPLATE_VARIABLES = [
   '{link_grup}',
   '{link_grup_section}',
   '{qris_note}',
+];
+
+const MANUAL_CONFIRM_VARIABLES = [
+  '{nama}',
+  '{id_donatur}',
+  '{no_wa}',
+  '{bulan}',
+  '{tanggal_transfer}',
+  '{nominal}',
+  '{keterangan}',
+  '{link_bukti}',
+  '{lembaga}',
 ];
 
 interface ToggleSwitchProps {
@@ -203,13 +217,25 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   const [waGroupName, setWaGroupName] = useState(config.waGroupName || '');
   const [waGroupLink, setWaGroupLink] = useState(config.waGroupLink || '');
   const [waGroupId, setWaGroupId] = useState(config.waGroupId || '');
+  const [showWaGroupPublic, setShowWaGroupPublic] = useState<boolean>(
+    config.showWaGroupPublic !== false
+  );
+
+  // State Call Center Admin & Template Konfirmasi Manual WA
+  const [callCenterWa, setCallCenterWa] = useState(config.callCenterWa || '');
+  const [callCenterLabel, setCallCenterLabel] = useState(
+    config.callCenterLabel || 'Call Center Admin DAIKITA'
+  );
+  const [waManualConfirmTemplate, setWaManualConfirmTemplate] = useState(
+    config.waManualConfirmTemplate || DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE
+  );
 
   // State Grup WA Khusus Admin
   const [enableAdminWaGroupNotif, setEnableAdminWaGroupNotif] = useState<boolean>(
     Boolean(config.enableAdminWaGroupNotif)
   );
   const [adminWaGroupName, setAdminWaGroupName] = useState(
-    config.adminWaGroupName || 'Grup Admin DAIKITA - Dakwah Pelosok'
+    config.adminWaGroupName || 'Grup Admin DAIKITA — Dakwah Pelosok'
   );
   const [adminWaGroupLink, setAdminWaGroupLink] = useState(config.adminWaGroupLink || '');
   const [adminWaGroupId, setAdminWaGroupId] = useState(config.adminWaGroupId || '');
@@ -288,19 +314,26 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         ? [...config.waReminderTemplates]
         : [...DEFAULT_WA_REMINDER_TEMPLATES]
     );
-    setWaGroupName(config.waGroupName || 'Grup Donatur DAIKITA - Dakwah Pelosok');
+    setWaGroupName(config.waGroupName || 'Grup Donatur DAIKITA — Dakwah Pelosok');
     setWaGroupLink(config.waGroupLink || '');
     setWaGroupId(config.waGroupId || '');
+    setShowWaGroupPublic(config.showWaGroupPublic !== false);
+
+    setCallCenterWa(config.callCenterWa || '');
+    setCallCenterLabel(config.callCenterLabel || 'Call Center Admin DAIKITA');
+    setWaManualConfirmTemplate(
+      config.waManualConfirmTemplate || DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE
+    );
 
     setEnableAdminWaGroupNotif(Boolean(config.enableAdminWaGroupNotif));
-    setAdminWaGroupName(config.adminWaGroupName || 'Grup Admin DAIKITA - Dakwah Pelosok');
+    setAdminWaGroupName(config.adminWaGroupName || 'Grup Admin DAIKITA — Dakwah Pelosok');
     setAdminWaGroupLink(config.adminWaGroupLink || '');
     setAdminWaGroupId(config.adminWaGroupId || '');
     setAdminGroupTestDetail(null);
 
     setEnableEmailNotif(config.enableEmailNotif);
     setEmailSenderAlias(config.emailSenderAlias || 'lajnahdai.dpp@gmail.com');
-    setEmailSenderName(config.emailSenderName || 'DAIKITA - Dakwah Pelosok');
+    setEmailSenderName(config.emailSenderName || 'DAIKITA — Dakwah Pelosok');
     setEmailTemplateDaftar(
       config.emailTemplateDaftar?.subject && config.emailTemplateDaftar?.body
         ? { ...config.emailTemplateDaftar }
@@ -411,7 +444,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       }
 
       const maxContentW = 1056;
-      const titleText = namaLembaga || 'DAIKITA - Dakwah Pelosok';
+      const titleText = namaLembaga || 'DAIKITA — Dakwah Pelosok';
       let titleSize = activeLogoPreview && !logoSkippedByCors ? 66 : 74;
       ctx.fillStyle = '#065f46';
       ctx.textAlign = 'center';
@@ -549,7 +582,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
     setIsSavingSettings(true);
     const ok = await onSavePengaturan({
-      namaLembaga: namaLembaga.trim() || 'DAIKITA - Dakwah Pelosok',
+      namaLembaga: namaLembaga.trim() || 'DAIKITA — Dakwah Pelosok',
       tagline: tagline.trim(),
       logoUrl,
       logoBase64: logoPendingUpload?.base64,
@@ -579,16 +612,21 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         cleanReminderTemplates.length > 0
           ? cleanReminderTemplates
           : DEFAULT_WA_REMINDER_TEMPLATES,
-      waGroupName: waGroupName.trim() || 'Grup Donatur DAIKITA - Dakwah Pelosok',
+      waGroupName: waGroupName.trim() || 'Grup Donatur DAIKITA — Dakwah Pelosok',
       waGroupLink: waGroupLink.trim(),
       waGroupId: waGroupId.trim(),
+      showWaGroupPublic,
+      callCenterWa: callCenterWa.trim(),
+      callCenterLabel: callCenterLabel.trim() || 'Call Center Admin DAIKITA',
+      waManualConfirmTemplate:
+        waManualConfirmTemplate.trim() || DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE,
       enableAdminWaGroupNotif,
-      adminWaGroupName: adminWaGroupName.trim() || 'Grup Admin DAIKITA - Dakwah Pelosok',
+      adminWaGroupName: adminWaGroupName.trim() || 'Grup Admin DAIKITA — Dakwah Pelosok',
       adminWaGroupLink: adminWaGroupLink.trim(),
       adminWaGroupId: adminWaGroupId.trim(),
       enableEmailNotif,
       emailSenderAlias: emailSenderAlias.trim() || 'lajnahdai.dpp@gmail.com',
-      emailSenderName: emailSenderName.trim() || 'DAIKITA - Dakwah Pelosok',
+      emailSenderName: emailSenderName.trim() || 'DAIKITA — Dakwah Pelosok',
       emailTemplateDaftar: safeEmailDaftar,
       emailTemplateReminder: safeEmailReminder,
       emailTemplates: [safeEmailDaftar, safeEmailReminder],
@@ -1310,7 +1348,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                         type="text"
                         value={adminWaGroupName}
                         onChange={(e) => setAdminWaGroupName(e.target.value)}
-                        placeholder="Grup Admin DAIKITA - Dakwah Pelosok"
+                        placeholder="Grup Admin DAIKITA — Dakwah Pelosok"
                         className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                       />
                     </div>
@@ -1403,6 +1441,13 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     </p>
                   </div>
 
+                  <ToggleSwitch
+                    checked={showWaGroupPublic}
+                    onChange={setShowWaGroupPublic}
+                    label="Aktifkan Grup WA Donatur di Halaman Publik"
+                    description="Jika dinonaktifkan, pilihan & tombol Gabung Grup WA disembunyikan dari halaman Pendaftaran dan Penyaluran Donasi."
+                  />
+
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div className="min-w-0">
                       <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
@@ -1412,7 +1457,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                         type="text"
                         value={waGroupName}
                         onChange={(e) => setWaGroupName(e.target.value)}
-                        placeholder="Grup Donatur DAIKITA - Dakwah Pelosok"
+                        placeholder="Grup Donatur DAIKITA — Dakwah Pelosok"
                         className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                       />
                     </div>
@@ -1430,7 +1475,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     </div>
                     <div className="min-w-0">
                       <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
-                        ID Grup WA Donatur (Opsional)
+                        ID Grup WA Donatur (Untuk Deteksi Otomatis)
                       </label>
                       <input
                         type="text"
@@ -1614,6 +1659,83 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                   </div>
                 </div>
 
+                {/* Pengaturan Call Center Admin & Konfirmasi Manual via WhatsApp */}
+                <div className="rounded-2xl border border-sky-200/80 dark:border-sky-800/75 bg-sky-50/40 dark:bg-sky-950/25 p-4 space-y-3.5">
+                  <div className="flex items-start gap-2">
+                    <Headphones className="h-4 w-4 text-sky-700 dark:text-sky-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-sky-950 dark:text-sky-100">
+                        Call Center Admin &amp; Konfirmasi Manual via WhatsApp
+                      </p>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 safe-wrap">
+                        Nomor ini tampil di bagian bawah halaman Pendaftaran &amp; Penyaluran Donasi
+                        sebagai kontak Call Center, sekaligus menjadi tujuan tombol &ldquo;Konfirmasi
+                        Manual via WhatsApp Admin&rdquo;.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                        Label / Nama Call Center Admin
+                      </label>
+                      <input
+                        type="text"
+                        value={callCenterLabel}
+                        onChange={(e) => setCallCenterLabel(e.target.value)}
+                        placeholder="Call Center Admin DAIKITA"
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                        Nomor WhatsApp Call Center Admin
+                      </label>
+                      <input
+                        type="tel"
+                        value={callCenterWa}
+                        onChange={(e) => setCallCenterWa(e.target.value)}
+                        placeholder="081243086241 atau 6281243086241"
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono tabular-nums text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-sky-200/70 dark:border-sky-800/60">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                        Template Pesan Konfirmasi Manual WA Donatur → Admin
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setWaManualConfirmTemplate(DEFAULT_WA_MANUAL_CONFIRM_TEMPLATE)}
+                        className="text-[11px] font-semibold text-sky-700 dark:text-sky-300 hover:underline cursor-pointer"
+                      >
+                        Reset Default
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {MANUAL_CONFIRM_VARIABLES.map((token) => (
+                        <button
+                          key={token}
+                          type="button"
+                          onClick={() => void handleCopyVariable(token)}
+                          className="rounded-lg border border-sky-200 dark:border-sky-800 bg-white dark:bg-slate-800 px-2 py-0.5 text-[10px] font-mono font-semibold text-sky-800 dark:text-sky-200 hover:bg-sky-50 dark:hover:bg-slate-700 cursor-pointer"
+                        >
+                          {token}
+                        </button>
+                      ))}
+                    </div>
+                    <textarea
+                      rows={6}
+                      value={waManualConfirmTemplate}
+                      onChange={(e) => setWaManualConfirmTemplate(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs leading-relaxed text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
                 {/* Pengaturan Email Alias — 1 Template per Jenis Pesan */}
                 <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/40 p-4 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1655,7 +1777,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                         type="text"
                         value={emailSenderName}
                         onChange={(e) => setEmailSenderName(e.target.value)}
-                        placeholder="DAIKITA - Dakwah Pelosok"
+                        placeholder="DAIKITA — Dakwah Pelosok"
                         className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                       />
                     </div>

@@ -8,7 +8,6 @@ import {
   Copy,
   Download,
   FileText,
-  Info,
   Lock,
   QrCode,
   Sparkles,
@@ -21,7 +20,6 @@ import {
   Donatur,
   JenisDonatur,
   LembagaConfig,
-  Panitia,
   SubmitPembayaranPayload,
   TransaksiDonasi,
 } from '../types';
@@ -53,10 +51,9 @@ import { SearchableOption, SearchableSelect } from './SearchableSelect';
 
 interface TabKonfirmasiProps {
   config: LembagaConfig;
+  adminName?: string;
   donaturList: Donatur[];
   transaksiList: TransaksiDonasi[];
-  panitia: Panitia[];
-  referralCode: string | null;
   preselectedDonatur: Donatur | null;
   preselectedMonth?: string | null;
   onClearPreselected: () => void;
@@ -75,10 +72,9 @@ interface TabKonfirmasiProps {
 
 export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
   config,
+  adminName,
   donaturList,
   transaksiList,
-  panitia,
-  referralCode,
   preselectedDonatur,
   preselectedMonth,
   onClearPreselected,
@@ -96,9 +92,9 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
 
   const [jenisDonatur, setJenisDonatur] = useState<JenisDonatur>('Rutin');
   const [selectedDonaturId, setSelectedDonaturId] = useState('');
-  const [namaDonaturUmum, setNamaDonaturUmum] = useState('');
-  const [noWaUmum, setNoWaUmum] = useState('');
-  const [bulanUmum, setBulanUmum] = useState<string>(initialYm);
+  const [namaDonaturInsidentil, setNamaDonaturInsidentil] = useState('');
+  const [noWaInsidentil, setNoWaInsidentil] = useState('');
+  const [bulanInsidentil, setBulanInsidentil] = useState<string>(initialYm);
   const [tanggalTransfer, setTanggalTransfer] = useState<string>(() => getTodayIsoDate());
   const [selectedMonths, setSelectedMonths] = useState<string[]>([initialYm]);
   const [windowStartYm, setWindowStartYm] = useState<string>(() => {
@@ -119,7 +115,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     jenisDonatur: JenisDonatur;
     totalNominal: number;
     totalKomitmen: number;
-    totalLainnya: number;
+    totalDonasiUmum: number;
     tanggalTransfer: string;
     savedFileName?: string;
   } | null>(null);
@@ -133,33 +129,20 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     setQrisImgSrc(normalizeDriveImageUrl(config.qrisUrl));
   }, [config.qrisUrl]);
 
-  // Penentuan otomatis Diinput Oleh berdasarkan link referral ?ref=KODE
-  const autoDiinputOleh = useMemo(() => {
-    if (referralCode && referralCode.trim()) {
-      const codeUpper = referralCode.trim().toUpperCase();
-      const matched = panitia.find((p) => p.kodePanitia.toUpperCase() === codeUpper);
-      if (matched) {
-        return `${matched.namaPanitia} (${matched.kodePanitia})`;
-      }
-      return `Pengurus (${codeUpper})`;
-    }
-    return 'Donatur (Mandiri)';
-  }, [referralCode, panitia]);
-
-  const matchedReferralPanitia = useMemo(() => {
-    if (!referralCode) return null;
-    const codeUpper = referralCode.trim().toUpperCase();
-    return panitia.find((p) => p.kodePanitia.toUpperCase() === codeUpper) || null;
-  }, [referralCode, panitia]);
+  const diinputOlehLabel = adminName ? `Admin (${adminName})` : 'Admin';
 
   const donaturOptions = useMemo<SearchableOption[]>(
     () =>
       donaturList.map((d) => ({
         value: d.idDonatur,
         label: d.namaLengkap,
-        sublabel: `${d.idDonatur} · ${formatWADisplay(d.noWa)}${d.domisili ? ` · ${d.domisili}` : ''}`,
+        sublabel: `${d.idDonatur} · ${formatWADisplay(d.noWa)}${
+          d.domisili ? ` · ${d.domisili}` : ''
+        }`,
         metaRight: formatRupiah(d.nominalKomitmen),
-        keywords: `${d.namaLengkap} ${d.idDonatur} ${d.noWa} ${d.noWa.replace(/^62/, '0')} ${d.email || ''} ${d.domisili || ''}`,
+        keywords: `${d.namaLengkap} ${d.idDonatur} ${d.noWa} ${d.noWa.replace(/^62/, '0')} ${
+          d.email || ''
+        } ${d.domisili || ''}`,
       })),
     [donaturList]
   );
@@ -169,7 +152,6 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     [donaturList, selectedDonaturId]
   );
 
-  // Bulan minimum yang dapat dipilih: mulai Nov 2026 atau bulan pendaftaran donatur (mana lebih akhir)
   const minSelectableYm = useMemo(() => {
     if (!selectedDonatur) return PROGRAM_START_YM;
     const regYm = extractYearMonthFromDateStr(selectedDonatur.tanggalDaftar);
@@ -177,13 +159,11 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     return PROGRAM_START_YM;
   }, [selectedDonatur]);
 
-  // 12 bulan berurutan yang ditampilkan dalam satu layar (mis. Nov 2026 s.d. Okt 2027)
   const visibleMonths = useMemo(
     () => buildMonthSequence(windowStartYm < minSelectableYm ? minSelectableYm : windowStartYm, 12),
     [windowStartYm, minSelectableYm]
   );
 
-  // Status transaksi yang sudah ada per bulan untuk donatur terpilih
   const donorMonthStatusMap = useMemo(() => {
     const map = new Map<string, 'Valid' | 'Pending'>();
     if (!selectedDonatur) return map;
@@ -211,7 +191,6 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     [selectedMonths]
   );
 
-  // Pastikan pilihan bulan dan jendela 12 bulan tidak mundur sebelum minSelectableYm
   useEffect(() => {
     setWindowStartYm((prev) => (prev < minSelectableYm ? minSelectableYm : prev));
     setSelectedMonths((prev) => {
@@ -222,7 +201,6 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     });
   }, [minSelectableYm]);
 
-  // Isi otomatis nominal saat memilih donatur atau mengubah jumlah bulan (kecuali jika user mengedit manual)
   useEffect(() => {
     if (jenisDonatur !== 'Rutin') return;
     if (!selectedDonatur) {
@@ -261,8 +239,8 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     setSuccessInfo(null);
     if (next === 'Umum') {
       setIsNominalCustom(true);
-      if (!bulanUmum || !/^\d{4}-\d{2}$/.test(bulanUmum)) {
-        setBulanUmum(initialYm);
+      if (!bulanInsidentil || !/^\d{4}-\d{2}$/.test(bulanInsidentil)) {
+        setBulanInsidentil(initialYm);
       }
     } else {
       setIsNominalCustom(false);
@@ -292,7 +270,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     setErrorMsg(null);
     setSelectedMonths((prev) => {
       if (prev.includes(ym)) {
-        if (prev.length === 1) return prev; // Wajib minimal 1 bulan
+        if (prev.length === 1) return prev;
         return prev.filter((m) => m !== ym);
       }
       return [...prev, ym].sort((a, b) => a.localeCompare(b));
@@ -317,7 +295,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
 
   const parsedNominal = useMemo(() => parseRupiahInput(nominalInput), [nominalInput]);
 
-  // Rincian Donasi Komitmen vs Donasi Lainnya (kelebihan nominal di atas komitmen)
+  // Rincian Donasi Komitmen vs Donasi Umum (otomatis jika transfer melebihi komitmen)
   const expectedKomitmenTotal = useMemo(() => {
     if (!selectedDonatur || selectedDonatur.nominalKomitmen <= 0) return 0;
     return selectedDonatur.nominalKomitmen * Math.max(1, sortedSelectedMonths.length);
@@ -330,14 +308,13 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     return parsedNominal;
   }, [expectedKomitmenTotal, parsedNominal]);
 
-  const donasiLainnyaRp = useMemo(() => {
+  const donasiUmumRp = useMemo(() => {
     if (expectedKomitmenTotal > 0 && parsedNominal > expectedKomitmenTotal) {
       return parsedNominal - expectedKomitmenTotal;
     }
     return 0;
   }, [expectedKomitmenTotal, parsedNominal]);
 
-  // Deteksi cerdas bila user mengetik nominal kelipatan komitmen (mis. komitmen 100rb -> ketik 300rb)
   const smartBatchSuggestionCount = useMemo(() => {
     if (!selectedDonatur || selectedDonatur.nominalKomitmen <= 0 || parsedNominal <= 0) return null;
     if (parsedNominal % selectedDonatur.nominalKomitmen !== 0) return null;
@@ -349,23 +326,25 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
   }, [selectedDonatur, parsedNominal, sortedSelectedMonths.length]);
 
   const autoRenamePreview = useMemo(() => {
-    const isUmum = jenisDonatur === 'Umum';
-    const targetMonth = isUmum ? bulanUmum || initialYm : sortedSelectedMonths[0] || minSelectableYm;
+    const isInsidentil = jenisDonatur === 'Umum';
+    const targetMonth = isInsidentil
+      ? bulanInsidentil || initialYm
+      : sortedSelectedMonths[0] || minSelectableYm;
     return previewAutoRenameFile({
       tanggalTransfer,
       bulanTagihan: targetMonth,
-      bulanList: isUmum ? [targetMonth] : sortedSelectedMonths,
-      namaDonatur: isUmum
-        ? namaDonaturUmum.trim() || 'Hamba Allah'
+      bulanList: isInsidentil ? [targetMonth] : sortedSelectedMonths,
+      namaDonatur: isInsidentil
+        ? namaDonaturInsidentil.trim() || 'Hamba Allah'
         : selectedDonatur?.namaLengkap || 'Nama-Donatur',
       nominalTransfer: parsedNominal,
       extension: uploadFile?.extension || 'jpg',
     });
   }, [
     jenisDonatur,
-    bulanUmum,
+    bulanInsidentil,
     initialYm,
-    namaDonaturUmum,
+    namaDonaturInsidentil,
     tanggalTransfer,
     sortedSelectedMonths,
     minSelectableYm,
@@ -467,10 +446,12 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     }
 
     if (jenisDonatur === 'Umum') {
-      const targetYm = /^\d{4}-\d{2}$/.test(bulanUmum) ? bulanUmum : tanggalTransfer.slice(0, 7);
+      const targetYm = /^\d{4}-\d{2}$/.test(bulanInsidentil)
+        ? bulanInsidentil
+        : tanggalTransfer.slice(0, 7);
       let normalizedWa = '';
-      if (noWaUmum.trim()) {
-        const waCheck = validateAndNormalizeWA(noWaUmum);
+      if (noWaInsidentil.trim()) {
+        const waCheck = validateAndNormalizeWA(noWaInsidentil);
         if (!waCheck.valid) {
           setErrorMsg(waCheck.error);
           return;
@@ -478,7 +459,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
         normalizedWa = waCheck.normalized;
       }
 
-      const finalNama = namaDonaturUmum.trim() || 'Hamba Allah';
+      const finalNama = namaDonaturInsidentil.trim() || 'Hamba Allah';
       setIsSubmitting(true);
       const res = await onSubmitPembayaran({
         jenisDonatur: 'Umum',
@@ -490,7 +471,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
         bulanTagihanList: [targetYm],
         nominalTransfer: parsedNominal,
         nominalKomitmenPerBulan: 0,
-        diinputOleh: autoDiinputOleh,
+        diinputOleh: diinputOlehLabel,
         keterangan: keterangan.trim() || undefined,
         fileBase64: uploadFile?.base64,
         fileMimeType: uploadFile?.mimeType,
@@ -511,12 +492,12 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
           jenisDonatur: 'Umum',
           totalNominal: createdList.reduce((sum, t) => sum + t.nominalTransfer, 0),
           totalKomitmen: 0,
-          totalLainnya: 0,
+          totalDonasiUmum: 0,
           tanggalTransfer: createdList[0].tanggalTransfer || tanggalTransfer,
           savedFileName: res.savedFileName,
         });
-        setNamaDonaturUmum('');
-        setNoWaUmum('');
+        setNamaDonaturInsidentil('');
+        setNoWaInsidentil('');
         setNominalInput('');
         setKeterangan('');
         setTanggalTransfer(getTodayIsoDate());
@@ -529,7 +510,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
 
     if (!selectedDonatur) {
       setErrorMsg(
-        'Silakan pilih donatur terdaftar terlebih dahulu, atau pilih opsi Donatur Umum (Non-Terdaftar).'
+        'Silakan pilih Donatur Tetap terdaftar terlebih dahulu, atau pilih opsi Donatur Insidentil.'
       );
       return;
     }
@@ -541,7 +522,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     }
 
     if (sortedSelectedMonths.length === 0) {
-      setErrorMsg('Pilih minimal 1 periode bulan donasi / tagihan.');
+      setErrorMsg('Pilih minimal 1 periode bulan donasi.');
       return;
     }
 
@@ -556,7 +537,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
       bulanTagihanList: sortedSelectedMonths,
       nominalTransfer: parsedNominal,
       nominalKomitmenPerBulan: selectedDonatur.nominalKomitmen,
-      diinputOleh: autoDiinputOleh,
+      diinputOleh: diinputOlehLabel,
       keterangan: keterangan.trim() || undefined,
       fileBase64: uploadFile?.base64,
       fileMimeType: uploadFile?.mimeType,
@@ -580,7 +561,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
           (sum, t) => sum + (t.nominalKomitmen || t.nominalTransfer),
           0
         ),
-        totalLainnya: createdList.reduce((sum, t) => sum + (t.donasiLainnya || 0), 0),
+        totalDonasiUmum: createdList.reduce((sum, t) => sum + (t.donasiLainnya || 0), 0),
         tanggalTransfer: createdList[0].tanggalTransfer || tanggalTransfer,
         savedFileName: res.savedFileName,
       });
@@ -593,35 +574,21 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
     }
   };
 
+  const showRekeningCard = config.showRekening !== false && config.infoRekening.length > 0;
+  const showQrisCard = config.showQris && Boolean(config.qrisUrl);
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
       <section className="lg:col-span-8 glass-surface rounded-3xl p-5 sm:p-8 min-w-0">
         <div className="mb-6">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Konfirmasi Pembayaran Kafalah Dai
+            Konfirmasi Penyaluran Donasi
           </h1>
           <p className="mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-            Pilih donatur terdaftar, tentukan satu atau beberapa bulan sekaligus, dan cek nominal
-            otomatis sesuai komitmen. Bukti transfer bersifat opsional.
+            Catat penyaluran donasi dari Donatur Tetap (kelebihan nominal otomatis tercatat sebagai{' '}
+            <strong>Donasi Umum</strong>) atau input mutasi <strong>Donatur Insidentil</strong>{' '}
+            khusus admin.
           </p>
-        </div>
-
-        {/* Info Pencatatan Referral Otomatis */}
-        <div className="mb-5 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/70 bg-emerald-50/55 dark:bg-emerald-950/35 px-4 py-3 flex items-start gap-2.5">
-          <Info className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
-          <div className="min-w-0 text-xs text-emerald-900 dark:text-emerald-200 safe-wrap">
-            {matchedReferralPanitia || referralCode ? (
-              <span>
-                Konfirmasi dicatat otomatis melalui link referral pengurus:{' '}
-                <strong>{autoDiinputOleh}</strong>.
-              </span>
-            ) : (
-              <span>
-                Tanpa link referral pengurus, konfirmasi dicatat otomatis sebagai{' '}
-                <strong>Donatur (Mandiri)</strong>.
-              </span>
-            )}
-          </div>
         </div>
 
         {successInfo && (
@@ -631,12 +598,13 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-emerald-950 dark:text-emerald-100">
                   {successInfo.jenisDonatur === 'Umum'
-                    ? 'Konfirmasi Donatur Umum Terkirim'
-                    : `Konfirmasi Pembayaran Terkirim (${successInfo.transaksiList.length} Periode Bulan)`}
+                    ? 'Konfirmasi Donatur Insidentil Terkirim'
+                    : `Konfirmasi Penyaluran Donasi Terkirim (${successInfo.transaksiList.length} Periode Bulan)`}
                 </p>
                 <p className="mt-1 text-xs text-emerald-900/85 dark:text-emerald-200/90 leading-relaxed safe-wrap">
                   Atas nama <strong>{successInfo.transaksiList[0].namaDonatur}</strong>
-                  {successInfo.jenisDonatur === 'Umum' ? ' (Donatur Umum)' : ''} sebesar total{' '}
+                  {successInfo.jenisDonatur === 'Umum' ? ' (Donatur Insidentil)' : ''} sebesar
+                  total{' '}
                   <strong className="tabular-nums">{formatRupiah(successInfo.totalNominal)}</strong>{' '}
                   (Tgl transfer: <strong>{formatTanggalIndo(successInfo.tanggalTransfer)}</strong>)
                   untuk periode{' '}
@@ -647,11 +615,11 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                   </strong>{' '}
                   kini berstatus <strong>Menunggu Verifikasi</strong>.
                 </p>
-                {successInfo.jenisDonatur === 'Rutin' && successInfo.totalLainnya > 0 && (
+                {successInfo.jenisDonatur === 'Rutin' && successInfo.totalDonasiUmum > 0 && (
                   <p className="mt-1 text-xs text-teal-900 dark:text-teal-200 tabular-nums safe-wrap">
                     Rincian: Donasi Komitmen{' '}
-                    <strong>{formatRupiah(successInfo.totalKomitmen)}</strong> + Donasi Lainnya{' '}
-                    <strong>{formatRupiah(successInfo.totalLainnya)}</strong>.
+                    <strong>{formatRupiah(successInfo.totalKomitmen)}</strong> + Donasi Umum{' '}
+                    <strong>{formatRupiah(successInfo.totalDonasiUmum)}</strong>.
                   </p>
                 )}
                 <p className="mt-1.5 text-[11px] font-mono text-emerald-800 dark:text-emerald-300 safe-wrap">
@@ -674,7 +642,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Pilihan Jenis Donatur: Rutin Terdaftar vs Donatur Umum */}
+          {/* Pilihan Jenis Donatur: Donatur Tetap vs Donatur Insidentil (Khusus Admin) */}
           <div className="space-y-2">
             <span className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
               Sumber Dana Masuk / Jenis Donatur
@@ -688,13 +656,13 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                 [
                   {
                     value: 'Rutin' as const,
-                    title: 'Donatur Rutin (Terdaftar)',
-                    desc: 'Terhubung dengan komitmen bulanan & riwayat donatur',
+                    title: 'Donatur Tetap (Terdaftar)',
+                    desc: 'Terhubung komitmen bulanan; kelebihan transfer otomatis menjadi Donasi Umum',
                   },
                   {
                     value: 'Umum' as const,
-                    title: 'Donatur Umum (Non-Terdaftar)',
-                    desc: 'Dana masuk dari mutasi/donatur insidental tanpa wajib daftar',
+                    title: 'Donatur Insidentil (Khusus Admin)',
+                    desc: 'Dana masuk dari donatur non-tetap / mutasi insidentil tanpa wajib daftar',
                   },
                 ] as const
               ).map((opt) => {
@@ -752,11 +720,11 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-sky-900 dark:text-sky-200">
-                    Identitas Donatur Umum (Non-Terdaftar)
+                    Identitas Donatur Insidentil (Khusus Input Admin)
                   </p>
                   <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300 safe-wrap">
                     Tetap tercatat rapi di Mutasi Dana Masuk dan rekap keseluruhan meski pengirim
-                    belum terdaftar sebagai donatur rutin.
+                    bukan Donatur Tetap terdaftar.
                   </p>
                 </div>
               </div>
@@ -764,16 +732,16 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="min-w-0">
                   <label
-                    htmlFor="konf-umum-nama"
+                    htmlFor="konf-insidentil-nama"
                     className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
                   >
                     Nama Pengirim / Donatur (Opsional)
                   </label>
                   <input
-                    id="konf-umum-nama"
+                    id="konf-insidentil-nama"
                     type="text"
-                    value={namaDonaturUmum}
-                    onChange={(e) => setNamaDonaturUmum(e.target.value)}
+                    value={namaDonaturInsidentil}
+                    onChange={(e) => setNamaDonaturInsidentil(e.target.value)}
                     placeholder="Kosongkan = Hamba Allah"
                     className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/95 dark:bg-slate-900/90 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                   />
@@ -781,16 +749,16 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
 
                 <div className="min-w-0">
                   <label
-                    htmlFor="konf-umum-wa"
+                    htmlFor="konf-insidentil-wa"
                     className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
                   >
                     Nomor WhatsApp (Opsional)
                   </label>
                   <input
-                    id="konf-umum-wa"
+                    id="konf-insidentil-wa"
                     type="tel"
-                    value={noWaUmum}
-                    onChange={(e) => setNoWaUmum(e.target.value)}
+                    value={noWaInsidentil}
+                    onChange={(e) => setNoWaInsidentil(e.target.value)}
                     placeholder="0812... (jika ada)"
                     className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/95 dark:bg-slate-900/90 px-3.5 py-2.5 text-sm tabular-nums text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                   />
@@ -798,17 +766,17 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
 
                 <div className="min-w-0">
                   <label
-                    htmlFor="konf-umum-bulan"
+                    htmlFor="konf-insidentil-bulan"
                     className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
                   >
                     Periode Bulan <span className="text-rose-600 dark:text-rose-400">*</span>
                   </label>
                   <input
-                    id="konf-umum-bulan"
+                    id="konf-insidentil-bulan"
                     type="month"
                     required
-                    value={bulanUmum}
-                    onChange={(e) => setBulanUmum(e.target.value)}
+                    value={bulanInsidentil}
+                    onChange={(e) => setBulanInsidentil(e.target.value)}
                     className="w-full rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/95 dark:bg-slate-900/90 px-3.5 py-2.5 text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
@@ -816,14 +784,14 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
             </div>
           ) : (
             <>
-              {/* Pilih Donatur Terdaftar + Tombol Daftar Baru */}
+              {/* Pilih Donatur Tetap Terdaftar + Tombol Daftar Baru */}
               <div className="space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <label
                     htmlFor="konf-search"
                     className="block text-xs font-semibold text-slate-700 dark:text-slate-200"
                   >
-                    Pilih Donatur Terdaftar (Nama / No. WA / ID / Domisili){' '}
+                    Pilih Donatur Tetap Terdaftar (Nama / No. WA / ID / Domisili){' '}
                     <span className="text-rose-600 dark:text-rose-400">*</span>
                   </label>
                   <button
@@ -832,23 +800,22 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                     className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/90 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     <UserPlus className="h-3.5 w-3.5 shrink-0" />
-                    <span>Belum terdaftar? Daftar Donatur Baru</span>
+                    <span>Belum terdaftar? Daftar Donatur Tetap</span>
                   </button>
                 </div>
 
                 <SearchableSelect
                   id="konf-search"
-                  ariaLabel="Pilih donatur terdaftar"
+                  ariaLabel="Pilih donatur tetap terdaftar"
                   options={donaturOptions}
                   value={selectedDonaturId}
                   onChange={handleDonaturDropdownChange}
                   allowClear
-                  placeholder="Ketik atau pilih donatur dari daftar..."
+                  placeholder="Ketik atau pilih donatur tetap dari daftar..."
                   searchPlaceholder="Ketik nama, nomor WA, atau ID donatur..."
-                  emptyText="Donatur belum ditemukan. Klik tombol 'Daftar Donatur Baru' atau pilih opsi Donatur Umum."
+                  emptyText="Donatur belum ditemukan. Klik tombol 'Daftar Donatur Tetap' atau pilih opsi Donatur Insidentil."
                 />
 
-                {/* Profil Otomatis Donatur Terpilih (Read-only) */}
                 {selectedDonatur ? (
                   <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/75 dark:bg-slate-800/45 p-4">
                     <div className="flex items-center justify-between gap-2 mb-2.5">
@@ -891,7 +858,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                   <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-900/30 px-4 py-3 text-xs text-slate-500 dark:text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <span className="safe-wrap">
                       ID Donatur, Nama, dan No. WhatsApp terisi otomatis setelah Anda memilih
-                      donatur di atas.
+                      donatur tetap di atas.
                     </span>
                     <button
                       type="button"
@@ -904,147 +871,144 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                 )}
               </div>
 
-              {/* Pilih Bulan Donasi (12 Bulan Berurutan Mulai Nov 2026 / Bulan Daftar Donatur) */}
+              {/* Pilih Bulan Donasi */}
               <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/60 dark:bg-slate-900/50 p-4 space-y-3.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span>
-                    Pilih Bulan Donasi / Tagihan{' '}
-                    <span className="text-rose-600 dark:text-rose-400">*</span>
-                  </span>
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
-                  Menampilkan 12 bulan berurutan mulai{' '}
-                  <strong>{formatBulanLabel(minSelectableYm)}</strong> ke depan. Bisa pilih 1 atau
-                  beberapa bulan sekaligus.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  disabled={windowStartYm <= minSelectableYm}
-                  onClick={() => handleShiftWindow(-12)}
-                  className="inline-flex h-8 items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
-                  aria-label="12 bulan sebelumnya"
-                  title="12 bulan sebelumnya"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
-                  <span className="hidden sm:inline">12 Bln</span>
-                </button>
-                <span className="px-2 text-xs font-bold text-slate-900 dark:text-slate-100 tabular-nums whitespace-nowrap">
-                  {formatBulanShortLabel(visibleMonths[0])} –{' '}
-                  {formatBulanShortLabel(visibleMonths[visibleMonths.length - 1])}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleShiftWindow(12)}
-                  className="inline-flex h-8 items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer whitespace-nowrap"
-                  aria-label="12 bulan berikutnya"
-                  title="12 bulan berikutnya"
-                >
-                  <span className="hidden sm:inline">12 Bln</span>
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                </button>
-              </div>
-            </div>
-
-            {/* Pintasan Paket Beberapa Bulan Berurutan */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-1">
-                Pilih cepat berurutan:
-              </span>
-              {[1, 2, 3, 6, 12].map((count) => {
-                const active = sortedSelectedMonths.length === count;
-                return (
-                  <button
-                    key={count}
-                    type="button"
-                    onClick={() => handleApplyConsecutiveMonths(count)}
-                    className={`rounded-xl px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors cursor-pointer ${
-                      active
-                        ? 'bg-emerald-600 text-white'
-                        : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:border-emerald-400'
-                    }`}
-                  >
-                    {count} Bulan
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Grid 12 Bulan Berurutan (lintas tahun sekaligus) */}
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-              {visibleMonths.map((ym) => {
-                const isSelected = sortedSelectedMonths.includes(ym);
-                const existingStatus = donorMonthStatusMap.get(ym);
-
-                return (
-                  <button
-                    key={ym}
-                    type="button"
-                    onClick={() => handleToggleMonth(ym)}
-                    className={`rounded-xl border px-2.5 py-2 text-left transition-all cursor-pointer ${
-                      isSelected
-                        ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
-                        : 'border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 hover:border-emerald-400'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-xs font-bold tabular-nums">
-                        {formatBulanShortLabel(ym)}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span>
+                        Pilih Bulan Penyaluran Donasi{' '}
+                        <span className="text-rose-600 dark:text-rose-400">*</span>
                       </span>
-                      {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
-                    </div>
-                    <p
-                      className={`mt-0.5 text-[10px] font-medium truncate ${
-                        isSelected
-                          ? 'text-emerald-100'
-                          : existingStatus === 'Valid'
-                          ? 'text-emerald-700 dark:text-emerald-400'
-                          : existingStatus === 'Pending'
-                          ? 'text-amber-600 dark:text-amber-400'
-                          : 'text-slate-400 dark:text-slate-500'
-                      }`}
-                    >
-                      {existingStatus === 'Valid'
-                        ? 'Sudah Lunas'
-                        : existingStatus === 'Pending'
-                        ? 'Pending'
-                        : 'Belum Bayar'}
                     </p>
-                  </button>
-                );
-              })}
-            </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
+                      Menampilkan 12 bulan berurutan mulai{' '}
+                      <strong>{formatBulanLabel(minSelectableYm)}</strong> ke depan. Bisa pilih 1
+                      atau beberapa bulan sekaligus.
+                    </p>
+                  </div>
 
-            {/* Ringkasan Bulan Terpilih */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                Terpilih ({sortedSelectedMonths.length} bulan):
-              </span>
-              {sortedSelectedMonths.map((ym) => (
-                <span
-                  key={ym}
-                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:text-emerald-200"
-                >
-                  <span>{formatBulanLabel(ym)}</span>
-                  {sortedSelectedMonths.length > 1 && (
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
-                      onClick={() => handleToggleMonth(ym)}
-                      className="hover:text-rose-600 cursor-pointer"
-                      aria-label={`Hapus ${formatBulanLabel(ym)}`}
+                      disabled={windowStartYm <= minSelectableYm}
+                      onClick={() => handleShiftWindow(-12)}
+                      className="inline-flex h-8 items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                      aria-label="12 bulan sebelumnya"
+                      title="12 bulan sebelumnya"
                     >
-                      <X className="h-3 w-3" />
+                      <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
+                      <span className="hidden sm:inline">12 Bln</span>
                     </button>
-                  )}
-                </span>
-              ))}
-            </div>
-          </div>
+                    <span className="px-2 text-xs font-bold text-slate-900 dark:text-slate-100 tabular-nums whitespace-nowrap">
+                      {formatBulanShortLabel(visibleMonths[0])} –{' '}
+                      {formatBulanShortLabel(visibleMonths[visibleMonths.length - 1])}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleShiftWindow(12)}
+                      className="inline-flex h-8 items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer whitespace-nowrap"
+                      aria-label="12 bulan berikutnya"
+                      title="12 bulan berikutnya"
+                    >
+                      <span className="hidden sm:inline">12 Bln</span>
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-1">
+                    Pilih cepat berurutan:
+                  </span>
+                  {[1, 2, 3, 6, 12].map((count) => {
+                    const active = sortedSelectedMonths.length === count;
+                    return (
+                      <button
+                        key={count}
+                        type="button"
+                        onClick={() => handleApplyConsecutiveMonths(count)}
+                        className={`rounded-xl px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors cursor-pointer ${
+                          active
+                            ? 'bg-emerald-600 text-white'
+                            : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:border-emerald-400'
+                        }`}
+                      >
+                        {count} Bulan
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                  {visibleMonths.map((ym) => {
+                    const isSelected = sortedSelectedMonths.includes(ym);
+                    const existingStatus = donorMonthStatusMap.get(ym);
+
+                    return (
+                      <button
+                        key={ym}
+                        type="button"
+                        onClick={() => handleToggleMonth(ym)}
+                        className={`rounded-xl border px-2.5 py-2 text-left transition-all cursor-pointer ${
+                          isSelected
+                            ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
+                            : 'border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 hover:border-emerald-400'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs font-bold tabular-nums">
+                            {formatBulanShortLabel(ym)}
+                          </span>
+                          {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                        </div>
+                        <p
+                          className={`mt-0.5 text-[10px] font-medium truncate ${
+                            isSelected
+                              ? 'text-emerald-100'
+                              : existingStatus === 'Valid'
+                              ? 'text-emerald-700 dark:text-emerald-400'
+                              : existingStatus === 'Pending'
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : 'text-slate-400 dark:text-slate-500'
+                          }`}
+                        >
+                          {existingStatus === 'Valid'
+                            ? 'Sudah Lunas'
+                            : existingStatus === 'Pending'
+                            ? 'Pending'
+                            : 'Belum Bayar'}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                    Terpilih ({sortedSelectedMonths.length} bulan):
+                  </span>
+                  {sortedSelectedMonths.map((ym) => (
+                    <span
+                      key={ym}
+                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:text-emerald-200"
+                    >
+                      <span>{formatBulanLabel(ym)}</span>
+                      {sortedSelectedMonths.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleMonth(ym)}
+                          className="hover:text-rose-600 cursor-pointer"
+                          aria-label={`Hapus ${formatBulanLabel(ym)}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </>
           )}
 
@@ -1107,18 +1071,18 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
               )}
               {jenisDonatur === 'Umum' && (
                 <p className="mt-1.5 text-[11px] text-sky-700 dark:text-sky-300 safe-wrap">
-                  Seluruh nominal tercatat otomatis sebagai pemasukan Donatur Umum.
+                  Seluruh nominal tercatat otomatis sebagai pemasukan Donatur Insidentil.
                 </p>
               )}
             </div>
           </div>
 
-          {/* Rincian Otomatis Kelebihan Transfer sebagai Donasi Lainnya */}
-          {jenisDonatur === 'Rutin' && selectedDonatur && donasiLainnyaRp > 0 && (
+          {/* Rincian Otomatis Kelebihan Transfer sebagai Donasi Umum */}
+          {jenisDonatur === 'Rutin' && selectedDonatur && donasiUmumRp > 0 && (
             <div className="rounded-2xl border border-teal-200/90 dark:border-teal-800/75 bg-gradient-to-r from-emerald-50/80 via-teal-50/70 to-sky-50/70 dark:from-emerald-950/45 dark:via-teal-950/40 dark:to-sky-950/35 p-4 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-bold text-teal-900 dark:text-teal-200">
-                  Kelebihan Nominal Tercatat Otomatis sebagai Donasi Lainnya
+                  Kelebihan Nominal Tercatat Otomatis sebagai Donasi Umum
                 </p>
                 <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">
                   Total: {formatRupiah(parsedNominal)}
@@ -1134,9 +1098,9 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                   </strong>
                 </div>
                 <div className="rounded-xl bg-white/85 dark:bg-slate-900/70 px-3 py-2 border border-sky-200/70 dark:border-sky-800/60 flex items-center justify-between gap-2">
-                  <span className="text-slate-600 dark:text-slate-300">Donasi Lainnya</span>
+                  <span className="text-slate-600 dark:text-slate-300">Donasi Umum</span>
                   <strong className="text-sky-700 dark:text-sky-300 tabular-nums">
-                    +{formatRupiah(donasiLainnyaRp)}
+                    +{formatRupiah(donasiUmumRp)}
                   </strong>
                 </div>
               </div>
@@ -1144,8 +1108,9 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                 <div className="pt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-sky-900 dark:text-sky-200">
                   <span className="safe-wrap">
                     <Sparkles className="inline h-3 w-3 mr-1 text-sky-600 dark:text-sky-400" />
-                    Atau jika ingin dibagi rata menjadi <strong>{smartBatchSuggestionCount} bulan</strong>{' '}
-                    komitmen ({formatRupiah(selectedDonatur.nominalKomitmen)}/bln):
+                    Atau jika ingin dibagi rata menjadi{' '}
+                    <strong>{smartBatchSuggestionCount} bulan</strong> komitmen (
+                    {formatRupiah(selectedDonatur.nominalKomitmen)}/bln):
                   </span>
                   <button
                     type="button"
@@ -1177,7 +1142,7 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
             />
           </div>
 
-          {/* Upload Bukti Transfer (Opsional — Mendukung Drag & Drop) */}
+          {/* Upload Bukti Transfer (Opsional) */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
               Unggah Bukti Transfer (Opsional — seret &amp; lepas atau klik: JPG, PNG, WEBP, PDF)
@@ -1298,10 +1263,10 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                 {isSubmitting
                   ? 'Mengirim Konfirmasi...'
                   : jenisDonatur === 'Umum'
-                  ? 'Kirim Konfirmasi Donatur Umum'
+                  ? 'Simpan Donatur Insidentil'
                   : sortedSelectedMonths.length > 1
                   ? `Kirim Konfirmasi (${sortedSelectedMonths.length} Bulan)`
-                  : 'Kirim Konfirmasi Pembayaran'}
+                  : 'Kirim Konfirmasi Penyaluran'}
               </span>
             </button>
           </div>
@@ -1309,64 +1274,72 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
       </section>
 
       <aside className="lg:col-span-4 glass-surface rounded-3xl p-6 space-y-5 min-w-0">
-        <div>
-          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-            Salin Nomor Rekening
-          </h2>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed safe-wrap">
-            {config.catatanPembayaran ||
-              `Pastikan transfer ditujukan ke rekening resmi ${config.namaLembaga} berikut.`}
-          </p>
-        </div>
+        {showRekeningCard && (
+          <>
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                Salin Nomor Rekening
+              </h2>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed safe-wrap">
+                {config.catatanPembayaran ||
+                  `Pastikan transfer ditujukan ke rekening resmi ${config.namaLembaga} berikut.`}
+              </p>
+            </div>
 
-        <div className="divide-y divide-slate-200/70 dark:divide-slate-700/70">
-          {config.infoRekening.map((rek) => {
-            const isCopied = copiedRek === rek.nomor;
-            return (
-              <div
-                key={`${rek.bank}-${rek.nomor}`}
-                className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between gap-3"
-              >
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 safe-wrap">
-                    {rek.bank}
-                  </p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5 safe-wrap">
-                    {rek.nomor}
-                  </p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
-                    a.n. {rek.atasNama}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleCopyRekening(rek.nomor, rek.bank)}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-300 dark:hover:border-emerald-600 hover:text-emerald-800 dark:hover:text-emerald-200 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  {isCopied ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      <span>Disalin</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5 shrink-0" />
-                      <span>Salin</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            );
-          })}
-        </div>
+            <div className="divide-y divide-slate-200/70 dark:divide-slate-700/70">
+              {config.infoRekening.map((rek) => {
+                const isCopied = copiedRek === rek.nomor;
+                return (
+                  <div
+                    key={`${rek.bank}-${rek.nomor}`}
+                    className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 safe-wrap">
+                        {rek.bank}
+                      </p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5 safe-wrap">
+                        {rek.nomor}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
+                        a.n. {rek.atasNama}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyRekening(rek.nomor, rek.bank)}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-300 dark:hover:border-emerald-600 hover:text-emerald-800 dark:hover:text-emerald-200 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      {isCopied ? (
+                        <>
+                          <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span>Disalin</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5 shrink-0" />
+                          <span>Salin</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
 
-        {config.showQris && config.qrisUrl && (
-          <div className="pt-5 border-t border-slate-200/70 dark:border-slate-700/70 space-y-3">
+        {showQrisCard && (
+          <div
+            className={`${
+              showRekeningCard ? 'pt-5 border-t border-slate-200/70 dark:border-slate-700/70' : ''
+            } space-y-3`}
+          >
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                   <QrCode className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0" />
-                  <span>QRIS Pembayaran</span>
+                  <span>QRIS Penyaluran Donasi</span>
                 </h3>
                 {config.qrisMerchantName && (
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
@@ -1402,6 +1375,12 @@ export const TabKonfirmasi: React.FC<TabKonfirmasiProps> = ({
                 className="max-h-56 w-auto rounded-xl object-contain"
               />
             </button>
+          </div>
+        )}
+
+        {!showRekeningCard && !showQrisCard && (
+          <div className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed safe-wrap">
+            Informasi rekening dan QRIS sedang disembunyikan di pengaturan Super Admin.
           </div>
         )}
       </aside>

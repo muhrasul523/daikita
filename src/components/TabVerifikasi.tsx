@@ -49,8 +49,8 @@ type TrxSortField =
 
 const JENIS_FILTER_OPTIONS: SearchableOption[] = [
   { value: 'Semua', label: 'Sumber: Semua Donatur', keywords: 'semua' },
-  { value: 'Rutin', label: 'Donatur Rutin', keywords: 'rutin terdaftar' },
-  { value: 'Umum', label: 'Donatur Umum', keywords: 'umum non terdaftar hamba allah' },
+  { value: 'Rutin', label: 'Donatur Tetap', keywords: 'tetap rutin terdaftar' },
+  { value: 'Umum', label: 'Donatur Insidentil', keywords: 'insidentil umum non terdaftar hamba allah' },
 ];
 
 const SORT_OPTIONS: SearchableOption[] = [
@@ -484,7 +484,7 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                           </p>
                           {isUmum && (
                             <span className="rounded-lg bg-sky-100 dark:bg-sky-950/70 border border-sky-200 dark:border-sky-800 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 dark:text-sky-300">
-                              Donatur Umum
+                              Donatur Insidentil
                             </span>
                           )}
                         </div>
@@ -509,7 +509,7 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                         </p>
                         {isUmum ? (
                           <p className="mt-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300">
-                            Pemasukan Umum
+                            Donatur Insidentil
                           </p>
                         ) : (
                           trx.donasiLainnya > 0 && (
@@ -518,7 +518,7 @@ export const TabVerifikasi: React.FC<TabVerifikasiProps> = ({
                                 Komitmen: {formatRupiah(trx.nominalKomitmen)}
                               </p>
                               <p className="font-semibold text-sky-700 dark:text-sky-300">
-                                +{formatRupiah(trx.donasiLainnya)} Lainnya
+                                +{formatRupiah(trx.donasiLainnya)} Donasi Umum
                               </p>
                             </div>
                           )

@@ -28,7 +28,6 @@ import {
 import {
   Donatur,
   LembagaConfig,
-  Panitia,
   ScheduleBroadcastItemPayload,
   ScheduledMessageItem,
   SendBroadcastSinglePayload,
@@ -56,7 +55,6 @@ interface TabBroadcastProps {
   config: LembagaConfig;
   donaturList: Donatur[];
   transaksiList: TransaksiDonasi[];
-  panitiaList: Panitia[];
   antreanPesan: ScheduledMessageItem[];
   connectionStatus: 'connected' | 'local' | 'error';
   onSendBroadcastSingle: (
@@ -91,7 +89,6 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
   config,
   donaturList,
   transaksiList,
-  panitiaList,
   antreanPesan,
   connectionStatus,
   onSendBroadcastSingle,
@@ -111,7 +108,6 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
   );
   const [pulauFilter, setPulauFilter] = useState('');
   const [provinsiFilter, setProvinsiFilter] = useState('');
-  const [perantaraFilter, setPerantaraFilter] = useState('Semua');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
@@ -197,18 +193,6 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
     return Array.from(set).map((p) => ({ value: p, label: p, keywords: p }));
   }, [pulauFilter]);
 
-  const perantaraOptions = useMemo<SearchableOption[]>(() => {
-    const set = new Set<string>();
-    panitiaList.forEach((p) => set.add(p.namaPanitia));
-    donaturList.forEach((d) => {
-      if (d.namaPerantara) set.add(d.namaPerantara);
-    });
-    return [
-      { value: 'Semua', label: 'Perantara: Semua', keywords: 'semua' },
-      ...Array.from(set).map((n) => ({ value: n, label: n, keywords: n })),
-    ];
-  }, [panitiaList, donaturList]);
-
   const tglOptions = useMemo<SearchableOption[]>(
     () => [
       { value: 'Semua', label: 'Tgl Pengingat: Semua', keywords: 'semua' },
@@ -231,7 +215,6 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
       if (genderFilter !== 'Semua' && d.jenisKelamin !== genderFilter) return false;
       if (pulauFilter && d.pulau !== pulauFilter) return false;
       if (provinsiFilter && d.provinsi !== provinsiFilter) return false;
-      if (perantaraFilter !== 'Semua' && d.namaPerantara !== perantaraFilter) return false;
 
       if (grupFilter === 'Minat Belum Gabung') {
         if (
@@ -251,8 +234,7 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
         d.namaLengkap.toLowerCase().includes(q) ||
         d.idDonatur.toLowerCase().includes(q) ||
         d.noWa.toLowerCase().includes(q) ||
-        (d.domisili || '').toLowerCase().includes(q) ||
-        (d.namaPerantara || '').toLowerCase().includes(q)
+        (d.domisili || '').toLowerCase().includes(q)
       );
     });
   }, [
@@ -264,7 +246,6 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
     genderFilter,
     pulauFilter,
     provinsiFilter,
-    perantaraFilter,
     grupFilter,
     searchQuery,
   ]);
@@ -733,19 +714,12 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <SearchableSelect
                 ariaLabel="Filter tanggal pengingat"
                 options={tglOptions}
                 value={tglFilter}
                 onChange={(v) => setTglFilter(v || 'Semua')}
-                compact
-              />
-              <SearchableSelect
-                ariaLabel="Filter perantara"
-                options={perantaraOptions}
-                value={perantaraFilter}
-                onChange={(v) => setPerantaraFilter(v || 'Semua')}
                 compact
               />
               <SearchableSelect
@@ -983,7 +957,8 @@ export const TabBroadcast: React.FC<TabBroadcastProps> = ({
                 )}
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Ubah isi template kapan saja melalui menu <strong>Pengaturan → WA &amp; Email</strong>.
+                Isi template pesan dapat disesuaikan oleh Super Admin melalui menu{' '}
+                <strong>Pengaturan → WA &amp; Email</strong>.
               </p>
             </div>
           ) : null}

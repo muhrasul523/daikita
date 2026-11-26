@@ -321,7 +321,7 @@ export const DonorHistorySection: React.FC<DonorHistorySectionProps> = ({
               </p>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
                 Komitmen: <strong className="tabular-nums">{formatRupiah(selectedDonatur.nominalKomitmen)}/bln</strong> · Pengingat tgl{' '}
-                {selectedDonatur.tglJatuhTempo} · Perantara: {selectedDonatur.namaPerantara}
+                {selectedDonatur.tglJatuhTempo}
               </p>
             </div>
 
@@ -333,7 +333,7 @@ export const DonorHistorySection: React.FC<DonorHistorySectionProps> = ({
                 </p>
                 {donorTotals.totalLainnyaRp > 0 && (
                   <p className="text-[10px] font-semibold text-sky-700 dark:text-sky-300 tabular-nums">
-                    Termasuk +{formatRupiah(donorTotals.totalLainnyaRp)} lainnya
+                    Termasuk +{formatRupiah(donorTotals.totalLainnyaRp)} donasi umum
                   </p>
                 )}
               </div>
@@ -483,7 +483,7 @@ export const DonorHistorySection: React.FC<DonorHistorySectionProps> = ({
                           </p>
                           {row.donasiLainnyaRp > 0 && (
                             <p className="text-[10px] font-semibold text-sky-700 dark:text-sky-300">
-                              +{formatRupiah(row.donasiLainnyaRp)} lainnya
+                              +{formatRupiah(row.donasiLainnyaRp)} donasi umum
                             </p>
                           )}
                         </div>
@@ -494,7 +494,7 @@ export const DonorHistorySection: React.FC<DonorHistorySectionProps> = ({
                           </p>
                           {row.donasiLainnyaRp > 0 && (
                             <p className="text-[10px] font-semibold text-sky-700 dark:text-sky-300">
-                              +{formatRupiah(row.donasiLainnyaRp)} lainnya
+                              +{formatRupiah(row.donasiLainnyaRp)} donasi umum
                             </p>
                           )}
                         </div>

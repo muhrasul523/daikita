@@ -120,12 +120,12 @@ export const TabAdminAkses: React.FC<TabAdminAksesProps> = ({
 
   const portalLinks = [
     {
-      label: 'Pendaftaran Donatur (Utama)',
-      desc: 'Tautan publik utama tanpa menu admin — langsung cek WA lalu isi pendaftaran.',
+      label: 'Pendaftaran Donatur Tetap (Utama)',
+      desc: 'Tautan publik utama tanpa menu admin — langsung cek WA lalu isi pendaftaran atau edit data.',
       url: APP_PUBLIC_URL,
     },
     {
-      label: 'Pembayaran & Riwayat Donatur',
+      label: 'Penyaluran Donasi & Riwayat',
       desc: 'Tautan langsung bagi donatur untuk upload bukti transfer, cek riwayat & gabung grup WA.',
       url: APP_BAYAR_URL,
     },

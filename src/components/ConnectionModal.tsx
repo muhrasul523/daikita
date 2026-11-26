@@ -1,19 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
   BellRing,
   Check,
   ChevronDown,
   Copy,
   Download,
-  ExternalLink,
   Eye,
   EyeOff,
   Image as ImageIcon,
+  KeyRound,
   Landmark,
-  Link2,
   Mail,
   MessageCircle,
   Plus,
@@ -22,6 +18,7 @@ import {
   Save,
   Send,
   Server,
+  ShieldAlert,
   ShieldCheck,
   Trash2,
   Upload,
@@ -38,22 +35,17 @@ import {
 } from '../config';
 import {
   EmailTemplateItem,
-  JenisKelamin,
   LembagaConfig,
   NotifDeliveryResult,
-  Panitia,
   RekeningInfo,
   SavePengaturanPayload,
   TestNotificationPayload,
 } from '../types';
 import { isValidGasUrl, pingGasConnection } from '../services/api';
 import {
-  buildReferralUrl,
   formatRupiahInput,
   getDriveThumbnailFallback,
   normalizeDriveImageUrl,
-  normalizeJenisKelamin,
-  normalizeRoleLabel,
   parseRupiahInput,
 } from '../utils/formatters';
 import { processBrandingImage } from '../utils/imageCompressor';
@@ -65,22 +57,13 @@ interface ConnectionModalProps {
   gasUrl: string;
   connectionStatus: 'connected' | 'local' | 'error';
   config: LembagaConfig;
-  panitia: Panitia[];
   onSaveUrl: (newUrl: string) => Promise<void>;
   onSavePengaturan: (payload: SavePengaturanPayload) => Promise<boolean>;
   onTestNotification: (
     payload: TestNotificationPayload
   ) => Promise<{ ok: boolean; message: string; notifStatus?: NotifDeliveryResult }>;
-  onSavePanitia: (p: Panitia) => Promise<boolean>;
-  onDeletePanitia: (kodePanitia: string) => Promise<boolean>;
   onNotify: (type: 'success' | 'error' | 'info', title: string, description?: string) => void;
 }
-
-const ROLE_OPTIONS: SearchableOption[] = [
-  { value: 'Admin', label: 'Admin (Pengurus / Perantara)', keywords: 'admin pengurus panitia' },
-  { value: 'Super Admin', label: 'Super Admin', keywords: 'super admin' },
-  { value: 'Publik', label: 'Publik', keywords: 'publik donatur' },
-];
 
 const TANGGAL_OPTIONS: SearchableOption[] = Array.from({ length: 31 }, (_, i) => ({
   value: String(i + 1),
@@ -96,7 +79,6 @@ const TEMPLATE_VARIABLES = [
   '{domisili}',
   '{nominal}',
   '{tgl_pengingat}',
-  '{perantara}',
   '{rekening}',
   '{lembaga}',
   '{link_konfirmasi}',
@@ -107,22 +89,68 @@ const TEMPLATE_VARIABLES = [
   '{qris_note}',
 ];
 
+interface ToggleSwitchProps {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  description?: string;
+}
+
+const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ checked, onChange, label, description }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    onClick={() => onChange(!checked)}
+    className={`w-full flex items-center justify-between gap-3 rounded-2xl border px-3.5 py-2.5 text-left transition-all cursor-pointer ${
+      checked
+        ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50/75 dark:bg-emerald-950/45'
+        : 'border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/60'
+    }`}
+  >
+    <div className="min-w-0">
+      <p
+        className={`text-xs font-bold safe-wrap ${
+          checked
+            ? 'text-emerald-950 dark:text-emerald-100'
+            : 'text-slate-700 dark:text-slate-200'
+        }`}
+      >
+        {label}
+      </p>
+      {description && (
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
+          {description}
+        </p>
+      )}
+    </div>
+    <span
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+        checked ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-600'
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+          checked ? 'translate-x-6' : 'translate-x-1'
+        }`}
+      />
+    </span>
+  </button>
+);
+
 export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   isOpen,
   onClose,
   gasUrl,
   connectionStatus,
   config,
-  panitia,
   onSaveUrl,
   onSavePengaturan,
   onTestNotification,
-  onSavePanitia,
-  onDeletePanitia,
   onNotify,
 }) => {
   const [activeSection, setActiveSection] = useState<
-    'identitas' | 'rekening' | 'notifikasi' | 'pengurus' | 'koneksi'
+    'identitas' | 'rekening' | 'notifikasi' | 'koneksi'
   >('identitas');
 
   // State Identitas, Logo & Preview WA
@@ -137,6 +165,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
   // State Rekening, QRIS & Default Form
   const [infoRekening, setInfoRekening] = useState<RekeningInfo[]>(config.infoRekening);
+  const [showRekening, setShowRekening] = useState<boolean>(config.showRekening !== false);
   const [qrisUrl, setQrisUrl] = useState(config.qrisUrl || '');
   const [qrisPendingUpload, setQrisPendingUpload] = useState<{
     base64: string;
@@ -153,7 +182,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   );
   const [catatanPembayaran, setCatatanPembayaran] = useState(config.catatanPembayaran || '');
 
-  // State Notifikasi WA (ReChat / MiPos), Grup WA & Email Alias
+  // State Notifikasi WA (ReChat / MiPos), Grup WA Donatur, Grup WA Admin & Email Alias
   const [enableWaNotif, setEnableWaNotif] = useState<boolean>(config.enableWaNotif);
   const [waEndpointUrl, setWaEndpointUrl] = useState(config.waEndpointUrl);
   const [waApiKey, setWaApiKey] = useState(config.waApiKey || '');
@@ -175,6 +204,22 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   const [waGroupLink, setWaGroupLink] = useState(config.waGroupLink || '');
   const [waGroupId, setWaGroupId] = useState(config.waGroupId || '');
 
+  // State Grup WA Khusus Admin
+  const [enableAdminWaGroupNotif, setEnableAdminWaGroupNotif] = useState<boolean>(
+    Boolean(config.enableAdminWaGroupNotif)
+  );
+  const [adminWaGroupName, setAdminWaGroupName] = useState(
+    config.adminWaGroupName || 'Grup Admin DAIKITA - Dakwah Pelosok'
+  );
+  const [adminWaGroupLink, setAdminWaGroupLink] = useState(config.adminWaGroupLink || '');
+  const [adminWaGroupId, setAdminWaGroupId] = useState(config.adminWaGroupId || '');
+  const [isTestingAdminGroup, setIsTestingAdminGroup] = useState(false);
+  const [adminGroupTestDetail, setAdminGroupTestDetail] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
+
+  // State Email
   const [enableEmailNotif, setEnableEmailNotif] = useState<boolean>(config.enableEmailNotif);
   const [emailSenderAlias, setEmailSenderAlias] = useState(config.emailSenderAlias);
   const [emailSenderName, setEmailSenderName] = useState(config.emailSenderName);
@@ -185,7 +230,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     config.emailTemplateReminder || DEFAULT_EMAIL_TEMPLATE_REMINDER
   );
 
-  // State Uji Kirim Notifikasi
+  // State Uji Kirim Notifikasi Donatur
   const [testWaInput, setTestWaInput] = useState('');
   const [testEmailInput, setTestEmailInput] = useState('');
   const [testMessageType, setTestMessageType] = useState<'daftar' | 'followup' | 'reminder'>(
@@ -195,62 +240,6 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   const [testNotifResult, setTestNotifResult] = useState<NotifDeliveryResult | null>(null);
 
   const [isSavingSettings, setIsSavingSettings] = useState(false);
-
-  // State Pengurus & Referral
-  const [kodeInput, setKodeInput] = useState('');
-  const [namaPanitiaInput, setNamaPanitiaInput] = useState('');
-  const [jenisKelaminPanitia, setJenisKelaminPanitia] = useState<JenisKelamin>('Laki-laki');
-  const [waPanitiaInput, setWaPanitiaInput] = useState('');
-  const [rolePanitiaInput, setRolePanitiaInput] = useState('Admin');
-  const [isSavingPanitia, setIsSavingPanitia] = useState(false);
-  const [copiedRef, setCopiedRef] = useState<string | null>(null);
-  const [panitiaSortField, setPanitiaSortField] = useState<
-    'kode' | 'nama' | 'role' | 'wa'
-  >('kode');
-  const [panitiaSortDir, setPanitiaSortDir] = useState<'asc' | 'desc'>('asc');
-
-  const sortedPanitia = useMemo(() => {
-    const dir = panitiaSortDir === 'asc' ? 1 : -1;
-    return [...panitia].sort((a, b) => {
-      let cmp = 0;
-      switch (panitiaSortField) {
-        case 'kode':
-          cmp = a.kodePanitia.localeCompare(b.kodePanitia, 'id');
-          break;
-        case 'nama':
-          cmp = a.namaPanitia.localeCompare(b.namaPanitia, 'id');
-          break;
-        case 'role':
-          cmp = normalizeRoleLabel(a.role).localeCompare(normalizeRoleLabel(b.role), 'id');
-          break;
-        case 'wa':
-          cmp = (a.noWaPanitia || '').localeCompare(b.noWaPanitia || '', 'id');
-          break;
-      }
-      if (cmp === 0) return a.kodePanitia.localeCompare(b.kodePanitia, 'id');
-      return cmp * dir;
-    });
-  }, [panitia, panitiaSortField, panitiaSortDir]);
-
-  const handleSortPanitia = (field: 'kode' | 'nama' | 'role' | 'wa') => {
-    if (panitiaSortField === field) {
-      setPanitiaSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setPanitiaSortField(field);
-      setPanitiaSortDir('asc');
-    }
-  };
-
-  const renderPanitiaSortIcon = (field: 'kode' | 'nama' | 'role' | 'wa') => {
-    if (panitiaSortField !== field) {
-      return <ArrowUpDown className="h-3 w-3 opacity-60 shrink-0" />;
-    }
-    return panitiaSortDir === 'asc' ? (
-      <ArrowUp className="h-3 w-3 shrink-0" />
-    ) : (
-      <ArrowDown className="h-3 w-3 shrink-0" />
-    );
-  };
 
   // State Koneksi Sinkronisasi
   const [urlInput, setUrlInput] = useState(gasUrl);
@@ -271,6 +260,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         ? config.infoRekening.map((r) => ({ ...r }))
         : [{ bank: '', nomor: '', atasNama: '' }]
     );
+    setShowRekening(config.showRekening !== false);
     setQrisUrl(config.qrisUrl || '');
     setQrisPendingUpload(null);
     setQrisMerchantName(config.qrisMerchantName || '');
@@ -298,13 +288,19 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         ? [...config.waReminderTemplates]
         : [...DEFAULT_WA_REMINDER_TEMPLATES]
     );
-    setWaGroupName(config.waGroupName || 'Grup Donatur DAIKITA — Kafalah Dai');
+    setWaGroupName(config.waGroupName || 'Grup Donatur DAIKITA - Dakwah Pelosok');
     setWaGroupLink(config.waGroupLink || '');
     setWaGroupId(config.waGroupId || '');
 
+    setEnableAdminWaGroupNotif(Boolean(config.enableAdminWaGroupNotif));
+    setAdminWaGroupName(config.adminWaGroupName || 'Grup Admin DAIKITA - Dakwah Pelosok');
+    setAdminWaGroupLink(config.adminWaGroupLink || '');
+    setAdminWaGroupId(config.adminWaGroupId || '');
+    setAdminGroupTestDetail(null);
+
     setEnableEmailNotif(config.enableEmailNotif);
     setEmailSenderAlias(config.emailSenderAlias || 'lajnahdai.dpp@gmail.com');
-    setEmailSenderName(config.emailSenderName || 'DAIKITA — Lajnah Dai Wahdah Islamiyah');
+    setEmailSenderName(config.emailSenderName || 'DAIKITA - Dakwah Pelosok');
     setEmailTemplateDaftar(
       config.emailTemplateDaftar?.subject && config.emailTemplateDaftar?.body
         ? { ...config.emailTemplateDaftar }
@@ -334,7 +330,11 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         mimeType: processed.mimeType,
         fileName: processed.originalName,
       });
-      onNotify('info', 'Logo siap disimpan', 'Klik "Simpan Pengaturan" agar diterapkan ke seluruh aplikasi.');
+      onNotify(
+        'info',
+        'Logo siap disimpan',
+        'Klik "Simpan Pengaturan" agar diterapkan ke seluruh aplikasi.'
+      );
     } catch (err) {
       onNotify('error', 'Gagal memproses logo', err instanceof Error ? err.message : undefined);
     }
@@ -351,7 +351,11 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         fileName: processed.originalName,
       });
       setShowQris(true);
-      onNotify('info', 'Gambar QRIS siap disimpan', 'Klik "Simpan Pengaturan" untuk mengaktifkan QRIS.');
+      onNotify(
+        'info',
+        'Gambar QRIS siap disimpan',
+        'Klik "Simpan Pengaturan" untuk mengaktifkan QRIS.'
+      );
     } catch (err) {
       onNotify('error', 'Gagal memproses QRIS', err instanceof Error ? err.message : undefined);
     }
@@ -372,7 +376,6 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 1200, 630);
 
-      // Kartu besar (~95% x 92% kanvas) agar konten bisa dimaksimalkan 85-90%
       ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
       ctx.beginPath();
       ctx.roundRect(28, 24, 1144, 582, 36);
@@ -407,8 +410,8 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         }
       }
 
-      const maxContentW = 1056; // ~88% lebar kanvas 1200px
-      const titleText = namaLembaga || 'DAIKITA — Kafalah Dai';
+      const maxContentW = 1056;
+      const titleText = namaLembaga || 'DAIKITA - Dakwah Pelosok';
       let titleSize = activeLogoPreview && !logoSkippedByCors ? 66 : 74;
       ctx.fillStyle = '#065f46';
       ctx.textAlign = 'center';
@@ -519,8 +522,8 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       }))
       .filter((r) => r.bank !== '' && r.nomor !== '');
 
-    if (cleanRekening.length === 0) {
-      onNotify('error', 'Minimal satu rekening resmi harus diisi.');
+    if (showRekening && cleanRekening.length === 0) {
+      onNotify('error', 'Minimal satu rekening resmi harus diisi bila tampilan rekening aktif.');
       return;
     }
 
@@ -546,7 +549,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
     setIsSavingSettings(true);
     const ok = await onSavePengaturan({
-      namaLembaga: namaLembaga.trim() || 'DAIKITA — Kafalah Dai',
+      namaLembaga: namaLembaga.trim() || 'DAIKITA - Dakwah Pelosok',
       tagline: tagline.trim(),
       logoUrl,
       logoBase64: logoPendingUpload?.base64,
@@ -558,6 +561,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       qrisFileName: qrisPendingUpload?.fileName,
       qrisMerchantName: qrisMerchantName.trim(),
       showQris,
+      showRekening,
       defaultNominal: parseRupiahInput(defaultNominalInput) || 50000,
       defaultTglPengingat,
       catatanPembayaran: catatanPembayaran.trim(),
@@ -575,12 +579,16 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         cleanReminderTemplates.length > 0
           ? cleanReminderTemplates
           : DEFAULT_WA_REMINDER_TEMPLATES,
-      waGroupName: waGroupName.trim() || 'Grup Donatur DAIKITA — Kafalah Dai',
+      waGroupName: waGroupName.trim() || 'Grup Donatur DAIKITA - Dakwah Pelosok',
       waGroupLink: waGroupLink.trim(),
       waGroupId: waGroupId.trim(),
+      enableAdminWaGroupNotif,
+      adminWaGroupName: adminWaGroupName.trim() || 'Grup Admin DAIKITA - Dakwah Pelosok',
+      adminWaGroupLink: adminWaGroupLink.trim(),
+      adminWaGroupId: adminWaGroupId.trim(),
       enableEmailNotif,
       emailSenderAlias: emailSenderAlias.trim() || 'lajnahdai.dpp@gmail.com',
-      emailSenderName: emailSenderName.trim() || 'DAIKITA — Lajnah Dai Wahdah Islamiyah',
+      emailSenderName: emailSenderName.trim() || 'DAIKITA - Dakwah Pelosok',
       emailTemplateDaftar: safeEmailDaftar,
       emailTemplateReminder: safeEmailReminder,
       emailTemplates: [safeEmailDaftar, safeEmailReminder],
@@ -639,36 +647,32 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     }
   };
 
-  const handleSavePanitiaSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!kodeInput.trim() || !namaPanitiaInput.trim()) {
-      onNotify('error', 'Kode dan nama pengurus wajib diisi.');
+  const handleTestAdminWaGroup = async () => {
+    const targetId = adminWaGroupId.trim();
+    if (!targetId) {
+      onNotify(
+        'error',
+        'ID Grup WA Admin wajib diisi',
+        'Masukkan ID grup format xxxx@g.us (mis. 120363...@g.us) lalu coba lagi.'
+      );
       return;
     }
-    setIsSavingPanitia(true);
-    const ok = await onSavePanitia({
-      kodePanitia: kodeInput.trim().toUpperCase(),
-      namaPanitia: namaPanitiaInput.trim(),
-      jenisKelamin: jenisKelaminPanitia || 'Laki-laki',
-      noWaPanitia: waPanitiaInput.trim(),
-      role: rolePanitiaInput,
+    setIsTestingAdminGroup(true);
+    setAdminGroupTestDetail(null);
+    const res = await onTestNotification({
+      messageType: 'admin_group',
+      adminWaGroupId: targetId,
+      namaLengkap: 'Uji Koneksi Grup Admin',
     });
-    setIsSavingPanitia(false);
+    setIsTestingAdminGroup(false);
+    const detail = res.notifStatus?.adminGroup?.detail || res.message;
+    const ok = Boolean(res.notifStatus?.adminGroup?.ok ?? res.ok);
+    setAdminGroupTestDetail({ ok, text: detail });
     if (ok) {
-      setKodeInput('');
-      setNamaPanitiaInput('');
-      setJenisKelaminPanitia('Laki-laki');
-      setWaPanitiaInput('');
-      setRolePanitiaInput('Admin');
+      onNotify('success', 'Pesan uji terkirim ke Grup WA Admin', detail);
+    } else {
+      onNotify('error', 'Gagal kirim ke Grup WA Admin', detail);
     }
-  };
-
-  const handleEditPanitiaRow = (p: Panitia) => {
-    setKodeInput(p.kodePanitia);
-    setNamaPanitiaInput(p.namaPanitia);
-    setJenisKelaminPanitia(normalizeJenisKelamin(p.jenisKelamin) || 'Laki-laki');
-    setWaPanitiaInput(p.noWaPanitia);
-    setRolePanitiaInput(normalizeRoleLabel(p.role));
   };
 
   const handleTest = async () => {
@@ -733,22 +737,14 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     try {
       await navigator.clipboard.writeText(gasCodeSource);
       setCopiedCode(true);
-      onNotify('success', 'Skrip server disalin', 'Tempelkan ke editor skrip lalu terapkan versi baru.');
+      onNotify(
+        'success',
+        'Skrip server disalin',
+        'Tempelkan ke editor skrip lalu terapkan versi baru.'
+      );
       setTimeout(() => setCopiedCode(false), 2500);
     } catch {
       onNotify('error', 'Gagal menyalin otomatis', 'Silakan blok dan salin teks secara manual.');
-    }
-  };
-
-  const handleCopyRef = async (kode: string) => {
-    const link = buildReferralUrl(kode);
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopiedRef(kode);
-      onNotify('success', `Link referral ${kode} disalin`, link);
-      setTimeout(() => setCopiedRef(null), 2000);
-    } catch {
-      onNotify('error', 'Gagal menyalin tautan');
     }
   };
 
@@ -766,7 +762,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
               id="modal-pengaturan-title"
               className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate"
             >
-              Pengaturan Aplikasi
+              Pengaturan Aplikasi (Super Admin)
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
               Status sinkronisasi:{' '}
@@ -798,13 +794,12 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         </div>
 
         <div className="px-5 sm:px-6 pt-4">
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1 rounded-2xl bg-slate-100/90 dark:bg-slate-800/85 p-1">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-2xl bg-slate-100/90 dark:bg-slate-800/85 p-1">
             {(
               [
                 { key: 'identitas', label: 'Identitas & Logo', icon: ImageIcon },
                 { key: 'rekening', label: 'Rekening & QRIS', icon: Landmark },
                 { key: 'notifikasi', label: 'WA & Email', icon: BellRing },
-                { key: 'pengurus', label: 'Pengurus & Link', icon: Users },
                 { key: 'koneksi', label: 'Sinkronisasi', icon: Server },
               ] as const
             ).map((item) => {
@@ -815,7 +810,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                   key={item.key}
                   type="button"
                   onClick={() => setActiveSection(item.key)}
-                  className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  className={`flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
                     active
                       ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
                       : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -841,7 +836,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     type="text"
                     value={namaLembaga}
                     onChange={(e) => setNamaLembaga(e.target.value)}
-                    placeholder="DAIKITA — Kafalah Dai"
+                    placeholder="DAIKITA - Dakwah Pelosok"
                     className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/90 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
@@ -859,7 +854,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                 </div>
               </div>
 
-              {/* Upload Logo Wahdah Islamiyah */}
+              {/* Upload Logo */}
               <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/40 p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -901,7 +896,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                       <span className="text-[11px] text-slate-400 text-center">Belum ada logo</span>
                     )}
                   </div>
-                  <div className="min-w-0 flex-1 space-y-2">
+                  <div className="min-w-0 flex-1 space-y-2 w-full">
                     <input
                       type="url"
                       value={logoUrl}
@@ -943,7 +938,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     />
                   )}
                   <p className="text-lg sm:text-xl font-bold text-emerald-900 dark:text-emerald-200 safe-wrap">
-                    {namaLembaga || 'DAIKITA — Kafalah Dai'}
+                    {namaLembaga || 'DAIKITA - Dakwah Pelosok'}
                   </p>
                   <p className="text-sm font-medium text-slate-700 dark:text-slate-200 safe-wrap max-w-lg mx-auto">
                     {tagline || 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.'}
@@ -989,15 +984,34 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
           {activeSection === 'rekening' && (
             <form onSubmit={handleSaveAllSettings} className="space-y-5">
+              {/* Kontrol Tampilan Rekening & QRIS */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <ToggleSwitch
+                  checked={showRekening}
+                  onChange={setShowRekening}
+                  label="Tampilkan Informasi Rekening"
+                  description="Tampilkan daftar nomor rekening di halaman pendaftaran & penyaluran donasi."
+                />
+                <ToggleSwitch
+                  checked={showQris}
+                  onChange={setShowQris}
+                  label="Tampilkan Gambar QRIS"
+                  description="Tampilkan QRIS resmi di halaman pendaftaran, penyaluran donasi, & notifikasi."
+                />
+              </div>
+
               {/* Daftar Rekening Resmi */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/40 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
                       Daftar Rekening Resmi &amp; Pemilik
                     </p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Otomatis muncul di halaman Pendaftaran, Konfirmasi, dan pesan pengingat WA.
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
+                      Status tampilan di web donatur:{' '}
+                      <strong className={showRekening ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}>
+                        {showRekening ? 'Ditampilkan' : 'Disembunyikan'}
+                      </strong>
                     </p>
                   </div>
                   <button
@@ -1014,7 +1028,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                   {infoRekening.map((rek, idx) => (
                     <div
                       key={idx}
-                      className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/75 dark:bg-slate-900/60 p-3 grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center"
+                      className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/85 dark:bg-slate-900/65 p-3 grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center"
                     >
                       <input
                         type="text"
@@ -1062,15 +1076,15 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                       Gambar QRIS Resmi
                     </p>
                   </div>
-                  <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showQris}
-                      onChange={(e) => setShowQris(e.target.checked)}
-                      className="rounded accent-emerald-600"
-                    />
-                    <span>Tampilkan QRIS di aplikasi</span>
-                  </label>
+                  <span
+                    className={`text-[11px] font-semibold ${
+                      showQris
+                        ? 'text-emerald-700 dark:text-emerald-400'
+                        : 'text-amber-700 dark:text-amber-400'
+                    }`}
+                  >
+                    {showQris ? 'Status: Ditampilkan' : 'Status: Disembunyikan'}
+                  </span>
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
@@ -1120,7 +1134,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                       type="text"
                       value={qrisMerchantName}
                       onChange={(e) => setQrisMerchantName(e.target.value)}
-                      placeholder="Nama Merchant QRIS (mis. DAIKITA Wahdah Islamiyah)"
+                      placeholder="Nama Merchant QRIS (mis. DAIKITA - Dakwah Pelosok)"
                       className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-800 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                     />
                   </div>
@@ -1186,54 +1200,55 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
           {activeSection === 'notifikasi' && (
             <div className="space-y-6">
               <form onSubmit={handleSaveAllSettings} className="space-y-6">
-                {/* Variabel Template */}
-                <div className="rounded-2xl border border-emerald-200/80 dark:border-emerald-800/70 bg-emerald-50/45 dark:bg-emerald-950/30 p-4 space-y-2">
-                  <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
-                    Variabel Dinamis &amp; Rotasi Anti-Spam Otomatis
-                  </p>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
-                    Setiap pendaftaran donatur baru otomatis mengirim notifikasi menggunakan
-                    template secara bergantian (Template 1 → 2 → 3 → dst) untuk menghindari pola
-                    spam. Klik variabel untuk menyalin:
-                  </p>
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {TEMPLATE_VARIABLES.map((token) => (
-                      <button
-                        key={token}
-                        type="button"
-                        onClick={() => void handleCopyVariable(token)}
-                        className="rounded-lg border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-800 px-2 py-1 text-[11px] font-mono font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-slate-700 cursor-pointer"
-                      >
-                        {token}
-                      </button>
-                    ))}
+                {/* Panel Kontrol Cepat Toggle Notifikasi */}
+                <div className="rounded-2xl border border-emerald-200/80 dark:border-emerald-800/70 bg-gradient-to-br from-emerald-50/50 via-teal-50/35 to-sky-50/35 dark:from-emerald-950/30 dark:via-teal-950/20 dark:to-sky-950/20 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <BellRing className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                    <p className="text-xs font-bold text-emerald-950 dark:text-emerald-100">
+                      Kontrol Aktif / Nonaktif Notifikasi Otomatis
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                    <ToggleSwitch
+                      checked={enableWaNotif}
+                      onChange={setEnableWaNotif}
+                      label="Notifikasi WA Donatur"
+                      description="Kirim WA otomatis saat daftar & pengingat bulanan."
+                    />
+                    <ToggleSwitch
+                      checked={enableEmailNotif}
+                      onChange={setEnableEmailNotif}
+                      label="Notifikasi Email Donatur"
+                      description="Kirim email otomatis via alias lembaga."
+                    />
+                    <ToggleSwitch
+                      checked={enableAdminWaGroupNotif}
+                      onChange={setEnableAdminWaGroupNotif}
+                      label="Notifikasi Grup WA Admin"
+                      description="Kirim info ke grup admin saat ada pendaftar & konfirmasi."
+                    />
                   </div>
                 </div>
 
-                {/* Pengaturan WA ReChat / MiPos */}
-                <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/40 p-4 space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <MessageCircle className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
-                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        Notifikasi WhatsApp Otomatis (ReChat / MiPos)
+                {/* Pengaturan API Nomor WA (Gampang Ganti Perangkat/Nomor) */}
+                <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/65 dark:bg-slate-800/40 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                        Pengaturan API Nomor WA Pengirim (ReChat / MiPos)
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
+                        Cukup ubah API Key / Token perangkat di bawah ini kapan saja bila Anda
+                        ingin mengganti nomor WA pengirim notifikasi donatur maupun grup admin.
                       </p>
                     </div>
-                    <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={enableWaNotif}
-                        onChange={(e) => setEnableWaNotif(e.target.checked)}
-                        className="rounded accent-emerald-600"
-                      />
-                      <span>Aktifkan kirim WA otomatis</span>
-                    </label>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="min-w-0">
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">
-                        API Key / Token Perangkat WA
+                        API Key / Token Perangkat Nomor WA
                       </label>
                       <div className="relative">
                         <input
@@ -1252,10 +1267,6 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                           {showWaKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
                       </div>
-                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
-                        Ganti API Key perangkat di sini kapan saja bila ingin mengganti nomor WA
-                        pengirim.
-                      </p>
                     </div>
 
                     <div className="min-w-0">
@@ -1269,58 +1280,165 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                         placeholder="https://www.rechat.id/api/v1/messages"
                         className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                       />
-                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
-                        Mendukung <code className="font-mono">/api/v1/messages</code> (Bearer)
-                        maupun format <code className="font-mono">{'{API_KEY}'}</code> di URL.
-                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Grup WA Khusus Para Admin */}
+                <div className="rounded-2xl border border-teal-200/80 dark:border-teal-800/75 bg-teal-50/40 dark:bg-teal-950/25 p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ShieldAlert className="h-4 w-4 text-teal-700 dark:text-teal-400 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-teal-950 dark:text-teal-100">
+                          Grup WA Khusus Para Admin (Notifikasi Pendaftar &amp; Penyaluran Donasi)
+                        </p>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 safe-wrap">
+                          Setiap ada pendaftar donatur tetap baru atau pengisian konfirmasi
+                          penyaluran donasi, sistem otomatis mengirim laporan ringkas ke grup ini.
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Pengaturan Grup WhatsApp Donatur */}
-                  <div className="pt-3 border-t border-slate-200/70 dark:border-slate-700/70 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4 text-teal-700 dark:text-teal-400" />
-                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        Pengaturan Grup WhatsApp Donatur
-                      </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                        Nama Grup WA Admin
+                      </label>
+                      <input
+                        type="text"
+                        value={adminWaGroupName}
+                        onChange={(e) => setAdminWaGroupName(e.target.value)}
+                        placeholder="Grup Admin DAIKITA - Dakwah Pelosok"
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <div className="min-w-0">
-                        <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
-                          Nama Grup WA
-                        </label>
-                        <input
-                          type="text"
-                          value={waGroupName}
-                          onChange={(e) => setWaGroupName(e.target.value)}
-                          placeholder="Grup Donatur DAIKITA"
-                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
-                        />
-                      </div>
-                      <div className="min-w-0">
-                        <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
-                          Link Undangan Grup WA
-                        </label>
-                        <input
-                          type="url"
-                          value={waGroupLink}
-                          onChange={(e) => setWaGroupLink(e.target.value)}
-                          placeholder="https://chat.whatsapp.com/..."
-                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
-                        />
-                      </div>
-                      <div className="min-w-0">
-                        <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
-                          ID Grup WA (Opsional)
-                        </label>
-                        <input
-                          type="text"
-                          value={waGroupId}
-                          onChange={(e) => setWaGroupId(e.target.value)}
-                          placeholder="120363...@g.us"
-                          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
-                        />
-                      </div>
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                        Link Grup WA Admin
+                      </label>
+                      <input
+                        type="url"
+                        value={adminWaGroupLink}
+                        onChange={(e) => setAdminWaGroupLink(e.target.value)}
+                        placeholder="https://chat.whatsapp.com/..."
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                        ID Grup WA Admin (Wajib untuk API)
+                      </label>
+                      <input
+                        type="text"
+                        value={adminWaGroupId}
+                        onChange={(e) => setAdminWaGroupId(e.target.value)}
+                        placeholder="120363...@g.us"
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
+                      Simpan pengaturan dulu setelah mengubah API Key / ID Grup, lalu uji kirim.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={isTestingAdminGroup || !adminWaGroupId.trim()}
+                      onClick={() => void handleTestAdminWaGroup()}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50 whitespace-nowrap cursor-pointer"
+                    >
+                      <Send className="h-3.5 w-3.5 shrink-0" />
+                      <span>
+                        {isTestingAdminGroup ? 'Mengirim ke Grup...' : 'Tes Kirim ke Grup Admin'}
+                      </span>
+                    </button>
+                  </div>
+
+                  {adminGroupTestDetail && (
+                    <div
+                      className={`rounded-xl px-3 py-2 text-xs font-medium safe-wrap ${
+                        adminGroupTestDetail.ok
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800'
+                          : 'bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800'
+                      }`}
+                    >
+                      {adminGroupTestDetail.text}
+                    </div>
+                  )}
+                </div>
+
+                {/* Variabel Template */}
+                <div className="rounded-2xl border border-emerald-200/80 dark:border-emerald-800/70 bg-emerald-50/45 dark:bg-emerald-950/30 p-4 space-y-2">
+                  <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
+                    Variabel Dinamis &amp; Rotasi Anti-Spam Otomatis
+                  </p>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
+                    Setiap pendaftaran donatur baru otomatis mengirim notifikasi menggunakan
+                    template secara bergantian (Template 1 → 2 → 3 → dst) untuk mengurangi indikasi
+                    spam. Klik variabel untuk menyalin:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {TEMPLATE_VARIABLES.map((token) => (
+                      <button
+                        key={token}
+                        type="button"
+                        onClick={() => void handleCopyVariable(token)}
+                        className="rounded-lg border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-800 px-2 py-1 text-[11px] font-mono font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-slate-700 cursor-pointer"
+                      >
+                        {token}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pengaturan Grup WA Donatur & Template WA */}
+                <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/40 p-4 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-teal-700 dark:text-teal-400" />
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Grup WhatsApp Donatur &amp; Template Pesan WA Donatur
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                        Nama Grup WA Donatur
+                      </label>
+                      <input
+                        type="text"
+                        value={waGroupName}
+                        onChange={(e) => setWaGroupName(e.target.value)}
+                        placeholder="Grup Donatur DAIKITA - Dakwah Pelosok"
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                        Link Undangan Grup WA Donatur
+                      </label>
+                      <input
+                        type="url"
+                        value={waGroupLink}
+                        onChange={(e) => setWaGroupLink(e.target.value)}
+                        placeholder="https://chat.whatsapp.com/..."
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                        ID Grup WA Donatur (Opsional)
+                      </label>
+                      <input
+                        type="text"
+                        value={waGroupId}
+                        onChange={(e) => setWaGroupId(e.target.value)}
+                        placeholder="120363...@g.us"
+                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      />
                     </div>
                   </div>
 
@@ -1365,17 +1483,17 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                           if (waTemplateSubTab === 'daftar') {
                             setWaTemplates((prev) => [
                               ...prev,
-                              `Assalamu'alaikum {sapaan} *{nama}*,\nTerima kasih atas komitmen Kafalah Dai sebesar *{nominal}* (ID: {id_donatur}).\n\n*Rincian Data Donatur*\n• Jenis Kelamin: {jenis_kelamin}\n• Domisili: {domisili}\n\n{rekening}\n{qris_note}\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._`,
+                              `Assalamu'alaikum {sapaan} *{nama}*,\nTerima kasih atas komitmen Donatur Tetap Dakwah Pelosok sebesar *{nominal}* (ID: {id_donatur}).\n\n*Rincian Data Donatur*\n• Jenis Kelamin: {jenis_kelamin}\n• Domisili: {domisili}\n\n{rekening}\n{qris_note}\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._`,
                             ]);
                           } else if (waTemplateSubTab === 'followup') {
                             setWaFollowupTemplates((prev) => [
                               ...prev,
-                              `Halo {sapaan} *{nama}*, mohon berkenan menyimpan nomor resmi *{lembaga}* ini agar tautan konfirmasi dapat diklik langsung dan notifikasi rutin tersampaikan dengan baik.\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._`,
+                              `Halo {sapaan} *{nama}*, mohon berkenan menyimpan nomor resmi *{lembaga}* ini agar tautan konfirmasi penyaluran donasi dapat diklik langsung dan notifikasi tersampaikan dengan baik.\n{link_grup_section}\n_Syukran wa jazakumullahu khairan._`,
                             ]);
                           } else {
                             setWaReminderTemplates((prev) => [
                               ...prev,
-                              `Assalamu'alaikum {sapaan} *{nama}*, mengingatkan donasi rutin Kafalah Dai bulan *{bulan}* sebesar *{nominal}*.\n\n{rekening}\n{qris_note}\nKonfirmasi bukti transfer dapat dikirim melalui web: {link_konfirmasi} atau melalui japri admin via nomor ini.\n\n_Syukran wa jazakumullahu khairan._`,
+                              `Assalamu'alaikum {sapaan} *{nama}*, mengingatkan komitmen donasi tetap Dakwah Pelosok bulan *{bulan}* sebesar *{nominal}*.\n\n{rekening}\n{qris_note}\nKonfirmasi bukti transfer dapat dikirim melalui web: {link_konfirmasi} atau melalui japri admin via nomor ini.\n\n_Syukran wa jazakumullahu khairan._`,
                             ]);
                           }
                         }}
@@ -1388,9 +1506,9 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
                     {waTemplateSubTab === 'daftar' && (
                       <p className="text-[11px] text-slate-600 dark:text-slate-300 safe-wrap">
-                        Template pendaftaran awal otomatis mengirim gambar QRIS (jika sudah
-                        diunggah di menu Rekening &amp; QRIS) serta link Grup WA bagi donatur yang
-                        berminat bergabung.
+                        Template pendaftaran awal otomatis mengirim gambar QRIS (jika diaktifkan &amp;
+                        diunggah di menu Rekening &amp; QRIS) serta link Grup WhatsApp bagi donatur
+                        yang bersedia bergabung.
                       </p>
                     )}
 
@@ -1398,7 +1516,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                       <div className="rounded-xl border border-teal-200/80 dark:border-teal-800/70 bg-teal-50/50 dark:bg-teal-950/30 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
                         <p className="text-[11px] text-teal-900 dark:text-teal-200 safe-wrap">
                           Pesan 2 otomatis dijadwalkan terkirim setelah Pesan 1 pendaftaran awal
-                          (arahan save nomor &amp; link Grup WA melalui{' '}
+                          (arahan save nomor &amp; link Grup WhatsApp melalui{' '}
                           <code className="font-mono">{'{link_grup_section}'}</code>).
                         </p>
                         <div className="flex items-center gap-2 shrink-0">
@@ -1422,8 +1540,8 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     {waTemplateSubTab === 'reminder' && (
                       <p className="text-[11px] text-slate-600 dark:text-slate-300 safe-wrap">
                         Template pengingat bulanan ringkas (tanpa rincian data pendaftaran) dan
-                        otomatis melampirkan gambar QRIS melalui WhatsApp &amp; Email apabila file
-                        QRIS sudah diunggah di menu Rekening &amp; QRIS.
+                        otomatis melampirkan gambar QRIS melalui WhatsApp &amp; Email apabila QRIS
+                        diaktifkan di menu Rekening &amp; QRIS.
                       </p>
                     )}
 
@@ -1505,15 +1623,15 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                         Notifikasi Email Otomatis (1 Template per Jenis Pesan)
                       </p>
                     </div>
-                    <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={enableEmailNotif}
-                        onChange={(e) => setEnableEmailNotif(e.target.checked)}
-                        className="rounded accent-emerald-600"
-                      />
-                      <span>Aktifkan kirim Email otomatis</span>
-                    </label>
+                    <span
+                      className={`text-[11px] font-semibold ${
+                        enableEmailNotif
+                          ? 'text-emerald-700 dark:text-emerald-400'
+                          : 'text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      {enableEmailNotif ? 'Aktif' : 'Nonaktif'}
+                    </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1537,7 +1655,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                         type="text"
                         value={emailSenderName}
                         onChange={(e) => setEmailSenderName(e.target.value)}
-                        placeholder="DAIKITA — Lajnah Dai Wahdah Islamiyah"
+                        placeholder="DAIKITA - Dakwah Pelosok"
                         className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
                       />
                     </div>
@@ -1603,17 +1721,22 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-50 cursor-pointer"
                   >
                     <Save className="h-4 w-4 shrink-0" />
-                    <span>{isSavingSettings ? 'Menyimpan...' : 'Simpan Pengaturan Notifikasi'}</span>
+                    <span>
+                      {isSavingSettings ? 'Menyimpan...' : 'Simpan Pengaturan Notifikasi'}
+                    </span>
                   </button>
                 </div>
               </form>
 
-              {/* Uji Kirim Notifikasi */}
+              {/* Uji Kirim Notifikasi Donatur */}
               <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/75 dark:bg-slate-900/55 p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                    Uji Kirim Notifikasi WA &amp; Email
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <MessageCircle className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Uji Kirim Notifikasi WA &amp; Email Donatur
+                    </p>
+                  </div>
                   <div className="inline-flex gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 p-1">
                     {(
                       [
@@ -1701,230 +1824,6 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             </div>
           )}
 
-          {activeSection === 'pengurus' && (
-            <div className="space-y-5">
-              <form
-                onSubmit={handleSavePanitiaSubmit}
-                className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/40 p-4 space-y-3"
-              >
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  Tambah atau Perbarui Pengurus / Perantara
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  <input
-                    type="text"
-                    value={kodeInput}
-                    onChange={(e) => setKodeInput(e.target.value.toUpperCase())}
-                    placeholder="Kode Pengurus (mis. PNT03)"
-                    required
-                    className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
-                  />
-                  <input
-                    type="text"
-                    value={namaPanitiaInput}
-                    onChange={(e) => setNamaPanitiaInput(e.target.value)}
-                    placeholder="Nama Pengurus"
-                    required
-                    className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
-                  />
-                  <div
-                    role="radiogroup"
-                    aria-label="Pilih jenis kelamin pengurus"
-                    className="grid grid-cols-2 gap-2"
-                  >
-                    {(['Laki-laki', 'Perempuan'] as const).map((opt) => {
-                      const selected = jenisKelaminPanitia === opt;
-                      return (
-                        <label
-                          key={opt}
-                          className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition-all cursor-pointer select-none ${
-                            selected
-                              ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200'
-                              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-emerald-300'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="panitia-jenis-kelamin"
-                            value={opt}
-                            checked={selected}
-                            onChange={() => setJenisKelaminPanitia(opt)}
-                            className="sr-only"
-                          />
-                          <span
-                            className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${
-                              selected
-                                ? 'border-emerald-600 bg-emerald-600'
-                                : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
-                            }`}
-                          >
-                            {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-                          </span>
-                          <span className="whitespace-nowrap">{opt}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                  <input
-                    type="tel"
-                    value={waPanitiaInput}
-                    onChange={(e) => setWaPanitiaInput(e.target.value)}
-                    placeholder="No. WA (mis. 0812...)"
-                    className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs tabular-nums text-slate-900 dark:text-slate-100 focus:border-emerald-500 focus:outline-none"
-                  />
-                  <div className="sm:col-span-2">
-                    <SearchableSelect
-                      ariaLabel="Pilih peran pengurus"
-                      options={ROLE_OPTIONS}
-                      value={rolePanitiaInput}
-                      onChange={(val) => setRolePanitiaInput(val || 'Admin')}
-                      compact
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={isSavingPanitia}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
-                  >
-                    <Plus className="h-3.5 w-3.5 shrink-0" />
-                    <span>{isSavingPanitia ? 'Menyimpan...' : 'Simpan Pengurus'}</span>
-                  </button>
-                </div>
-              </form>
-
-              <div className="overflow-x-auto clean-scroll rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/75 dark:bg-slate-900/55">
-                <table className="w-full min-w-[680px] text-left border-collapse">
-                  <thead>
-                    <tr className="bg-emerald-800 dark:bg-emerald-950 text-white dark:text-emerald-100 text-[11px] font-semibold">
-                      <th className="py-3 pl-4 pr-3">
-                        <button
-                          type="button"
-                          onClick={() => handleSortPanitia('kode')}
-                          className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
-                        >
-                          <span>Kode</span>
-                          {renderPanitiaSortIcon('kode')}
-                        </button>
-                      </th>
-                      <th className="py-3 px-3">
-                        <button
-                          type="button"
-                          onClick={() => handleSortPanitia('nama')}
-                          className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
-                        >
-                          <span>Nama &amp; Gender</span>
-                          {renderPanitiaSortIcon('nama')}
-                        </button>
-                      </th>
-                      <th className="py-3 px-3">
-                        <button
-                          type="button"
-                          onClick={() => handleSortPanitia('role')}
-                          className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
-                        >
-                          <span>Peran</span>
-                          {renderPanitiaSortIcon('role')}
-                        </button>
-                      </th>
-                      <th className="py-3 px-3">
-                        <button
-                          type="button"
-                          onClick={() => handleSortPanitia('wa')}
-                          className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
-                        >
-                          <span>No. WA</span>
-                          {renderPanitiaSortIcon('wa')}
-                        </button>
-                      </th>
-                      <th className="py-3 pl-3 pr-4 text-right">Link Referral &amp; Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200/70 dark:divide-slate-700/70 text-xs">
-                    {sortedPanitia.map((p) => {
-                      const refUrl = buildReferralUrl(p.kodePanitia);
-                      const isCopied = copiedRef === p.kodePanitia;
-                      return (
-                        <tr
-                          key={p.kodePanitia}
-                          className="hover:bg-emerald-50/50 dark:hover:bg-slate-800/60 transition-colors align-top"
-                        >
-                          <td className="py-3.5 pl-4 pr-3 font-mono font-bold text-emerald-800 dark:text-emerald-300 whitespace-nowrap">
-                            {p.kodePanitia}
-                          </td>
-                          <td className="py-3.5 px-3 min-w-0 max-w-[200px]">
-                            <p className="font-semibold text-slate-900 dark:text-slate-100 safe-wrap">
-                              {p.namaPanitia}
-                            </p>
-                            {p.jenisKelamin && (
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                {p.jenisKelamin}
-                              </p>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-3 whitespace-nowrap text-slate-700 dark:text-slate-300">
-                            {normalizeRoleLabel(p.role)}
-                          </td>
-                          <td className="py-3.5 px-3 whitespace-nowrap tabular-nums text-slate-700 dark:text-slate-300">
-                            {p.noWaPanitia || '-'}
-                          </td>
-                          <td className="py-3.5 pl-3 pr-4 text-right">
-                            <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => handleEditPanitiaRow(p)}
-                                className="rounded-xl border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
-                              >
-                                Ubah
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleCopyRef(p.kodePanitia)}
-                                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors whitespace-nowrap cursor-pointer"
-                              >
-                                {isCopied ? (
-                                  <>
-                                    <Check className="h-3.5 w-3.5 shrink-0" />
-                                    <span>Tersalin</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Link2 className="h-3.5 w-3.5 shrink-0" />
-                                    <span>Salin Link</span>
-                                  </>
-                                )}
-                              </button>
-                              <a
-                                href={refUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shrink-0"
-                                title="Buka tautan referral"
-                              >
-                                <ExternalLink className="h-3.5 w-3.5" />
-                              </a>
-                              {panitia.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => void onDeletePanitia(p.kodePanitia)}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer"
-                                  title="Hapus pengurus"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
           {activeSection === 'koneksi' && (
             <div className="space-y-5">
               <form onSubmit={handleSaveUrlSubmit} className="space-y-4">
@@ -1947,8 +1846,8 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/90 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                   />
                   <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 leading-relaxed safe-wrap">
-                    Tautan tersimpan di perangkat ini. Kosongkan bila ingin menjalankan aplikasi dalam
-                    Mode Lokal tanpa sinkronisasi daring.
+                    Tautan tersimpan di perangkat ini. Kosongkan bila ingin menjalankan aplikasi
+                    dalam Mode Lokal tanpa sinkronisasi daring.
                   </p>
                 </div>
 

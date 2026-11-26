@@ -404,7 +404,7 @@ export function renderMessageTemplate(
   const bulanYm = options?.bulanTagihan || getCurrentYearMonth();
   const bulanLabel = formatBulanLabel(bulanYm);
   const groupLink = (config.waGroupLink || '').trim();
-  const groupName = (config.waGroupName || 'Grup Donatur DAIKITA').trim();
+  const groupName = (config.waGroupName || 'Donatur Tetap DAIKITA - Dakwah Pelosok').trim();
   const shouldIncludeGroup =
     options?.includeGroupLink !== undefined
       ? options.includeGroupLink
@@ -412,7 +412,7 @@ export function renderMessageTemplate(
 
   const linkGrupSection =
     shouldIncludeGroup && groupLink
-      ? `\nSilakan bergabung ke *${groupName}* melalui tautan berikut:\n${groupLink}\n`
+      ? `\nSilakan bergabung ke *Grup WhatsApp ${groupName}* melalui tautan berikut:\n${groupLink}\n`
       : '';
 
   const qrisNote =
@@ -429,8 +429,8 @@ export function renderMessageTemplate(
     '{domisili}': domisiliLabel,
     '{nominal}': formatRupiah(donatur.nominalKomitmen || 0),
     '{tgl_pengingat}': String(donatur.tglJatuhTempo || config.defaultTglPengingat || 5),
-    '{perantara}': donatur.namaPerantara || 'Langsung (Tanpa Perantara)',
-    '{lembaga}': config.namaLembaga || 'DAIKITA — Kafalah Dai',
+    '{perantara}': '-',
+    '{lembaga}': config.namaLembaga || 'DAIKITA - Dakwah Pelosok',
     '{rekening}': formatRekeningLines(config.infoRekening),
     '{link_konfirmasi}': portalUrl,
     '{bulan}': bulanLabel,
@@ -455,7 +455,7 @@ export function buildWaMeUrl(noWa: string, messageText: string): string {
 }
 
 /**
- * Membangun Smart Link wa.me untuk pengingat donasi Kafalah Dai rutin
+ * Membangun Smart Link wa.me untuk pengingat donasi tetap Dakwah Pelosok
  * Menggunakan template pengingat dari Pengaturan (tanpa rincian data daftar)
  */
 export function buildReminderWaLink(
@@ -481,13 +481,13 @@ export function buildReminderWaLink(
  */
 export function buildGroupInviteMessage(donatur: Donatur, config: LembagaConfig): string {
   const sapaan = getSapaanByGender(donatur.jenisKelamin);
-  const groupName = config.waGroupName || 'Grup Donatur DAIKITA — Kafalah Dai';
+  const groupName = config.waGroupName || 'Donatur Tetap DAIKITA - Dakwah Pelosok';
   const groupLink = config.waGroupLink || '(Link grup belum diatur di Pengaturan)';
   return [
     `Assalamu'alaikum Warahmatullahi Wabarakatuh ${sapaan} *${donatur.namaLengkap}*.`,
     ``,
-    `Terima kasih atas partisipasi ${sapaan} sebagai Donatur Rutin *Kafalah Dai* di *${config.namaLembaga}*.`,
-    `Silakan bergabung ke *${groupName}* untuk mendapatkan info penyaluran & kabar dakwah para dai melalui tautan berikut:`,
+    `Terima kasih atas partisipasi ${sapaan} sebagai Donatur Tetap *Dakwah Pelosok* di *${config.namaLembaga}*.`,
+    `Silakan bergabung ke *Grup WhatsApp ${groupName}* untuk mendapatkan info penyaluran donasi & kabar dakwah pelosok melalui tautan berikut:`,
     groupLink,
     ``,
     `_Syukran wa jazakumullahu khairan._`,
@@ -505,28 +505,28 @@ export function buildReceiptWaLink(
 ): string {
   const wa = normalizeWA(trx.noWa) || String(trx.noWa || '').replace(/\D/g, '');
   const bulanLabel = formatBulanLabel(trx.bulanTagihan);
-  const isUmum = normalizeJenisDonatur(trx.jenisDonatur, trx.idDonatur) === 'Umum';
-  const donasiKomitmen = isUmum
+  const isInsidentil = normalizeJenisDonatur(trx.jenisDonatur, trx.idDonatur) === 'Umum';
+  const donasiKomitmen = isInsidentil
     ? 0
     : trx.nominalKomitmen > 0
     ? trx.nominalKomitmen
     : trx.nominalTransfer;
-  const donasiLainnya = isUmum ? 0 : Math.max(0, trx.donasiLainnya || 0);
+  const donasiUmum = isInsidentil ? 0 : Math.max(0, trx.donasiLainnya || 0);
 
   const lines = [
     `Assalamu'alaikum Warahmatullahi Wabarakatuh,`,
     ``,
     `Alhamdulillah, terima kasih Bapak/Ibu *${trx.namaDonatur}*.`,
-    `Donasi Kafalah Dai Anda telah kami terima dan *TERVERIFIKASI VALID* oleh *${config.namaLembaga}*.`,
+    `Penyaluran donasi Dakwah Pelosok Anda telah kami terima dan *TERVERIFIKASI VALID* oleh *${config.namaLembaga}*.`,
     ``,
     `*RINGKASAN KUITANSI DONASI*`,
     `• No. Transaksi: ${trx.idTransaksi}`,
     trx.tanggalTransfer ? `• Tanggal Transfer: ${formatTanggalIndo(trx.tanggalTransfer)}` : '',
     `• Periode Donasi: ${bulanLabel}`,
-    isUmum
-      ? `• Kategori: Donatur Umum`
-      : `• Donasi Komitmen: *${formatRupiah(donasiKomitmen)}*`,
-    !isUmum && donasiLainnya > 0 ? `• Donasi Lainnya: *${formatRupiah(donasiLainnya)}*` : '',
+    isInsidentil
+      ? `• Kategori: Donatur Insidentil`
+      : `• Donasi Tetap (Komitmen): *${formatRupiah(donasiKomitmen)}*`,
+    !isInsidentil && donasiUmum > 0 ? `• Donasi Umum (Tambahan): *${formatRupiah(donasiUmum)}*` : '',
     `• Total Diterima: *${formatRupiah(trx.nominalTransfer)}*`,
     trx.keterangan ? `• Keterangan: ${trx.keterangan}` : '',
     `• Status Verifikasi: Valid / Diterima`,

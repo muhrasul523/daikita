@@ -85,6 +85,7 @@ export interface LembagaConfig {
   qrisUrl: string;
   qrisMerchantName: string;
   showQris: boolean;
+  showRekening: boolean;
   defaultNominal: number;
   defaultTglPengingat: number;
   catatanPembayaran: string;
@@ -104,6 +105,11 @@ export interface LembagaConfig {
   waGroupName: string;
   waGroupLink: string;
   waGroupId: string;
+  /** Pengaturan Grup WhatsApp Khusus Admin (Notifikasi Pendaftar & Penyaluran Donasi) */
+  enableAdminWaGroupNotif: boolean;
+  adminWaGroupName: string;
+  adminWaGroupLink: string;
+  adminWaGroupId: string;
   enableEmailNotif: boolean;
   emailSenderAlias: string;
   emailSenderName: string;
@@ -207,6 +213,22 @@ export interface RegisterDonaturPayload {
   minatGrupWa: MinatGrupWa;
 }
 
+export interface UpdateDonaturMandiriPayload {
+  idDonatur: string;
+  originalNoWa: string;
+  noWa: string;
+  namaLengkap: string;
+  jenisKelamin?: JenisKelamin;
+  email?: string;
+  kabId: string;
+  domisili: string;
+  provinsi: string;
+  pulau: string;
+  nominalKomitmen: number;
+  tglJatuhTempo: number;
+  minatGrupWa: MinatGrupWa;
+}
+
 export interface NotifChannelStatus {
   attempted: boolean;
   ok: boolean;
@@ -218,6 +240,7 @@ export interface NotifDeliveryResult {
   wa: NotifChannelStatus;
   waFollowup?: NotifChannelStatus;
   email: NotifChannelStatus;
+  adminGroup?: NotifChannelStatus;
 }
 
 export interface SubmitPembayaranPayload {
@@ -251,6 +274,7 @@ export interface SavePengaturanPayload {
   qrisFileName?: string;
   qrisMerchantName: string;
   showQris: boolean;
+  showRekening: boolean;
   defaultNominal: number;
   defaultTglPengingat: number;
   catatanPembayaran: string;
@@ -265,6 +289,10 @@ export interface SavePengaturanPayload {
   waGroupName: string;
   waGroupLink: string;
   waGroupId: string;
+  enableAdminWaGroupNotif: boolean;
+  adminWaGroupName: string;
+  adminWaGroupLink: string;
+  adminWaGroupId: string;
   enableEmailNotif: boolean;
   emailSenderAlias: string;
   emailSenderName: string;
@@ -279,7 +307,8 @@ export interface TestNotificationPayload {
   namaLengkap?: string;
   jenisKelamin?: JenisKelamin;
   minatGrupWa?: MinatGrupWa;
-  messageType?: 'daftar' | 'followup' | 'reminder';
+  messageType?: 'daftar' | 'followup' | 'reminder' | 'admin_group';
+  adminWaGroupId?: string;
   templateIndex?: number;
 }
 

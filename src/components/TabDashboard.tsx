@@ -5,28 +5,18 @@ import {
   ArrowUp,
   ArrowUpDown,
   Calendar,
-  Check,
   Coins,
-  Copy,
   ReceiptText,
   Users,
 } from 'lucide-react';
 import { WILAYAH_KABUPATEN } from '../data/wilayah';
+import { Donatur, LembagaConfig, StatusAktif, TransaksiDonasi } from '../types';
 import {
-  Donatur,
-  LembagaConfig,
-  Panitia,
-  StatusAktif,
-  TransaksiDonasi,
-} from '../types';
-import {
-  buildReferralUrl,
   extractYearMonthFromDateStr,
   formatBulanLabel,
   formatRupiah,
   getCurrentYearMonth,
   normalizeMinatGrup,
-  normalizeRoleLabel,
   normalizeStatusGrup,
   normalizeWA,
 } from '../utils/formatters';
@@ -36,13 +26,11 @@ interface TabDashboardProps {
   config: LembagaConfig;
   donaturList: Donatur[];
   transaksiList: TransaksiDonasi[];
-  panitiaList: Panitia[];
   isLoading: boolean;
   onOpenMutasi: (subView: 'mutasi' | 'donatur') => void;
-  onNotify: (type: 'success' | 'error' | 'info', title: string, description?: string) => void;
 }
 
-type SummaryTab = 'pulau' | 'provinsi' | 'kabupaten' | 'panitia' | 'metode';
+type SummaryTab = 'pulau' | 'provinsi' | 'kabupaten';
 type SummarySortField =
   | 'label'
   | 'activeCount'
@@ -66,14 +54,37 @@ const COMMITMENT_TIERS = [
   1_000_000,
 ] as const;
 
+function buildDonorPersonKey(t: TransaksiDonasi): { key: string; isInsidentil: boolean } {
+  const isInsidentil = t.jenisDonatur === 'Umum' || t.idDonatur === 'UMUM';
+  const wa = normalizeWA(t.noWa) || String(t.noWa || '').replace(/\D/g, '');
+  if (!isInsidentil) {
+    if (t.idDonatur && t.idDonatur !== '-') {
+      return { key: `tetap:id:${t.idDonatur}`, isInsidentil: false };
+    }
+    if (wa) {
+      return { key: `tetap:wa:${wa}`, isInsidentil: false };
+    }
+    return {
+      key: `tetap:nama:${(t.namaDonatur || t.idTransaksi).trim().toLowerCase()}`,
+      isInsidentil: false,
+    };
+  }
+  if (wa) {
+    return { key: `insidentil:wa:${wa}`, isInsidentil: true };
+  }
+  const cleanName = (t.namaDonatur || '').trim().toLowerCase();
+  if (cleanName && cleanName !== 'hamba allah') {
+    return { key: `insidentil:nama:${cleanName}`, isInsidentil: true };
+  }
+  return { key: `insidentil:trx:${t.idTransaksi}`, isInsidentil: true };
+}
+
 export const TabDashboard: React.FC<TabDashboardProps> = ({
   config,
   donaturList,
   transaksiList,
-  panitiaList,
   isLoading,
   onOpenMutasi,
-  onNotify,
 }) => {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentYearMonth());
   const [tierStatusFilter, setTierStatusFilter] = useState<'Aktif' | 'Semua' | StatusAktif>(
@@ -82,7 +93,6 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
   const [summaryTab, setSummaryTab] = useState<SummaryTab>('pulau');
   const [summarySortField, setSummarySortField] = useState<SummarySortField>('validBulanRp');
   const [summarySortDir, setSummarySortDir] = useState<'asc' | 'desc'>('desc');
-  const [copiedKode, setCopiedKode] = useState<string | null>(null);
 
   const monthTransaksi = useMemo(
     () => transaksiList.filter((t) => t.bulanTagihan === selectedMonth),
@@ -117,24 +127,29 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
 
     let totalValidRp = 0;
     let totalKomitmenValidRp = 0;
-    let totalLainnyaValidRp = 0;
-    let totalUmumValidRp = 0;
-    let lainnyaTrxCount = 0;
-    let umumTrxCount = 0;
+    let totalDonasiUmumValidRp = 0;
+    let totalInsidentilValidRp = 0;
+    let donasiUmumTrxCount = 0;
+    let insidentilTrxCount = 0;
+
+    const uniqueTetapSet = new Set<string>();
+    const uniqueInsidentilSet = new Set<string>();
 
     allValid.forEach((t) => {
-      const isUmum = t.jenisDonatur === 'Umum' || t.idDonatur === 'UMUM';
+      const { key, isInsidentil } = buildDonorPersonKey(t);
       totalValidRp += t.nominalTransfer;
-      if (isUmum) {
-        totalUmumValidRp += t.nominalTransfer;
-        umumTrxCount += 1;
+      if (isInsidentil) {
+        totalInsidentilValidRp += t.nominalTransfer;
+        insidentilTrxCount += 1;
+        uniqueInsidentilSet.add(key);
       } else {
         const extra = Math.max(0, t.donasiLainnya || 0);
         const base =
           t.nominalKomitmen > 0 ? t.nominalKomitmen : Math.max(0, t.nominalTransfer - extra);
         totalKomitmenValidRp += base;
-        totalLainnyaValidRp += extra;
-        if (extra > 0) lainnyaTrxCount += 1;
+        totalDonasiUmumValidRp += extra;
+        if (extra > 0) donasiUmumTrxCount += 1;
+        uniqueTetapSet.add(key);
       }
     });
 
@@ -154,11 +169,10 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     return {
       totalValidRp,
       totalKomitmenValidRp,
-      totalLainnyaValidRp,
-      totalUmumValidRp,
-      totalTambahanValidRp: totalLainnyaValidRp + totalUmumValidRp,
-      lainnyaTrxCount,
-      umumTrxCount,
+      totalDonasiUmumValidRp,
+      totalInsidentilValidRp,
+      donasiUmumTrxCount,
+      insidentilTrxCount,
       validCount: allValid.length,
       pendingCount: allPending.length,
       totalDonatur: donaturList.length,
@@ -168,6 +182,9 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
       rataRataKomitmenRp,
       grupMinatCount,
       grupJoinedCount,
+      uniqueTetapAllCount: uniqueTetapSet.size,
+      uniqueInsidentilAllCount: uniqueInsidentilSet.size,
+      uniquePeopleAllCount: uniqueTetapSet.size + uniqueInsidentilSet.size,
     };
   }, [transaksiList, donaturList]);
 
@@ -178,24 +195,29 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
 
     let totalValidRp = 0;
     let totalKomitmenValidRp = 0;
-    let totalLainnyaValidRp = 0;
-    let totalUmumValidRp = 0;
-    let lainnyaCount = 0;
-    let umumCount = 0;
+    let totalDonasiUmumValidRp = 0;
+    let totalInsidentilValidRp = 0;
+    let donasiUmumCount = 0;
+    let insidentilCount = 0;
+
+    const uniqueTetapMonthSet = new Set<string>();
+    const uniqueInsidentilMonthSet = new Set<string>();
 
     validMonthTrx.forEach((t) => {
-      const isUmum = t.jenisDonatur === 'Umum' || t.idDonatur === 'UMUM';
+      const { key, isInsidentil } = buildDonorPersonKey(t);
       totalValidRp += t.nominalTransfer;
-      if (isUmum) {
-        totalUmumValidRp += t.nominalTransfer;
-        umumCount += 1;
+      if (isInsidentil) {
+        totalInsidentilValidRp += t.nominalTransfer;
+        insidentilCount += 1;
+        uniqueInsidentilMonthSet.add(key);
       } else {
         const extra = Math.max(0, t.donasiLainnya || 0);
         const base =
           t.nominalKomitmen > 0 ? t.nominalKomitmen : Math.max(0, t.nominalTransfer - extra);
         totalKomitmenValidRp += base;
-        totalLainnyaValidRp += extra;
-        if (extra > 0) lainnyaCount += 1;
+        totalDonasiUmumValidRp += extra;
+        if (extra > 0) donasiUmumCount += 1;
+        uniqueTetapMonthSet.add(key);
       }
     });
 
@@ -219,7 +241,6 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
       const wa = normalizeWA(d.noWa) || d.noWa;
       return validIdSet.has(d.idDonatur) || (wa && validWaSet.has(wa));
     }).length;
-    const komitmenBulanIniRp = activeDonors.reduce((sum, d) => sum + (d.nominalKomitmen || 0), 0);
     const donaturBaruBulanIni = donaturList.filter(
       (d) => extractYearMonthFromDateStr(d.tanggalDaftar) === selectedMonth
     ).length;
@@ -231,23 +252,24 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     return {
       totalValidRp,
       totalKomitmenValidRp,
-      totalLainnyaValidRp,
-      totalUmumValidRp,
-      totalTambahanValidRp: totalLainnyaValidRp + totalUmumValidRp,
-      lainnyaCount,
-      umumCount,
+      totalDonasiUmumValidRp,
+      totalInsidentilValidRp,
+      donasiUmumCount,
+      insidentilCount,
       validCount: validMonthTrx.length,
       totalPendingRp,
       pendingCount: pendingMonthTrx.length,
       activeCount: activeDonors.length,
       lunasActiveCount,
-      komitmenBulanIniRp,
       donaturBaruBulanIni,
       compliancePct,
+      uniqueTetapMonthCount: uniqueTetapMonthSet.size,
+      uniqueInsidentilMonthCount: uniqueInsidentilMonthSet.size,
+      uniqueDonorsMonthCount: uniqueTetapMonthSet.size + uniqueInsidentilMonthSet.size,
     };
   }, [monthTransaksi, donaturList, selectedMonth]);
 
-  // ===== Rekap Komitmen Donasi Berdasarkan Nominal (5rb - 1jt + Lainnya) =====
+  // ===== Rekap Komitmen Donasi Berdasarkan Nominal (5rb - 1jt + Nominal Lainnya) =====
   const commitmentBreakdown = useMemo(() => {
     const scopedDonors = donaturList.filter((d) => {
       if (tierStatusFilter === 'Semua') return true;
@@ -318,7 +340,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     };
   }, [donaturList, tierStatusFilter]);
 
-  // ===== Rekap Wilayah, Pengurus & Metode Daftar =====
+  // ===== Rekap Berdasarkan Wilayah (Pulau / Provinsi / Kabupaten) =====
   const summaryRows = useMemo(() => {
     const getCategoryKey = (d: Donatur): string => {
       const w = resolveDonorWilayah(d);
@@ -329,10 +351,6 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
           return w.provinsi || 'Belum Diisi';
         case 'kabupaten':
           return w.kab || 'Belum Diisi';
-        case 'panitia':
-          return d.namaPerantara || 'Langsung (Tanpa Perantara)';
-        case 'metode':
-          return d.metodeDaftar || 'Mandiri';
       }
     };
 
@@ -347,15 +365,9 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     );
 
     const keySet = new Set<string>();
-    if (summaryTab === 'panitia') {
-      panitiaList.forEach((p) => keySet.add(p.namaPanitia));
-    }
     donaturList.forEach((d) => keySet.add(getCategoryKey(d)));
 
     const rows = Array.from(keySet).map((label) => {
-      const matchedPanitia =
-        summaryTab === 'panitia' ? panitiaList.find((p) => p.namaPanitia === label) : undefined;
-
       const groupDonors = donaturList.filter((d) => getCategoryKey(d) === label);
       const activeGroup = groupDonors.filter((d) => d.statusAktif === 'Aktif');
       const potensiBulanRp = activeGroup.reduce((s, d) => s + (d.nominalKomitmen || 0), 0);
@@ -382,9 +394,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
       const validSemuaRp = validTrxGroup.reduce((s, t) => s + t.nominalTransfer, 0);
 
       let subtitle = '';
-      if (matchedPanitia) {
-        subtitle = `Kode ${matchedPanitia.kodePanitia} · ${normalizeRoleLabel(matchedPanitia.role)}`;
-      } else if (summaryTab === 'kabupaten' && groupDonors.length > 0) {
+      if (summaryTab === 'kabupaten' && groupDonors.length > 0) {
         const w = resolveDonorWilayah(groupDonors[0]);
         if (w.provinsi) subtitle = `${w.provinsi}${w.pulau ? ` · ${w.pulau}` : ''}`;
       } else if (summaryTab === 'provinsi' && groupDonors.length > 0) {
@@ -395,7 +405,6 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
       return {
         label,
         subtitle,
-        kodePanitia: matchedPanitia?.kodePanitia || '',
         activeCount: activeGroup.length,
         totalDonatur: groupDonors.length,
         potensiBulanRp,
@@ -433,7 +442,6 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     });
   }, [
     summaryTab,
-    panitiaList,
     donaturList,
     monthTransaksi,
     transaksiList,
@@ -460,29 +468,16 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
     );
   };
 
-  const handleCopyRef = async (kode: string) => {
-    const url = buildReferralUrl(kode);
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopiedKode(kode);
-      onNotify('success', `Link referral ${kode} disalin`, url);
-      setTimeout(() => setCopiedKode(null), 2000);
-    } catch {
-      onNotify('error', 'Gagal menyalin link referral');
-    }
-  };
-
   return (
     <div className="space-y-6">
       {/* Header Dashboard Rekap */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Dashboard Rekap Kafalah Dai
+            Dashboard Rekap Dakwah Pelosok
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300 safe-wrap">
-            Ringkasan total pemasukan, potensi donatur bulanan, sebaran nominal komitmen, dan
-            analitik periode{' '}
+            Ringkasan potensi bulanan, keaktifan donatur tetap, donasi masuk, dan analitik periode{' '}
             <strong className="text-emerald-800 dark:text-emerald-300">
               {formatBulanLabel(selectedMonth)}
             </strong>
@@ -507,16 +502,124 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         </div>
       </div>
 
-      {/* Rekap Secara Keseluruhan (Seluruh Periode) */}
+      {/* SECTION 1: Rekap Bulanan (Urutan Kiri -> Kanan sesuai permintaan) */}
       <section className="glass-surface rounded-3xl p-5 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-200/70 dark:border-slate-700/70">
-          <div>
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              Rekap Bulanan — {formatBulanLabel(selectedMonth)}
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
+              Potensi bulanan, donatur tetap aktif, total donasi masuk, serta jumlah orang yang
+              berdonasi pada bulan terpilih.
+            </p>
+          </div>
+          {monthlyMetrics.pendingCount > 0 && (
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300 tabular-nums shrink-0">
+              {monthlyMetrics.pendingCount} pending ({formatRupiah(monthlyMetrics.totalPendingRp)})
+            </p>
+          )}
+        </div>
+
+        {isLoading ? (
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="h-28 rounded-2xl bg-slate-100/80 dark:bg-slate-800/70 animate-pulse"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* 1. PALING KIRI: Potensi Dana per Bulan */}
+            <div className="min-w-0 rounded-2xl bg-teal-50/60 dark:bg-teal-950/30 border border-teal-200/70 dark:border-teal-800/60 p-4">
+              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                Potensi Dana per Bulan
+              </p>
+              <p className="mt-1.5 text-xl sm:text-2xl font-bold text-teal-800 dark:text-teal-300 tabular-nums safe-wrap">
+                {formatRupiah(overallMetrics.potensiPerBulanRp)}
+              </p>
+              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
+                Dari {overallMetrics.activeCount} donatur aktif · rata-rata{' '}
+                {formatRupiah(overallMetrics.rataRataKomitmenRp)}/bln
+              </p>
+            </div>
+
+            {/* 2. Total Donatur Aktif Saat Ini */}
+            <div className="min-w-0 rounded-2xl bg-white/80 dark:bg-slate-900/55 border border-slate-200/80 dark:border-slate-700/75 p-4">
+              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                Total Donatur Aktif Saat Ini
+              </p>
+              <p className="mt-1.5 text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                {overallMetrics.activeCount}{' '}
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  / {overallMetrics.totalDonatur} terdaftar
+                </span>
+              </p>
+              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
+                {overallMetrics.nonAktifCount} Non Aktif ·{' '}
+                <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                  +{monthlyMetrics.donaturBaruBulanIni} baru
+                </span>{' '}
+                di {formatBulanLabel(selectedMonth)}
+              </p>
+            </div>
+
+            {/* 3. Total Donasi Masuk Bulan Ini */}
+            <div className="min-w-0 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/60 p-4">
+              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                Total Donasi Masuk Bulan Ini
+              </p>
+              <p className="mt-1.5 text-xl sm:text-2xl font-bold text-emerald-800 dark:text-emerald-300 tabular-nums safe-wrap">
+                {formatRupiah(monthlyMetrics.totalValidRp)}
+              </p>
+              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
+                Komitmen {formatRupiah(monthlyMetrics.totalKomitmenValidRp)} · Donasi Umum{' '}
+                {formatRupiah(monthlyMetrics.totalDonasiUmumValidRp)} · Insidentil{' '}
+                {formatRupiah(monthlyMetrics.totalInsidentilValidRp)}
+              </p>
+            </div>
+
+            {/* 4. Total Orang Berdonasi Bulan Ini */}
+            <div className="min-w-0 rounded-2xl bg-sky-50/60 dark:bg-sky-950/30 border border-sky-200/70 dark:border-sky-800/60 p-4">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Total Orang Berdonasi Bulan Ini
+                </p>
+                <span className="text-[11px] font-bold text-sky-800 dark:text-sky-300 tabular-nums shrink-0">
+                  {monthlyMetrics.compliancePct.toFixed(1)}%
+                </span>
+              </div>
+              <p className="mt-1.5 text-xl sm:text-2xl font-bold text-sky-900 dark:text-sky-200 tabular-nums">
+                {monthlyMetrics.uniqueDonorsMonthCount}{' '}
+                <span className="text-xs font-semibold text-sky-700 dark:text-sky-400">orang</span>
+              </p>
+              <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200/80 dark:bg-slate-700/80 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-sky-500 transition-all duration-300"
+                  style={{ width: `${Math.min(100, monthlyMetrics.compliancePct)}%` }}
+                />
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
+                {monthlyMetrics.uniqueTetapMonthCount} Donatur Tetap ·{' '}
+                {monthlyMetrics.uniqueInsidentilMonthCount} Donatur Insidentil
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* SECTION 2: Rekap Secara Keseluruhan (Seluruh Periode) */}
+      <section className="glass-surface rounded-3xl p-5 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-200/70 dark:border-slate-700/70">
+          <div className="min-w-0">
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
               Rekap Secara Keseluruhan (Seluruh Periode)
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
-              Akumulasi total dana masuk terverifikasi, donasi lainnya &amp; umum, total donatur
-              saat ini, serta potensi dana bulanan di {config.namaLembaga}.
+              Akumulasi total donatur terdaftar, jumlah orang pada mutasi tercatat, dan seluruh
+              donasi terverifikasi di {config.namaLembaga}.
             </p>
           </div>
           <p className="text-xs font-medium text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
@@ -525,72 +628,63 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         </div>
 
         {isLoading ? (
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map((i) => (
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="h-20 rounded-2xl bg-slate-100/80 dark:bg-slate-800/70 animate-pulse"
+                className="h-24 rounded-2xl bg-slate-100/80 dark:bg-slate-800/70 animate-pulse"
               />
             ))}
           </div>
         ) : (
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="min-w-0 rounded-2xl bg-emerald-50/55 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/50 p-4">
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* 1. Jumlah Donatur */}
+            <div className="min-w-0 rounded-2xl bg-white/80 dark:bg-slate-900/55 border border-slate-200/80 dark:border-slate-700/75 p-4">
               <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                Total Dana Masuk (Valid)
+                Jumlah Donatur
               </p>
-              <p className="mt-1.5 text-xl font-bold text-emerald-800 dark:text-emerald-300 tabular-nums safe-wrap">
-                {formatRupiah(overallMetrics.totalValidRp)}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
-                {overallMetrics.validCount} transaksi · Komitmen{' '}
-                {formatRupiah(overallMetrics.totalKomitmenValidRp)}
-              </p>
-            </div>
-
-            <div className="min-w-0 rounded-2xl bg-sky-50/55 dark:bg-sky-950/30 border border-sky-200/60 dark:border-sky-800/50 p-4">
-              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                Donasi Lainnya &amp; Donatur Umum
-              </p>
-              <p className="mt-1.5 text-xl font-bold text-sky-800 dark:text-sky-300 tabular-nums safe-wrap">
-                {formatRupiah(overallMetrics.totalTambahanValidRp)}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
-                Kelebihan {formatRupiah(overallMetrics.totalLainnyaValidRp)} (
-                {overallMetrics.lainnyaTrxCount}) · Umum{' '}
-                {formatRupiah(overallMetrics.totalUmumValidRp)} ({overallMetrics.umumTrxCount})
-              </p>
-            </div>
-
-            <div className="min-w-0 rounded-2xl bg-white/75 dark:bg-slate-900/55 border border-slate-200/70 dark:border-slate-700/70 p-4">
-              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                Total Donatur Saat Ini
-              </p>
-              <p className="mt-1.5 text-xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+              <p className="mt-1.5 text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                 {overallMetrics.totalDonatur}{' '}
                 <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                  ({overallMetrics.activeCount} Aktif)
+                  donatur tetap
                 </span>
               </p>
-              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
-                {overallMetrics.nonAktifCount} Non Aktif ·{' '}
-                <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                  +{monthlyMetrics.donaturBaruBulanIni} baru
-                </span>{' '}
-                · Grup WA {overallMetrics.grupJoinedCount}/{overallMetrics.grupMinatCount}
+              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
+                {overallMetrics.activeCount} Aktif · {overallMetrics.nonAktifCount} Non Aktif ·
+                Grup WA {overallMetrics.grupJoinedCount}/{overallMetrics.grupMinatCount}
               </p>
             </div>
 
-            <div className="min-w-0 rounded-2xl bg-teal-50/55 dark:bg-teal-950/30 border border-teal-200/60 dark:border-teal-800/50 p-4">
+            {/* 2. Jumlah Orang Mutasi Tercatat */}
+            <div className="min-w-0 rounded-2xl bg-sky-50/55 dark:bg-sky-950/30 border border-sky-200/70 dark:border-sky-800/60 p-4">
               <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                Potensi Dana Per Bulan
+                Jumlah Orang Mutasi Tercatat
               </p>
-              <p className="mt-1.5 text-xl font-bold text-teal-800 dark:text-teal-300 tabular-nums safe-wrap">
-                {formatRupiah(overallMetrics.potensiPerBulanRp)}
+              <p className="mt-1.5 text-xl sm:text-2xl font-bold text-sky-800 dark:text-sky-300 tabular-nums">
+                {overallMetrics.uniquePeopleAllCount}{' '}
+                <span className="text-xs font-semibold text-sky-700 dark:text-sky-400">orang</span>
               </p>
-              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
-                Dari {overallMetrics.activeCount} donatur aktif · rata-rata{' '}
-                {formatRupiah(overallMetrics.rataRataKomitmenRp)}/bln
+              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
+                {overallMetrics.uniqueTetapAllCount} Donatur Tetap ·{' '}
+                {overallMetrics.uniqueInsidentilAllCount} Donatur Insidentil (seluruh periode)
+              </p>
+            </div>
+
+            {/* 3. Jumlah Donasi Tercatat (Keseluruhan) */}
+            <div className="min-w-0 rounded-2xl bg-emerald-50/55 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/60 p-4">
+              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                Jumlah Donasi Tercatat (Keseluruhan)
+              </p>
+              <p className="mt-1.5 text-xl sm:text-2xl font-bold text-emerald-800 dark:text-emerald-300 tabular-nums safe-wrap">
+                {formatRupiah(overallMetrics.totalValidRp)}
+              </p>
+              <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
+                {overallMetrics.validCount} transaksi valid · Komitmen{' '}
+                {formatRupiah(overallMetrics.totalKomitmenValidRp)} · Donasi Umum{' '}
+                {formatRupiah(overallMetrics.totalDonasiUmumValidRp)} (
+                {overallMetrics.donasiUmumTrxCount}) · Insidentil{' '}
+                {formatRupiah(overallMetrics.totalInsidentilValidRp)} (
+                {overallMetrics.insidentilTrxCount})
               </p>
             </div>
           </div>
@@ -599,7 +693,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         {/* Pintasan Cepat ke Halaman Mutasi & Daftar Donatur */}
         <div className="mt-4 pt-4 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap items-center justify-between gap-2.5">
           <p className="text-xs text-slate-500 dark:text-slate-400 safe-wrap">
-            Ingin melihat rincian transaksi masuk atau riwayat pembayaran per donatur?
+            Ingin melihat rincian mutasi dana masuk atau riwayat pembayaran per donatur tetap?
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -623,71 +717,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         </div>
       </section>
 
-      {/* 4 KPI Summary Cards — Bulan Terpilih */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="glass-surface rounded-3xl p-5 min-w-0">
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-            Valid Masuk — {formatBulanLabel(selectedMonth)}
-          </p>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-emerald-800 dark:text-emerald-300 tabular-nums safe-wrap">
-            {formatRupiah(monthlyMetrics.totalValidRp)}
-          </p>
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
-            {monthlyMetrics.validCount} valid · Potensi{' '}
-            {formatRupiah(monthlyMetrics.komitmenBulanIniRp)}
-          </p>
-        </div>
-
-        <div className="glass-surface rounded-3xl p-5 min-w-0">
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-            Lainnya &amp; Umum — {formatBulanLabel(selectedMonth)}
-          </p>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-sky-800 dark:text-sky-300 tabular-nums safe-wrap">
-            {formatRupiah(monthlyMetrics.totalTambahanValidRp)}
-          </p>
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
-            Kelebihan {formatRupiah(monthlyMetrics.totalLainnyaValidRp)} · Umum{' '}
-            {formatRupiah(monthlyMetrics.totalUmumValidRp)}
-          </p>
-        </div>
-
-        <div className="glass-surface rounded-3xl p-5 min-w-0">
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-            Menunggu Verifikasi
-          </p>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-amber-700 dark:text-amber-300 tabular-nums safe-wrap">
-            {formatRupiah(monthlyMetrics.totalPendingRp)}
-          </p>
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-            {monthlyMetrics.pendingCount} konfirmasi berstatus Pending
-          </p>
-        </div>
-
-        <div className="glass-surface rounded-3xl p-5 min-w-0">
-          <div className="flex items-baseline justify-between gap-2">
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              Kepatuhan &amp; Pertumbuhan
-            </p>
-            <span className="text-xs font-semibold text-teal-700 dark:text-teal-300 tabular-nums">
-              {monthlyMetrics.lunasActiveCount}/{monthlyMetrics.activeCount}
-            </span>
-          </div>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-teal-800 dark:text-teal-300 tabular-nums">
-            {monthlyMetrics.compliancePct.toFixed(1)}%
-          </p>
-          <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200/80 dark:bg-slate-700/80 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-sky-500 transition-all duration-300"
-              style={{ width: `${Math.min(100, monthlyMetrics.compliancePct)}%` }}
-            />
-          </div>
-          <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-            +{monthlyMetrics.donaturBaruBulanIni} donatur baru pada {formatBulanLabel(selectedMonth)}
-          </p>
-        </div>
-      </section>
-
-      {/* Rekap Jumlah Komitmen Donasi Berdasarkan Nominal (5rb - 1jt + Lainnya) */}
+      {/* Rekap Jumlah Komitmen Donasi Berdasarkan Nominal (5rb - 1jt + Nominal Lainnya) */}
       <section className="glass-surface rounded-3xl overflow-hidden">
         <div className="p-5 sm:p-6 border-b border-slate-200/70 dark:border-slate-700/70 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="min-w-0">
@@ -696,7 +726,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
               <span>Rekap Jumlah Komitmen Donasi Berdasarkan Nominal</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
-              Sebaran donatur dan total potensi dana per bulan dari nominal Rp 5.000 sampai Rp
+              Sebaran donatur tetap dan total potensi dana per bulan dari nominal Rp 5.000 sampai Rp
               1.000.000 serta nominal lainnya.
             </p>
           </div>
@@ -740,7 +770,9 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
             <tbody className="divide-y divide-slate-200/70 dark:divide-slate-700/70 text-sm">
               {commitmentBreakdown.rows.map((row, idx) => {
                 const barWidth =
-                  row.count > 0 ? Math.max(4, Math.round((row.count / commitmentBreakdown.maxCount) * 100)) : 0;
+                  row.count > 0
+                    ? Math.max(4, Math.round((row.count / commitmentBreakdown.maxCount) * 100))
+                    : 0;
                 return (
                   <tr
                     key={row.key}
@@ -847,16 +879,16 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         onSelectMonth={setSelectedMonth}
       />
 
-      {/* Rekap Berdasarkan Wilayah, Pengurus & Metode Daftar */}
+      {/* Rekap Berdasarkan Wilayah (Pulau / Provinsi / Kabupaten) */}
       <section className="glass-surface rounded-3xl overflow-hidden">
         <div className="p-5 sm:p-6 border-b border-slate-200/70 dark:border-slate-700/70 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
           <div className="min-w-0">
             <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-              Rekap Wilayah, Pengurus &amp; Metode Daftar
+              Rekap Sebaran Wilayah Donatur Tetap
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Ringkasan jumlah donatur, potensi bulanan, dan total dana valid periode{' '}
-              {formatBulanLabel(selectedMonth)} serta kumulatif keseluruhan.
+              {formatBulanLabel(selectedMonth)} serta kumulatif keseluruhan berdasarkan wilayah.
             </p>
           </div>
 
@@ -866,8 +898,6 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                 { key: 'pulau', label: 'Pulau' },
                 { key: 'provinsi', label: 'Provinsi' },
                 { key: 'kabupaten', label: 'Kabupaten / Kota' },
-                { key: 'panitia', label: 'Pengurus / Perantara' },
-                { key: 'metode', label: 'Metode Daftar' },
               ] as const
             ).map((item) => {
               const active = summaryTab === item.key;
@@ -890,7 +920,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
         </div>
 
         <div className="overflow-x-auto clean-scroll">
-          <table className="w-full min-w-[780px] text-left border-collapse">
+          <table className="w-full min-w-[740px] text-left border-collapse">
             <thead>
               <tr className="bg-teal-800 dark:bg-teal-950 text-white dark:text-teal-100 text-[11px] font-semibold">
                 <th className="py-3.5 pl-5 pr-3 w-12 text-center">No</th>
@@ -900,7 +930,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                     onClick={() => handleSummarySortHeader('label')}
                     className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
                   >
-                    <span>Kelompok</span>
+                    <span>Wilayah</span>
                     {renderSortIcon(summarySortField === 'label', summarySortDir)}
                   </button>
                 </th>
@@ -944,7 +974,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                     {renderSortIcon(summarySortField === 'validBulanRp', summarySortDir)}
                   </button>
                 </th>
-                <th className="py-3.5 px-4 text-right">
+                <th className="py-3.5 pl-4 pr-5 text-right">
                   <button
                     type="button"
                     onClick={() => handleSummarySortHeader('validSemuaRp')}
@@ -954,19 +984,16 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                     {renderSortIcon(summarySortField === 'validSemuaRp', summarySortDir)}
                   </button>
                 </th>
-                {summaryTab === 'panitia' && (
-                  <th className="py-3.5 pl-4 pr-5 text-right">Link Referral</th>
-                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200/70 dark:divide-slate-700/70 text-sm">
               {summaryRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={summaryTab === 'panitia' ? 8 : 7}
+                    colSpan={7}
                     className="py-8 px-4 text-center text-xs text-slate-500 dark:text-slate-400"
                   >
-                    Belum ada data untuk ditampilkan pada pengelompokan ini.
+                    Belum ada data untuk ditampilkan pada pengelompokan wilayah ini.
                   </td>
                 </tr>
               ) : (
@@ -1003,34 +1030,9 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
                     <td className="py-3.5 px-4 text-right font-bold text-emerald-800 dark:text-emerald-300 tabular-nums whitespace-nowrap">
                       {formatRupiah(row.validBulanRp)}
                     </td>
-                    <td className="py-3.5 px-4 text-right font-semibold text-slate-700 dark:text-slate-200 tabular-nums whitespace-nowrap">
+                    <td className="py-3.5 pl-4 pr-5 text-right font-semibold text-slate-700 dark:text-slate-200 tabular-nums whitespace-nowrap">
                       {formatRupiah(row.validSemuaRp)}
                     </td>
-                    {summaryTab === 'panitia' && (
-                      <td className="py-3.5 pl-4 pr-5 text-right whitespace-nowrap">
-                        {row.kodePanitia ? (
-                          <button
-                            type="button"
-                            onClick={() => handleCopyRef(row.kodePanitia)}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-300 dark:hover:border-emerald-600 hover:text-emerald-800 dark:hover:text-emerald-200 transition-colors whitespace-nowrap cursor-pointer"
-                          >
-                            {copiedKode === row.kodePanitia ? (
-                              <>
-                                <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                                <span>Disalin</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="h-3.5 w-3.5 shrink-0" />
-                                <span>Salin Link</span>
-                              </>
-                            )}
-                          </button>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
-                      </td>
-                    )}
                   </tr>
                 ))
               )}

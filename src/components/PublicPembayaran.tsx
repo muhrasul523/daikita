@@ -506,119 +506,138 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
     setPortalTab('bayar');
   };
 
-  const renderRekeningCard = () => (
-    <aside className="lg:col-span-4 glass-surface rounded-3xl p-5 sm:p-6 space-y-5 min-w-0">
-      <div>
-        <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-          Rekening Penyaluran
-        </h2>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed safe-wrap">
-          {config.catatanPembayaran ||
-            `Salurkan donasi Kafalah Dai melalui rekening resmi ${config.namaLembaga}.`}
-        </p>
-        <div className="mt-4 divide-y divide-slate-200/70 dark:divide-slate-700/70">
-          {config.infoRekening.map((rek) => {
-            const isCopied = copiedRek === rek.nomor;
-            return (
-              <div
-                key={`${rek.bank}-${rek.nomor}`}
-                className="py-3 first:pt-0 last:pb-0 flex items-center justify-between gap-3"
-              >
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 safe-wrap">
-                    {rek.bank}
-                  </p>
-                  <p className="mt-0.5 text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums safe-wrap">
-                    {rek.nomor}
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 safe-wrap">
-                    a.n. {rek.atasNama}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void handleCopyRekening(rek.nomor, rek.bank)}
-                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-300 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  {isCopied ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      <span>Disalin</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5 shrink-0" />
-                      <span>Salin</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+  const showRekeningBlock = Boolean(config.showRekening && config.infoRekening.length > 0);
+  const showQrisBlock = Boolean(config.showQris && config.qrisUrl);
+  const hasSidebar = showRekeningBlock || showQrisBlock;
+  const mainColClass = hasSidebar
+    ? 'lg:col-span-8 glass-surface rounded-3xl p-5 sm:p-8 min-w-0'
+    : 'lg:col-span-12 max-w-3xl w-full mx-auto glass-surface rounded-3xl p-5 sm:p-8 min-w-0';
 
-      {config.showQris && config.qrisUrl && (
-        <div className="pt-5 border-t border-slate-200/70 dark:border-slate-700/70 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                <QrCode className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0" />
-                <span>QRIS Pembayaran</span>
-              </h3>
-              {config.qrisMerchantName && (
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
-                  {config.qrisMerchantName}
-                </p>
-              )}
+  const renderRekeningCard = () => {
+    if (!hasSidebar) return null;
+
+    return (
+      <aside className="lg:col-span-4 glass-surface rounded-3xl p-5 sm:p-6 space-y-5 min-w-0">
+        {showRekeningBlock && (
+          <div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+              Rekening Penyaluran Donasi
+            </h2>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed safe-wrap">
+              {config.catatanPembayaran ||
+                `Salurkan donasi Dakwah Pelosok melalui rekening resmi ${config.namaLembaga}.`}
+            </p>
+            <div className="mt-4 divide-y divide-slate-200/70 dark:divide-slate-700/70">
+              {config.infoRekening.map((rek) => {
+                const isCopied = copiedRek === rek.nomor;
+                return (
+                  <div
+                    key={`${rek.bank}-${rek.nomor}`}
+                    className="py-3 first:pt-0 last:pb-0 flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 safe-wrap">
+                        {rek.bank}
+                      </p>
+                      <p className="mt-0.5 text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums safe-wrap">
+                        {rek.nomor}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 safe-wrap">
+                        a.n. {rek.atasNama}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleCopyRekening(rek.nomor, rek.bank)}
+                      className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-300 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      {isCopied ? (
+                        <>
+                          <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span>Disalin</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5 shrink-0" />
+                          <span>Salin</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
-            <a
-              href={qrisImgSrc}
-              download="QRIS-DAIKITA.png"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex min-h-[38px] items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-300 whitespace-nowrap shrink-0"
-            >
-              <Download className="h-3.5 w-3.5 shrink-0" />
-              <span>Unduh</span>
-            </a>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowQrisZoom(true)}
-            className="w-full rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white p-3 flex items-center justify-center hover:border-emerald-400 transition-colors cursor-pointer"
+        )}
+
+        {showQrisBlock && (
+          <div
+            className={
+              showRekeningBlock
+                ? 'pt-5 border-t border-slate-200/70 dark:border-slate-700/70 space-y-3'
+                : 'space-y-3'
+            }
           >
-            <img
-              src={qrisImgSrc}
-              alt="QRIS Pembayaran Resmi"
-              referrerPolicy="no-referrer"
-              onError={() => {
-                const fb = getDriveThumbnailFallback(config.qrisUrl);
-                if (fb && qrisImgSrc !== fb) setQrisImgSrc(fb);
-              }}
-              className="max-h-52 w-auto rounded-xl object-contain"
-            />
-          </button>
-        </div>
-      )}
-    </aside>
-  );
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                  <QrCode className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                  <span>QRIS Penyaluran Donasi</span>
+                </h3>
+                {config.qrisMerchantName && (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
+                    {config.qrisMerchantName}
+                  </p>
+                )}
+              </div>
+              <a
+                href={qrisImgSrc}
+                download="QRIS-DAIKITA.png"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-[38px] items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-300 whitespace-nowrap shrink-0"
+              >
+                <Download className="h-3.5 w-3.5 shrink-0" />
+                <span>Unduh</span>
+              </a>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowQrisZoom(true)}
+              className="w-full rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white p-3 flex items-center justify-center hover:border-emerald-400 transition-colors cursor-pointer"
+            >
+              <img
+                src={qrisImgSrc}
+                alt="QRIS Penyaluran Donasi Resmi"
+                referrerPolicy="no-referrer"
+                onError={() => {
+                  const fb = getDriveThumbnailFallback(config.qrisUrl);
+                  if (fb && qrisImgSrc !== fb) setQrisImgSrc(fb);
+                }}
+                className="max-h-52 w-auto rounded-xl object-contain"
+              />
+            </button>
+          </div>
+        )}
+      </aside>
+    );
+  };
 
   // ==================== STEP 1: CEK NOMOR WA DONATUR ====================
   if (!activeDonatur) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <section className="lg:col-span-8 glass-surface rounded-3xl p-5 sm:p-8 min-w-0">
+        <section className={mainColClass}>
           <div className="space-y-2">
             <p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-              Portal Pembayaran Donatur · {config.namaLembaga}
+              Portal Penyaluran Donasi · {config.namaLembaga}
             </p>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 safe-wrap">
-              Konfirmasi Penyaluran Kafalah
+              Konfirmasi Penyaluran Donasi
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
               Masukkan nomor WhatsApp yang terdaftar untuk mengunggah bukti transfer, melihat status
-              verifikasi, rekap pembayaran per bulan, serta bergabung ke grup WhatsApp donatur.
+              verifikasi, rekap donasi per bulan, serta bergabung ke Grup WhatsApp donatur.
             </p>
           </div>
 
@@ -745,7 +764,7 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
 
           <div className="mt-6 pt-5 border-t border-slate-200/70 dark:border-slate-700/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-xs text-slate-600 dark:text-slate-300 safe-wrap">
-              Belum pernah mendaftar sebagai donatur rutin Kafalah Dai?
+              Belum pernah mendaftar sebagai Donatur Tetap Dakwah Pelosok?
             </p>
             <button
               type="button"
@@ -753,7 +772,7 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
               className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-xs font-bold text-emerald-800 dark:text-emerald-300 hover:border-emerald-300 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               <UserPlus className="h-3.5 w-3.5 shrink-0" />
-              <span>Daftar Donatur Baru</span>
+              <span>Daftar Donatur Tetap</span>
             </button>
           </div>
         </section>
@@ -865,13 +884,13 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
       {/* TAB 1: FORM KONFIRMASI & UPLOAD BUKTI TRANSFER */}
       {portalTab === 'bayar' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <section className="lg:col-span-8 glass-surface rounded-3xl p-5 sm:p-8 min-w-0 space-y-5">
+          <section className={`${mainColClass} space-y-5`}>
             <div>
               <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100">
-                Form Konfirmasi Transfer Kafalah
+                Form Konfirmasi Penyaluran Donasi
               </h2>
               <p className="mt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300 safe-wrap">
-                Pilih periode bulan yang dibayarkan (bisa sekaligus beberapa bulan), lalu unggah
+                Pilih periode bulan yang disalurkan (bisa sekaligus beberapa bulan), lalu unggah
                 bukti transfer jika tersedia.
               </p>
             </div>
@@ -882,7 +901,7 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
                   <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                   <div className="min-w-0 flex-1 space-y-1">
                     <p className="text-sm font-bold text-emerald-950 dark:text-emerald-100">
-                      Konfirmasi Pembayaran Berhasil Dikirim!
+                      Konfirmasi Penyaluran Donasi Berhasil Dikirim!
                     </p>
                     <p className="text-xs text-emerald-900/90 dark:text-emerald-200/90 leading-relaxed safe-wrap">
                       Total{' '}
@@ -894,7 +913,7 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
                     </p>
                     {submitSuccess.totalLainnya > 0 && (
                       <p className="text-xs font-semibold text-sky-800 dark:text-sky-300 tabular-nums">
-                        Termasuk Donasi Lainnya (kelebihan komitmen): +
+                        Termasuk Donasi Umum (kelebihan komitmen): +
                         {formatRupiah(submitSuccess.totalLainnya)}
                       </p>
                     )}
@@ -1083,7 +1102,7 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
                     <strong className="tabular-nums">{formatRupiah(expectedKomitmenTotal)}</strong>{' '}
                     dan kelebihan{' '}
                     <strong className="tabular-nums">+{formatRupiah(excessDonasiLainnya)}</strong>{' '}
-                    otomatis tercatat sebagai <strong>Donasi Lainnya</strong>.
+                    otomatis tercatat sebagai <strong>Donasi Umum</strong>.
                   </p>
                 </div>
               )}
@@ -1334,7 +1353,7 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
                           </p>
                           {m.totalLainnya > 0 && (
                             <p className="text-[11px] font-semibold text-sky-700 dark:text-sky-300 tabular-nums">
-                              Termasuk +{formatRupiah(m.totalLainnya)} Donasi Lainnya
+                              Termasuk +{formatRupiah(m.totalLainnya)} Donasi Umum
                             </p>
                           )}
                           {m.dates.length > 0 && (
@@ -1401,8 +1420,8 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
                   Belum Ada Riwayat Transfer
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                  Jika Anda sudah mentransfer donasi kafalah, silakan kirim konfirmasi dan bukti
-                  transfer melalui tab Konfirmasi &amp; Bukti.
+                  Jika Anda sudah mentransfer donasi, silakan kirim konfirmasi dan bukti transfer
+                  melalui tab Konfirmasi &amp; Bukti.
                 </p>
                 <button
                   type="button"
@@ -1474,7 +1493,7 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
                           </p>
                           {extraRp > 0 && (
                             <p className="text-[11px] font-semibold text-sky-700 dark:text-sky-300 tabular-nums">
-                              +{formatRupiah(extraRp)} Donasi Lainnya
+                              +{formatRupiah(extraRp)} Donasi Umum
                             </p>
                           )}
                         </div>

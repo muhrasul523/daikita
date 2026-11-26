@@ -22,7 +22,6 @@ import {
   Donatur,
   LembagaConfig,
   NotifDeliveryResult,
-  Panitia,
   RegisterDonaturPayload,
   StatusAktif,
   StatusBayarBulan,
@@ -36,7 +35,6 @@ import {
   formatWADisplay,
   getCurrentYearMonth,
   normalizeMinatGrup,
-  normalizeRoleLabel,
   normalizeStatusGrup,
   normalizeWA,
 } from '../utils/formatters';
@@ -48,7 +46,7 @@ interface TabDonaturProps {
   config: LembagaConfig;
   donaturList: Donatur[];
   transaksiList: TransaksiDonasi[];
-  panitiaList: Panitia[];
+  adminName?: string;
   isLoading: boolean;
   onUpdateStatusDonatur: (idDonatur: string, status: StatusAktif) => Promise<void>;
   onSubmitDonatur: (
@@ -93,7 +91,7 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
   config,
   donaturList,
   transaksiList,
-  panitiaList,
+  adminName,
   isLoading,
   onUpdateStatusDonatur,
   onSubmitDonatur,
@@ -107,7 +105,6 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
   const [pulauFilter, setPulauFilter] = useState('');
   const [provinsiFilter, setProvinsiFilter] = useState('');
   const [kabupatenFilter, setKabupatenFilter] = useState('');
-  const [perantaraFilter, setPerantaraFilter] = useState('Semua');
   const [aktifFilter, setAktifFilter] = useState<'Semua' | StatusAktif>('Semua');
   const [genderFilter, setGenderFilter] = useState<'Semua' | 'Laki-laki' | 'Perempuan'>('Semua');
   const [donorSearch, setDonorSearch] = useState('');
@@ -184,28 +181,6 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
     }));
   }, [pulauFilter, provinsiFilter]);
 
-  const perantaraOptions = useMemo<SearchableOption[]>(() => {
-    const set = new Set<string>();
-    panitiaList.forEach((p) => set.add(p.namaPanitia));
-    donaturList.forEach((d) => {
-      if (d.namaPerantara) set.add(d.namaPerantara);
-    });
-    return [
-      { value: 'Semua', label: 'Perantara: Semua', keywords: 'semua' },
-      ...Array.from(set).map((name) => {
-        const matched = panitiaList.find((p) => p.namaPanitia === name);
-        return {
-          value: name,
-          label: name,
-          sublabel: matched
-            ? `Kode ${matched.kodePanitia} · ${normalizeRoleLabel(matched.role)}`
-            : undefined,
-          keywords: `${name} ${matched?.kodePanitia || ''}`,
-        };
-      }),
-    ];
-  }, [panitiaList, donaturList]);
-
   const donorMonthTransaksi = useMemo(
     () => transaksiList.filter((t) => t.bulanTagihan === donorMonth),
     [transaksiList, donorMonth]
@@ -269,7 +244,6 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
       if (pulauFilter && w.pulau !== pulauFilter) return false;
       if (provinsiFilter && w.provinsi !== provinsiFilter) return false;
       if (kabupatenFilter && w.kab !== kabupatenFilter) return false;
-      if (perantaraFilter !== 'Semua' && row.donatur.namaPerantara !== perantaraFilter) return false;
 
       if (!q) return true;
       const d = row.donatur;
@@ -278,7 +252,6 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
         (d.jenisKelamin || '').toLowerCase().includes(q) ||
         d.noWa.toLowerCase().includes(q) ||
         (d.email || '').toLowerCase().includes(q) ||
-        d.namaPerantara.toLowerCase().includes(q) ||
         w.kab.toLowerCase().includes(q) ||
         w.provinsi.toLowerCase().includes(q) ||
         w.pulau.toLowerCase().includes(q) ||
@@ -300,8 +273,8 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
           cmp = a.donatur.namaLengkap.localeCompare(b.donatur.namaLengkap, 'id');
           break;
         case 'wilayah': {
-          const wa = resolveDonorWilayah(a.donatur).kab || a.donatur.namaPerantara;
-          const wb = resolveDonorWilayah(b.donatur).kab || b.donatur.namaPerantara;
+          const wa = resolveDonorWilayah(a.donatur).kab || a.donatur.domisili || '';
+          const wb = resolveDonorWilayah(b.donatur).kab || b.donatur.domisili || '';
           cmp = wa.localeCompare(wb, 'id');
           break;
         }
@@ -334,7 +307,6 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
     pulauFilter,
     provinsiFilter,
     kabupatenFilter,
-    perantaraFilter,
     donorSearch,
     donorSortField,
     donorSortDir,
@@ -434,8 +406,7 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
 
         <TabPendaftaran
           config={config}
-          panitia={panitiaList}
-          referralCode={null}
+          adminName={adminName}
           onSubmitDonatur={onSubmitDonatur}
           onGoToKonfirmasi={(donatur) => {
             setShowAddForm(false);
@@ -453,11 +424,11 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Daftar Donatur &amp; Riwayat Pembayaran
+            Daftar Donatur Tetap &amp; Riwayat Pembayaran
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300 safe-wrap">
-            Kelola seluruh donatur rutin Kafalah Dai dengan filter wilayah, perantara, status
-            keaktifan, jenis kelamin, serta riwayat pembayaran per bulan.
+            Kelola seluruh donatur tetap Dakwah Pelosok dengan filter wilayah, status keaktifan,
+            jenis kelamin, serta riwayat pembayaran per bulan.
           </p>
         </div>
 
@@ -520,8 +491,8 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
                 Data Donatur — {formatBulanLabel(donorMonth)}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Filter berdasarkan wilayah (pulau, provinsi, kabupaten), pengurus/perantara, status
-                bayar, jenis kelamin, dan keaktifan.
+                Filter berdasarkan wilayah (pulau, provinsi, kabupaten), status bayar, jenis
+                kelamin, dan keaktifan.
               </p>
             </div>
 
@@ -643,16 +614,8 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
             />
           </div>
 
-          {/* Perantara, Keaktifan & Sort */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <SearchableSelect
-              ariaLabel="Filter pengurus atau perantara"
-              options={perantaraOptions}
-              value={perantaraFilter}
-              onChange={(val) => setPerantaraFilter(val || 'Semua')}
-              compact
-              searchPlaceholder="Ketik nama pengurus/perantara..."
-            />
+          {/* Keaktifan & Sort */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <SearchableSelect
               ariaLabel="Filter status keaktifan donatur"
               options={AKTIF_OPTIONS}
@@ -705,12 +668,12 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
             </div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
               {donaturList.length === 0
-                ? 'Belum Ada Data Donatur Rutin'
+                ? 'Belum Ada Data Donatur Tetap'
                 : 'Tidak Ada Donatur yang Sesuai Filter'}
             </h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
               {donaturList.length === 0
-                ? 'Mulai daftarkan donatur rutin pertama menggunakan tombol Daftarkan Donatur Baru.'
+                ? 'Mulai daftarkan donatur tetap pertama menggunakan tombol Daftarkan Donatur Baru.'
                 : 'Coba ubah filter wilayah, status, atau kata kunci pencarian.'}
             </p>
           </div>
@@ -746,7 +709,7 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
                       onClick={() => handleDonorSort('wilayah')}
                       className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
                     >
-                      <span>Wilayah &amp; Perantara</span>
+                      <span>Wilayah &amp; Pengingat</span>
                       {renderSortIcon(donorSortField === 'wilayah', donorSortDir)}
                     </button>
                   </th>
@@ -834,9 +797,6 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
                             {[wilayah.provinsi, wilayah.pulau].filter(Boolean).join(' · ')}
                           </p>
                         )}
-                        <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 safe-wrap">
-                          Perantara: {donatur.namaPerantara}
-                        </p>
                         <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                           {donatur.metodeDaftar} · Pengingat tgl {donatur.tglJatuhTempo}
                         </p>
@@ -853,7 +813,7 @@ export const TabDonatur: React.FC<TabDonaturProps> = ({
                         )}
                         {totalLainnyaBulanIni > 0 && (
                           <p className="mt-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300 tabular-nums">
-                            +{formatRupiah(totalLainnyaBulanIni)} Lainnya
+                            +{formatRupiah(totalLainnyaBulanIni)} Donasi Umum
                           </p>
                         )}
                       </td>

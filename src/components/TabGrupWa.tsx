@@ -19,7 +19,6 @@ import {
   Donatur,
   LembagaConfig,
   MinatGrupWa,
-  Panitia,
   SendBroadcastSinglePayload,
   StatusGrupWa,
 } from '../types';
@@ -30,12 +29,10 @@ import {
   normalizeMinatGrup,
   normalizeStatusGrup,
 } from '../utils/formatters';
-import { SearchableOption, SearchableSelect } from './SearchableSelect';
 
 interface TabGrupWaProps {
   config: LembagaConfig;
   donaturList: Donatur[];
-  panitiaList: Panitia[];
   isLoading: boolean;
   connectionStatus: 'connected' | 'local' | 'error';
   onUpdateStatusGrup: (
@@ -47,7 +44,7 @@ interface TabGrupWaProps {
   onSendBroadcastSingle: (
     payload: SendBroadcastSinglePayload
   ) => Promise<{ ok: boolean; detail: string }>;
-  onOpenSettings: () => void;
+  onOpenSettings?: () => void;
   onNotify: (type: 'success' | 'error' | 'info', title: string, description?: string) => void;
 }
 
@@ -58,12 +55,11 @@ type GroupFilterKey =
   | 'minat_ya'
   | 'tidak_minat';
 
-type GroupSortField = 'nama' | 'daftar' | 'minat' | 'status' | 'perantara';
+type GroupSortField = 'nama' | 'daftar' | 'minat' | 'status';
 
 export const TabGrupWa: React.FC<TabGrupWaProps> = ({
   config,
   donaturList,
-  panitiaList,
   isLoading,
   connectionStatus,
   onUpdateStatusGrup,
@@ -74,7 +70,6 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
 }) => {
   const [groupFilter, setGroupFilter] = useState<GroupFilterKey>('minat_belum');
   const [genderFilter, setGenderFilter] = useState<'Semua' | 'Laki-laki' | 'Perempuan'>('Semua');
-  const [perantaraFilter, setPerantaraFilter] = useState<string>('Semua');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<GroupSortField>('daftar');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -108,22 +103,6 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
     return { total, minatYa, sudahGabung, minatBelum, tidakMinat };
   }, [normalizedDonors]);
 
-  const perantaraOptions = useMemo<SearchableOption[]>(() => {
-    const set = new Set<string>();
-    panitiaList.forEach((p) => set.add(p.namaPanitia));
-    normalizedDonors.forEach((d) => {
-      if (d.namaPerantara) set.add(d.namaPerantara);
-    });
-    return [
-      { value: 'Semua', label: 'Perantara: Semua', keywords: 'semua' },
-      ...Array.from(set).map((name) => ({
-        value: name,
-        label: name,
-        keywords: name,
-      })),
-    ];
-  }, [panitiaList, normalizedDonors]);
-
   const filteredDonors = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const list = normalizedDonors.filter((d) => {
@@ -138,15 +117,13 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
       }
 
       if (genderFilter !== 'Semua' && d.jenisKelamin !== genderFilter) return false;
-      if (perantaraFilter !== 'Semua' && d.namaPerantara !== perantaraFilter) return false;
 
       if (!q) return true;
       return (
         d.namaLengkap.toLowerCase().includes(q) ||
         d.idDonatur.toLowerCase().includes(q) ||
         d.noWa.toLowerCase().includes(q) ||
-        (d.domisili || '').toLowerCase().includes(q) ||
-        (d.namaPerantara || '').toLowerCase().includes(q)
+        (d.domisili || '').toLowerCase().includes(q)
       );
     });
 
@@ -169,9 +146,6 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
             'id'
           );
           break;
-        case 'perantara':
-          cmp = (a.namaPerantara || '').localeCompare(b.namaPerantara || '', 'id');
-          break;
       }
       if (cmp === 0) return a.namaLengkap.localeCompare(b.namaLengkap, 'id');
       return cmp * dir;
@@ -180,7 +154,6 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
     normalizedDonors,
     groupFilter,
     genderFilter,
-    perantaraFilter,
     searchQuery,
     sortField,
     sortDir,
@@ -311,14 +284,16 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
             dan kirimkan undangan grup secara cepat.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className="inline-flex items-center gap-1.5 rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-white/90 dark:bg-slate-800/90 px-4 py-2.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-slate-700 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-        >
-          <Settings2 className="h-4 w-4 shrink-0" />
-          <span>Atur Link &amp; Info Grup</span>
-        </button>
+        {onOpenSettings && (
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="inline-flex items-center gap-1.5 rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-white/90 dark:bg-slate-800/90 px-4 py-2.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-slate-700 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <Settings2 className="h-4 w-4 shrink-0" />
+            <span>Atur Link &amp; Info Grup</span>
+          </button>
+        )}
       </div>
 
       {/* Info Grup WA Aktif */}
@@ -329,7 +304,7 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900 dark:text-slate-100 safe-wrap">
-              {config.waGroupName || 'Grup Donatur DAIKITA — Kafalah Dai'}
+              {config.waGroupName || 'Grup Donatur DAIKITA - Dakwah Pelosok'}
             </p>
             <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 safe-wrap">
               {config.waGroupLink ? (
@@ -338,8 +313,9 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
                 </span>
               ) : (
                 <span className="text-amber-700 dark:text-amber-300 font-medium">
-                  Link undangan grup WhatsApp belum diatur. Klik &ldquo;Atur Link &amp; Info Grup&rdquo;
-                  untuk mengisi tautan grup resmi.
+                  {onOpenSettings
+                    ? 'Link undangan grup WhatsApp belum diatur. Klik "Atur Link & Info Grup" untuk mengisi tautan grup resmi.'
+                    : 'Link undangan grup WhatsApp belum diatur oleh Super Admin.'}
                 </span>
               )}
             </p>
@@ -492,15 +468,6 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
                 ))}
               </div>
 
-              <div className="w-56">
-                <SearchableSelect
-                  ariaLabel="Filter perantara"
-                  options={perantaraOptions}
-                  value={perantaraFilter}
-                  onChange={(val) => setPerantaraFilter(val || 'Semua')}
-                  compact
-                />
-              </div>
             </div>
 
             {selectedIds.length > 0 && (
@@ -554,7 +521,7 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
           </div>
         ) : (
           <div className="overflow-x-auto clean-scroll">
-            <table className="w-full min-w-[960px] text-left border-collapse">
+            <table className="w-full min-w-[820px] text-left border-collapse">
               <thead>
                 <tr className="bg-emerald-800 dark:bg-emerald-950 text-white dark:text-emerald-100 text-[11px] font-semibold">
                   <th className="py-3.5 pl-5 pr-2 w-10">
@@ -604,16 +571,6 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
                     >
                       <span>Status Bergabung</span>
                       {renderSortIcon('status')}
-                    </button>
-                  </th>
-                  <th className="py-3.5 px-3">
-                    <button
-                      type="button"
-                      onClick={() => handleSort('perantara')}
-                      className="inline-flex items-center gap-1 hover:text-emerald-200 cursor-pointer"
-                    >
-                      <span>Perantara</span>
-                      {renderSortIcon('perantara')}
                     </button>
                   </th>
                   <th className="py-3.5 pl-3 pr-5 text-right">Tindakan &amp; Undangan</th>
@@ -712,9 +669,6 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
                             </button>
                           </div>
                         </div>
-                      </td>
-                      <td className="py-4 px-3 min-w-0 max-w-[180px] text-xs text-slate-600 dark:text-slate-300 safe-wrap">
-                        {d.namaPerantara || 'Langsung'}
                       </td>
                       <td className="py-4 pl-3 pr-5 text-right">
                         <div className="inline-flex flex-wrap items-center justify-end gap-1.5">

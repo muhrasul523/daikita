@@ -21,7 +21,6 @@ import {
   APP_BRAND_NAME,
   APP_PROGRAM_FOCUS,
   DEFAULT_CONFIG,
-  DEFAULT_PANITIA,
   DEFAULT_SCREEN_WIDTH_PCT,
   STORAGE_KEYS,
 } from './config';
@@ -33,7 +32,6 @@ import {
   DonorLookupResult,
   MinatGrupWa,
   NotifDeliveryResult,
-  Panitia,
   PublicPageKey,
   RegisterDonaturPayload,
   SaveAdminAksesPayload,
@@ -48,12 +46,12 @@ import {
   ThemeMode,
   ToastMessage,
   TransaksiDonasi,
+  UpdateDonaturMandiriPayload,
 } from './types';
 import {
   bulkUpdateStatusGrupDonatur,
   cancelScheduledMessage,
   deleteAdminAkses,
-  deletePanitia,
   fetchAdminData,
   fetchPublicConfig,
   getSavedGasUrl,
@@ -63,12 +61,12 @@ import {
   registerDonatur,
   saveAdminAkses,
   saveGasUrl,
-  savePanitia,
   savePengaturan,
   scheduleWaBroadcast,
   sendBroadcastSingle,
   sendTestNotification,
   submitPembayaran,
+  updateDonaturMandiri,
   updateStatusDonatur,
   updateStatusGrupDonatur,
   verifikasiTransaksi,
@@ -129,24 +127,6 @@ function parseRouteFromLocation(): RouteState {
   return { mode: 'public', page: 'daftar' };
 }
 
-function readReferralFromUrl(): string | null {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const ref = params.get('ref');
-    if (ref && ref.trim()) return ref.trim();
-
-    const hashQueryIdx = (window.location.hash || '').indexOf('?');
-    if (hashQueryIdx >= 0) {
-      const hashParams = new URLSearchParams(window.location.hash.slice(hashQueryIdx + 1));
-      const hashRef = hashParams.get('ref');
-      if (hashRef && hashRef.trim()) return hashRef.trim();
-    }
-  } catch {
-    // Ignore malformed query string
-  }
-  return null;
-}
-
 function getSavedTheme(): ThemeMode {
   try {
     const val = window.localStorage.getItem(STORAGE_KEYS.THEME_PREF);
@@ -189,7 +169,6 @@ const WIDTH_PRESETS = [75, 85, 95, 100];
 
 export default function App() {
   const [route, setRoute] = useState<RouteState>(() => parseRouteFromLocation());
-  const [referralCode] = useState<string | null>(() => readReferralFromUrl());
 
   // Sesi admin disimpan HANYA di memory React (tidak di localStorage)
   const [adminSession, setAdminSession] = useState<AdminSession | null>(null);
@@ -214,7 +193,7 @@ export default function App() {
     config: DEFAULT_CONFIG,
     donatur: [],
     transaksi: [],
-    panitia: DEFAULT_PANITIA,
+    panitia: [],
     antreanPesan: [],
     adminAkses: [],
   });
@@ -285,9 +264,9 @@ export default function App() {
     if (route.mode === 'admin') {
       document.title = `Panel Admin · ${baseName}`;
     } else if (route.page === 'bayar') {
-      document.title = `Konfirmasi Kafalah · ${baseName}`;
+      document.title = `Penyaluran Donasi · ${baseName}`;
     } else {
-      document.title = `Pendaftaran Donatur · ${baseName}`;
+      document.title = `Pendaftaran Donatur Tetap · ${baseName}`;
     }
 
     const targetHref = resolvedLogoSrc && !logoImgFailed ? resolvedLogoSrc : './favicon.png';
@@ -395,7 +374,6 @@ export default function App() {
       setData((prev) => ({
         ...prev,
         config: res.data!.config,
-        panitia: res.data!.panitia,
       }));
       setConnectionStatus(targetUrl.trim() ? 'connected' : 'local');
       setConnectionError(null);
@@ -517,6 +495,27 @@ export default function App() {
     };
   };
 
+  const handleUpdateDonaturMandiri = async (
+    payload: UpdateDonaturMandiriPayload
+  ): Promise<{ ok: boolean; message: string; donatur?: Donatur }> => {
+    const res = await updateDonaturMandiri(gasUrl, payload);
+    if (res.status === 'success' && res.data?.donatur) {
+      const updated = res.data.donatur;
+      if (adminSession) {
+        setData((prev) => ({
+          ...prev,
+          donatur: prev.donatur.map((d) =>
+            d.idDonatur === updated.idDonatur ? updated : d
+          ),
+        }));
+      }
+      notify('success', 'Data donatur diperbarui', res.message);
+      return { ok: true, message: res.message, donatur: updated };
+    }
+    notify('error', 'Gagal memperbarui data', res.message);
+    return { ok: false, message: res.message };
+  };
+
   const handleSubmitPembayaran = async (
     payload: SubmitPembayaranPayload
   ): Promise<{
@@ -593,42 +592,6 @@ export default function App() {
       return true;
     }
     notify('error', 'Gagal menyimpan pengaturan', res.message);
-    return false;
-  };
-
-  const handleSavePanitia = async (p: Panitia): Promise<boolean> => {
-    const res = await savePanitia(gasUrl, p, adminToken);
-    if (res.code === 'AUTH_REQUIRED') {
-      clearAdminSession(res.message);
-      return false;
-    }
-    if (res.status === 'success' && res.data?.panitia) {
-      setData((prev) => ({
-        ...prev,
-        panitia: res.data!.panitia,
-      }));
-      notify('success', 'Data pengurus tersimpan', res.message);
-      return true;
-    }
-    notify('error', 'Gagal menyimpan pengurus', res.message);
-    return false;
-  };
-
-  const handleDeletePanitia = async (kodePanitia: string): Promise<boolean> => {
-    const res = await deletePanitia(gasUrl, kodePanitia, adminToken);
-    if (res.code === 'AUTH_REQUIRED') {
-      clearAdminSession(res.message);
-      return false;
-    }
-    if (res.status === 'success' && res.data?.panitia) {
-      setData((prev) => ({
-        ...prev,
-        panitia: res.data!.panitia,
-      }));
-      notify('success', 'Pengurus dihapus', res.message);
-      return true;
-    }
-    notify('error', 'Gagal menghapus pengurus', res.message);
     return false;
   };
 
@@ -953,12 +916,11 @@ export default function App() {
           page={route.page}
           onChangePage={navigateToPublic}
           config={data.config}
-          panitia={data.panitia}
-          referralCode={referralCode}
           themeMode={themeMode}
           onToggleTheme={handleToggleQuickTheme}
           onLookupWa={handlePublicLookupWa}
           onSubmitDonatur={handleRegisterDonatur}
+          onUpdateDonaturMandiri={handleUpdateDonaturMandiri}
           onSubmitPembayaran={handleSubmitPembayaran}
           onNotify={notify}
         />
@@ -1040,9 +1002,9 @@ export default function App() {
             </div>
           </button>
 
-          {/* Zone 2: Desktop Single-Line Navigation Links */}
+          {/* Zone 2: Desktop Single-Line Navigation Links (No Scrollbar Overflow) */}
           <nav
-            className="hidden lg:flex items-center gap-3.5 xl:gap-5 overflow-x-auto no-scrollbar"
+            className="hidden xl:flex items-center gap-4 2xl:gap-6 h-full"
             aria-label="Navigasi Admin"
           >
             {visibleAdminTabs.map((tab) => {
@@ -1052,7 +1014,7 @@ export default function App() {
                   key={tab.key}
                   type="button"
                   onClick={() => setActiveTab(tab.key)}
-                  className={`relative py-2 text-xs xl:text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`relative h-16 inline-flex items-center text-xs 2xl:text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     isActive
                       ? 'text-emerald-800 dark:text-emerald-300'
                       : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -1063,7 +1025,7 @@ export default function App() {
                     {tab.key === 'verifikasi' && pendingCount > 0 ? ` (${pendingCount})` : ''}
                   </span>
                   {isActive && (
-                    <span className="absolute inset-x-0 -bottom-[17px] h-0.5 rounded-full bg-gradient-to-r from-emerald-500 to-sky-500" />
+                    <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-gradient-to-r from-emerald-500 to-sky-500" />
                   )}
                 </button>
               );
@@ -1081,11 +1043,15 @@ export default function App() {
                   ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-200'
                   : 'border-slate-200/90 dark:border-slate-700 bg-white/85 dark:bg-slate-800/85 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800'
               }`}
-              title="Atur tema, lebar tampilan, dan sinkronisasi"
+              title={
+                isSuperAdmin
+                  ? 'Atur tema, lebar tampilan, dan sinkronisasi'
+                  : 'Atur tema dan lebar tampilan'
+              }
             >
               <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
               <span className="hidden sm:inline">Tampilan</span>
-              {connectionStatus !== 'connected' && (
+              {isSuperAdmin && connectionStatus !== 'connected' && (
                 <span
                   className={`h-2 w-2 rounded-full ${
                     connectionStatus === 'error' ? 'bg-rose-500' : 'bg-sky-500'
@@ -1123,9 +1089,9 @@ export default function App() {
         style={containerWidthStyle}
         className="flex-1 mx-auto px-3 sm:px-6 py-5 sm:py-7 space-y-5 transition-[width] duration-200 min-w-0"
       >
-        {/* Mobile & Tablet Navigation */}
+        {/* Mobile & Tablet Navigation (below xl) */}
         <div
-          className="lg:hidden grid grid-cols-2 sm:grid-cols-4 gap-1.5 rounded-2xl glass-surface p-1.5"
+          className="xl:hidden grid grid-cols-2 sm:grid-cols-4 gap-1.5 rounded-2xl glass-surface p-1.5"
           role="tablist"
           aria-label="Navigasi Admin Mobile"
         >
@@ -1151,18 +1117,19 @@ export default function App() {
           })}
         </div>
 
-        {/* Utility & Sync Bar (Hidden by default, toggled via Tampilan) */}
+        {/* Utility Bar (Hidden by default, toggled via Tampilan; sync controls strictly Super Admin only) */}
         {showUtilityBar && (
           <div className="glass-surface rounded-2xl px-4 sm:px-5 py-3.5 space-y-3">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div className="flex items-start sm:items-center gap-3 min-w-0">
-                {connectionStatus === 'connected' ? (
-                  <Cloud className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
-                ) : connectionStatus === 'error' ? (
-                  <AlertCircle className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5 sm:mt-0" />
-                ) : (
-                  <CloudOff className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5 sm:mt-0" />
-                )}
+                {isSuperAdmin &&
+                  (connectionStatus === 'connected' ? (
+                    <Cloud className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
+                  ) : connectionStatus === 'error' ? (
+                    <AlertCircle className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5 sm:mt-0" />
+                  ) : (
+                    <CloudOff className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5 sm:mt-0" />
+                  ))}
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-xs font-bold text-slate-900 dark:text-slate-100 safe-wrap">
@@ -1178,22 +1145,30 @@ export default function App() {
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 safe-wrap">
-                    <span
-                      className={
-                        connectionStatus === 'connected'
-                          ? 'font-semibold text-emerald-700 dark:text-emerald-400'
-                          : connectionStatus === 'error'
-                          ? 'font-semibold text-rose-700 dark:text-rose-400'
-                          : 'font-semibold text-sky-700 dark:text-sky-400'
-                      }
-                    >
-                      {connectionStatus === 'connected'
-                        ? `Sinkronisasi Aktif · Program ${APP_PROGRAM_FOCUS}`
-                        : connectionStatus === 'error'
-                        ? 'Koneksi Layanan Gagal'
-                        : `Mode Lokal (Offline) · Program ${APP_PROGRAM_FOCUS}`}
-                    </span>
-                    {connectionError ? ` · ${connectionError}` : ''}
+                    {isSuperAdmin ? (
+                      <>
+                        <span
+                          className={
+                            connectionStatus === 'connected'
+                              ? 'font-semibold text-emerald-700 dark:text-emerald-400'
+                              : connectionStatus === 'error'
+                              ? 'font-semibold text-rose-700 dark:text-rose-400'
+                              : 'font-semibold text-sky-700 dark:text-sky-400'
+                          }
+                        >
+                          {connectionStatus === 'connected'
+                            ? `Sinkronisasi Aktif · Program ${APP_PROGRAM_FOCUS}`
+                            : connectionStatus === 'error'
+                            ? 'Koneksi Layanan Gagal'
+                            : `Mode Lokal (Offline) · Program ${APP_PROGRAM_FOCUS}`}
+                        </span>
+                        {connectionError ? ` · ${connectionError}` : ''}
+                      </>
+                    ) : (
+                      <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                        Program {APP_PROGRAM_FOCUS}
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -1268,17 +1243,19 @@ export default function App() {
                   <span>Portal Donatur</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => void loadAdminWorkspaceData(gasUrl, adminToken, true)}
-                  disabled={isLoadingAdmin}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-50 transition-colors whitespace-nowrap cursor-pointer"
-                >
-                  <RefreshCw
-                    className={`h-3.5 w-3.5 shrink-0 ${isLoadingAdmin ? 'animate-spin' : ''}`}
-                  />
-                  <span>{isLoadingAdmin ? 'Memuat...' : 'Sinkronkan'}</span>
-                </button>
+                {isSuperAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => void loadAdminWorkspaceData(gasUrl, adminToken, true)}
+                    disabled={isLoadingAdmin}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-50 transition-colors whitespace-nowrap cursor-pointer"
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 shrink-0 ${isLoadingAdmin ? 'animate-spin' : ''}`}
+                    />
+                    <span>{isLoadingAdmin ? 'Memuat...' : 'Sinkronkan'}</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -1339,7 +1316,7 @@ export default function App() {
             config={data.config}
             donaturList={data.donatur}
             transaksiList={data.transaksi}
-            panitiaList={data.panitia}
+            adminName={adminSession.admin.nama}
             isLoading={isLoadingAdmin}
             onUpdateStatusDonatur={handleUpdateStatusDonatur}
             onSubmitDonatur={handleRegisterDonatur}
@@ -1353,8 +1330,7 @@ export default function App() {
             config={data.config}
             donaturList={data.donatur}
             transaksiList={data.transaksi}
-            panitia={data.panitia}
-            referralCode={referralCode}
+            adminName={adminSession.admin.nama}
             preselectedDonatur={preselectedDonatur}
             preselectedMonth={preselectedMonth}
             onClearPreselected={handleClearPreselected}
@@ -1382,12 +1358,10 @@ export default function App() {
             config={data.config}
             donaturList={data.donatur}
             transaksiList={data.transaksi}
-            panitiaList={data.panitia}
             isLoading={isLoadingAdmin}
             onOpenMutasi={(view) => {
               setActiveTab(view === 'donatur' ? 'donatur' : 'mutasi');
             }}
-            onNotify={notify}
           />
         )}
 
@@ -1395,23 +1369,12 @@ export default function App() {
           <TabGrupWa
             config={data.config}
             donaturList={data.donatur}
-            panitiaList={data.panitia}
             isLoading={isLoadingAdmin}
             connectionStatus={connectionStatus}
             onUpdateStatusGrup={handleUpdateStatusGrup}
             onBulkUpdateStatusGrup={handleBulkUpdateStatusGrup}
             onSendBroadcastSingle={handleSendBroadcastSingle}
-            onOpenSettings={() => {
-              if (isSuperAdmin) {
-                setIsModalOpen(true);
-              } else {
-                notify(
-                  'info',
-                  'Khusus Super Admin',
-                  'Pengaturan tautan Grup WA dan konfigurasi aplikasi hanya dapat diubah oleh Super Admin.'
-                );
-              }
-            }}
+            onOpenSettings={isSuperAdmin ? () => setIsModalOpen(true) : undefined}
             onNotify={notify}
           />
         )}
@@ -1421,7 +1384,6 @@ export default function App() {
             config={data.config}
             donaturList={data.donatur}
             transaksiList={data.transaksi}
-            panitiaList={data.panitia}
             antreanPesan={data.antreanPesan || []}
             connectionStatus={connectionStatus}
             onSendBroadcastSingle={handleSendBroadcastSingle}
@@ -1468,7 +1430,7 @@ export default function App() {
                 onClick={() => setIsModalOpen(true)}
                 className="font-medium text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-200 hover:underline whitespace-nowrap cursor-pointer"
               >
-                Pengaturan Lembaga, QRIS &amp; Referral
+                Pengaturan Lembaga, Rekening, QRIS &amp; Notifikasi
               </button>
             )}
           </div>
@@ -1482,12 +1444,9 @@ export default function App() {
           gasUrl={gasUrl}
           connectionStatus={connectionStatus}
           config={data.config}
-          panitia={data.panitia}
           onSaveUrl={handleSaveGasUrl}
           onSavePengaturan={handleSavePengaturan}
           onTestNotification={handleTestNotification}
-          onSavePanitia={handleSavePanitia}
-          onDeletePanitia={handleDeletePanitia}
           onNotify={notify}
         />
       )}

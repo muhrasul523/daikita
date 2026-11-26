@@ -8,7 +8,6 @@ import {
   Copy,
   Download,
   ExternalLink,
-  Lock,
   QrCode,
   UserPlus,
   Users,
@@ -21,7 +20,6 @@ import {
   LembagaConfig,
   MinatGrupWa,
   NotifDeliveryResult,
-  Panitia,
   RegisterDonaturPayload,
 } from '../types';
 import {
@@ -29,7 +27,6 @@ import {
   formatRupiahInput,
   getDriveThumbnailFallback,
   normalizeDriveImageUrl,
-  normalizeRoleLabel,
   parseRupiahInput,
   validateAndNormalizeWA,
 } from '../utils/formatters';
@@ -37,8 +34,7 @@ import { SearchableOption, SearchableSelect } from './SearchableSelect';
 
 interface TabPendaftaranProps {
   config: LembagaConfig;
-  panitia: Panitia[];
-  referralCode: string | null;
+  adminName?: string;
   onSubmitDonatur: (
     payload: RegisterDonaturPayload
   ) => Promise<{
@@ -77,29 +73,11 @@ const TANGGAL_OPTIONS: SearchableOption[] = Array.from({ length: 31 }, (_, i) =>
 
 export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
   config,
-  panitia,
-  referralCode,
+  adminName,
   onSubmitDonatur,
   onGoToKonfirmasi,
   onNotify,
 }) => {
-  const matchedRefPanitia = useMemo(() => {
-    if (!referralCode) return null;
-    const upper = referralCode.trim().toUpperCase();
-    return (
-      panitia.find((p) => p.kodePanitia.trim().toUpperCase() === upper) || {
-        kodePanitia: upper,
-        namaPanitia: `Pengurus (${upper})`,
-        noWaPanitia: '',
-        role: 'Admin',
-      }
-    );
-  }, [referralCode, panitia]);
-
-  const isReferralLocked = Boolean(referralCode && matchedRefPanitia);
-
-  const [mode, setMode] = useState<'mandiri' | 'panitia'>('mandiri');
-  const [selectedPanitiaKode, setSelectedPanitiaKode] = useState('');
   const [namaLengkap, setNamaLengkap] = useState('');
   const [jenisKelamin, setJenisKelamin] = useState<JenisKelamin>('');
   const [noWaInput, setNoWaInput] = useState('');
@@ -131,12 +109,6 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
     setQrisImgSrc(normalizeDriveImageUrl(config.qrisUrl));
   }, [config.qrisUrl]);
 
-  useEffect(() => {
-    if (panitia.length > 0 && !selectedPanitiaKode) {
-      setSelectedPanitiaKode(panitia[0].kodePanitia);
-    }
-  }, [panitia, selectedPanitiaKode]);
-
   const wilayahOptions = useMemo<SearchableOption[]>(
     () =>
       WILAYAH_KABUPATEN.map((w) => ({
@@ -152,22 +124,6 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
   const selectedWilayah = useMemo(
     () => WILAYAH_KABUPATEN.find((w) => w.kabId === selectedKabId) || null,
     [selectedKabId]
-  );
-
-  const panitiaOptions = useMemo<SearchableOption[]>(
-    () =>
-      panitia.map((p) => ({
-        value: p.kodePanitia,
-        label: p.namaPanitia,
-        sublabel: `Kode ${p.kodePanitia} · ${normalizeRoleLabel(p.role)}`,
-        keywords: `${p.namaPanitia} ${p.kodePanitia} ${p.role}`,
-      })),
-    [panitia]
-  );
-
-  const selectedPanitiaObj = useMemo(
-    () => panitia.find((p) => p.kodePanitia === selectedPanitiaKode) || null,
-    [panitia, selectedPanitiaKode]
   );
 
   const waValidation = useMemo(() => validateAndNormalizeWA(noWaInput), [noWaInput]);
@@ -273,32 +229,9 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
     }
 
     if (tglPengingat < 1 || tglPengingat > 31) {
-      setErrorState({ message: 'Tanggal pengingat rutin wajib antara tanggal 1 hingga 31.' });
+      setErrorState({ message: 'Tanggal pengingat wajib antara tanggal 1 hingga 31.' });
       return;
     }
-
-    if (!isReferralLocked && mode === 'panitia' && !selectedPanitiaObj) {
-      setErrorState({ message: 'Pilih nama pengurus / perantara yang mendaftarkan.' });
-      return;
-    }
-
-    const metodeDaftar = isReferralLocked
-      ? 'Mandiri (Referral)'
-      : mode === 'panitia'
-      ? 'Via Pengurus'
-      : 'Mandiri';
-
-    const kodePerantara = isReferralLocked
-      ? matchedRefPanitia!.kodePanitia
-      : mode === 'panitia'
-      ? selectedPanitiaObj!.kodePanitia
-      : '';
-
-    const namaPerantara = isReferralLocked
-      ? matchedRefPanitia!.namaPanitia
-      : mode === 'panitia'
-      ? selectedPanitiaObj!.namaPanitia
-      : 'Langsung (Tanpa Perantara)';
 
     setIsSubmitting(true);
     const res = await onSubmitDonatur({
@@ -312,9 +245,9 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
       pulau: selectedWilayah?.pulau || '',
       nominalKomitmen: parsedNominal,
       tglJatuhTempo: tglPengingat,
-      metodeDaftar,
-      kodePerantara,
-      namaPerantara,
+      metodeDaftar: adminName ? `Input Admin (${adminName})` : 'Input Admin',
+      kodePerantara: '',
+      namaPerantara: '',
       minatGrupWa,
     });
     setIsSubmitting(false);
@@ -336,68 +269,27 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
     }
   };
 
+  const showRekeningCard = config.showRekening !== false && config.infoRekening.length > 0;
+  const showQrisCard = config.showQris && Boolean(config.qrisUrl);
+  const waGroupDisplayName = config.waGroupName || 'Donatur DAIKITA - Dakwah Pelosok';
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
       <section className="lg:col-span-8 glass-surface rounded-3xl p-5 sm:p-8 min-w-0">
         <div className="mb-6">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Pendaftaran Donatur Rutin Kafalah Dai
+            Pendaftaran Donatur Tetap Dakwah Pelosok
           </h1>
           <p className="mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
-            Catat komitmen amal rutin bersama{' '}
+            Catat komitmen donatur tetap bersama{' '}
             <span className="font-semibold text-emerald-800 dark:text-emerald-300">
               {config.namaLembaga}
             </span>
-            . Bidang wajib: <strong>Nama</strong>, <strong>No. WA</strong>,{' '}
-            <strong>Nominal Komitmen</strong>, dan <strong>Tanggal Pengingat</strong>.
+            . Bidang wajib: <strong>Nama</strong>, <strong>Jenis Kelamin</strong>,{' '}
+            <strong>No. WA</strong>, <strong>Nominal Komitmen</strong>, dan{' '}
+            <strong>Tanggal Pengingat</strong>.
           </p>
         </div>
-
-        {isReferralLocked && matchedRefPanitia ? (
-          <div className="mb-6 rounded-2xl border border-emerald-200/90 dark:border-emerald-800/80 bg-emerald-50/75 dark:bg-emerald-950/50 p-4 flex items-start gap-3">
-            <Lock className="h-5 w-5 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200 safe-wrap">
-                Tautan Referral Pengurus Aktif
-              </p>
-              <p className="mt-0.5 text-xs text-emerald-800/90 dark:text-emerald-300/90 leading-relaxed safe-wrap">
-                Metode pendaftaran otomatis tercatat sebagai <strong>Mandiri (Referral)</strong>{' '}
-                melalui perantara <strong>{matchedRefPanitia.namaPanitia}</strong> (Kode{' '}
-                {matchedRefPanitia.kodePanitia}).
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="mb-6">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-2">
-              Mode Pendaftaran
-            </label>
-            <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-slate-100/90 dark:bg-slate-800/80 p-1.5">
-              <button
-                type="button"
-                onClick={() => setMode('mandiri')}
-                className={`rounded-xl px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-semibold transition-all whitespace-nowrap cursor-pointer ${
-                  mode === 'mandiri'
-                    ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                Daftar Mandiri
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('panitia')}
-                className={`rounded-xl px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-semibold transition-all whitespace-nowrap cursor-pointer ${
-                  mode === 'panitia'
-                    ? 'bg-white dark:bg-slate-700 text-emerald-800 dark:text-emerald-200 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                Via Pengurus / Admin
-              </button>
-            </div>
-          </div>
-        )}
 
         {errorState && (
           <div className="mb-6 rounded-2xl border border-rose-200 dark:border-rose-800/80 bg-rose-50/90 dark:bg-rose-950/50 p-4 flex items-start gap-3">
@@ -434,7 +326,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
               <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-emerald-950 dark:text-emerald-100">
-                  Pendaftaran Donatur Berhasil Disimpan
+                  Pendaftaran Donatur Tetap Berhasil Disimpan
                 </p>
                 <p className="mt-1 text-xs text-emerald-900/85 dark:text-emerald-200/90 leading-relaxed safe-wrap">
                   <strong className="font-semibold">{registeredDonatur.namaLengkap}</strong>
@@ -445,7 +337,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
                   <span className="tabular-nums font-semibold">
                     {formatRupiah(registeredDonatur.nominalKomitmen)}
                   </span>{' '}
-                  (Pengingat rutin setiap tanggal {registeredDonatur.tglJatuhTempo}).
+                  (Pengingat setiap tanggal {registeredDonatur.tglJatuhTempo}).
                 </p>
                 {registeredNotif && (
                   <div className="mt-2.5 space-y-1 text-[11px] rounded-xl bg-white/75 dark:bg-slate-900/60 px-3 py-2 border border-emerald-200/70 dark:border-emerald-800/60">
@@ -483,6 +375,17 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
                       Notifikasi Email:{' '}
                       {registeredNotif.email.ok ? 'Terkirim' : registeredNotif.email.detail}
                     </p>
+                    {registeredNotif.adminGroup && (
+                      <p
+                        className={
+                          registeredNotif.adminGroup.ok
+                            ? 'text-teal-800 dark:text-teal-300 font-medium'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }
+                      >
+                        Notifikasi Grup Admin: {registeredNotif.adminGroup.detail}
+                      </p>
+                    )}
                   </div>
                 )}
                 <div className="mt-4 flex flex-wrap items-center gap-2.5">
@@ -491,7 +394,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
                     onClick={() => onGoToKonfirmasi(registeredDonatur)}
                     className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors whitespace-nowrap cursor-pointer"
                   >
-                    <span>Lanjut Konfirmasi Pembayaran</span>
+                    <span>Lanjut Penyaluran Donasi</span>
                     <ArrowRight className="h-3.5 w-3.5 shrink-0" />
                   </button>
                   {registeredDonatur.minatGrupWa === 'Ya' && config.waGroupLink && (
@@ -502,7 +405,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
                       className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-700 transition-colors whitespace-nowrap"
                     >
                       <Users className="h-3.5 w-3.5 shrink-0" />
-                      <span>Gabung Grup WA Donatur</span>
+                      <span>Gabung Grup WhatsApp</span>
                       <ExternalLink className="h-3 w-3 shrink-0" />
                     </a>
                   )}
@@ -520,27 +423,6 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {!isReferralLocked && mode === 'panitia' && (
-            <div>
-              <label
-                htmlFor="reg-panitia"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
-              >
-                Nama Pengurus / Perantara <span className="text-rose-600 dark:text-rose-400">*</span>
-              </label>
-              <SearchableSelect
-                id="reg-panitia"
-                ariaLabel="Pilih nama pengurus atau perantara"
-                options={panitiaOptions}
-                value={selectedPanitiaKode}
-                onChange={(val) => setSelectedPanitiaKode(val)}
-                placeholder="Cari atau pilih nama pengurus..."
-                searchPlaceholder="Ketik nama atau kode pengurus..."
-                emptyText="Pengurus tidak ditemukan."
-              />
-            </div>
-          )}
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="min-w-0">
               <label
@@ -745,12 +627,12 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
                 htmlFor="reg-tempo"
                 className="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5"
               >
-                Tanggal Pengingat Rutin (1–31){' '}
+                Tanggal Pengingat Bulanan (1–31){' '}
                 <span className="text-rose-600 dark:text-rose-400">*</span>
               </label>
               <SearchableSelect
                 id="reg-tempo"
-                ariaLabel="Pilih tanggal pengingat rutin"
+                ariaLabel="Pilih tanggal pengingat bulanan"
                 options={TANGGAL_OPTIONS}
                 value={String(tglPengingat)}
                 onChange={(val) => {
@@ -763,38 +645,38 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
               <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-teal-800 dark:text-teal-300 leading-relaxed safe-wrap">
                 <BellRing className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                 <span>
-                  Pengingat dikirim rutin setiap bulan pada tanggal pilihan melalui WhatsApp.
+                  Pengingat dikirim setiap bulan pada tanggal pilihan melalui WhatsApp.
                 </span>
               </p>
             </div>
           </div>
 
-          {/* Pilihan Bergabung Grup WhatsApp Donatur */}
+          {/* Pilihan Bergabung Grup WhatsApp */}
           <div className="rounded-2xl border border-emerald-200/75 dark:border-emerald-800/70 bg-emerald-50/40 dark:bg-emerald-950/25 p-4 space-y-2.5">
             <div className="flex items-start gap-2">
               <Users className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
               <div className="min-w-0">
-                <span className="block text-xs font-bold text-slate-800 dark:text-slate-100">
-                  Bergabung Grup WhatsApp Donatur?{' '}
+                <span className="block text-xs font-bold text-slate-800 dark:text-slate-100 safe-wrap">
+                  Bersedia bergabung ke Grup WhatsApp {waGroupDisplayName}?{' '}
                   <span className="text-rose-600 dark:text-rose-400">*</span>
                 </span>
                 <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
                   Bila memilih <strong>Ya</strong>, tautan undangan{' '}
-                  <strong>{config.waGroupName || 'Grup Donatur DAIKITA'}</strong> akan otomatis
-                  dikirimkan bersama pesan notifikasi pendaftaran untuk info penyaluran &amp; kabar
+                  <strong>Grup WhatsApp {waGroupDisplayName}</strong> akan otomatis dikirimkan
+                  bersama pesan notifikasi pendaftaran untuk info penyaluran donasi &amp; kabar
                   dakwah.
                 </p>
               </div>
             </div>
             <div
               role="radiogroup"
-              aria-label="Pilihan bergabung Grup WhatsApp Donatur"
+              aria-label={`Pilihan bergabung Grup WhatsApp ${waGroupDisplayName}`}
               className="grid grid-cols-1 sm:grid-cols-2 gap-2.5"
             >
               {(
                 [
-                  { value: 'Ya', label: 'Ya, Bersedia Bergabung' },
-                  { value: 'Tidak', label: 'Tidak, Cukup via Japri' },
+                  { value: 'Ya', label: 'Ya, Bersedia Bergabung Grup WhatsApp' },
+                  { value: 'Tidak', label: 'Tidak, Cukup via Japri WhatsApp' },
                 ] as const
               ).map((opt) => {
                 const selected = minatGrupWa === opt.value;
@@ -833,7 +715,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
 
           <div className="pt-3 border-t border-slate-200/70 dark:border-slate-700/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-xs text-slate-500 dark:text-slate-400 safe-wrap">
-              Data donatur akan tersimpan otomatis sebagai Donatur Aktif Kafalah Dai.
+              Data donatur akan tersimpan otomatis sebagai Donatur Tetap Aktif Dakwah Pelosok.
             </p>
             <button
               type="submit"
@@ -841,70 +723,76 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_20px_-6px_rgba(5,150,105,0.45)] hover:opacity-95 disabled:opacity-55 transition-all whitespace-nowrap shrink-0 cursor-pointer"
             >
               <UserPlus className="h-4 w-4 shrink-0" />
-              <span>{isSubmitting ? 'Menyimpan Data...' : 'Daftarkan Donatur'}</span>
+              <span>{isSubmitting ? 'Menyimpan Data...' : 'Daftarkan Donatur Tetap'}</span>
             </button>
           </div>
         </form>
       </section>
 
       <aside className="lg:col-span-4 glass-surface rounded-3xl p-6 space-y-6 min-w-0">
-        <div>
-          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-            Rekening Resmi
-          </h2>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed safe-wrap">
-            {config.catatanPembayaran ||
-              `Penyaluran donasi rutin Kafalah Dai melalui rekening resmi ${config.namaLembaga}.`}
-          </p>
-          <div className="mt-4 divide-y divide-slate-200/70 dark:divide-slate-700/70">
-            {config.infoRekening.map((rek) => {
-              const isCopied = copiedRek === rek.nomor;
-              return (
-                <div
-                  key={`${rek.bank}-${rek.nomor}`}
-                  className="py-3 first:pt-0 last:pb-0 flex items-center justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 safe-wrap">
-                      {rek.bank}
-                    </p>
-                    <p className="mt-0.5 text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums tracking-tight safe-wrap">
-                      {rek.nomor}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 safe-wrap">
-                      a.n. {rek.atasNama}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyRekening(rek.nomor, rek.bank)}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-300 dark:hover:border-emerald-600 hover:text-emerald-800 dark:hover:text-emerald-200 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+        {showRekeningCard && (
+          <div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+              Rekening Resmi
+            </h2>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed safe-wrap">
+              {config.catatanPembayaran ||
+                `Penyaluran donasi Dakwah Pelosok melalui rekening resmi ${config.namaLembaga}.`}
+            </p>
+            <div className="mt-4 divide-y divide-slate-200/70 dark:divide-slate-700/70">
+              {config.infoRekening.map((rek) => {
+                const isCopied = copiedRek === rek.nomor;
+                return (
+                  <div
+                    key={`${rek.bank}-${rek.nomor}`}
+                    className="py-3 first:pt-0 last:pb-0 flex items-center justify-between gap-3"
                   >
-                    {isCopied ? (
-                      <>
-                        <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        <span>Disalin</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3.5 w-3.5 shrink-0" />
-                        <span>Salin</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              );
-            })}
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 safe-wrap">
+                        {rek.bank}
+                      </p>
+                      <p className="mt-0.5 text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums tracking-tight safe-wrap">
+                        {rek.nomor}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 safe-wrap">
+                        a.n. {rek.atasNama}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyRekening(rek.nomor, rek.bank)}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-emerald-300 dark:hover:border-emerald-600 hover:text-emerald-800 dark:hover:text-emerald-200 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      {isCopied ? (
+                        <>
+                          <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span>Disalin</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5 shrink-0" />
+                          <span>Salin</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
-        {config.showQris && config.qrisUrl && (
-          <div className="pt-5 border-t border-slate-200/70 dark:border-slate-700/70 space-y-3">
+        {showQrisCard && (
+          <div
+            className={`${
+              showRekeningCard ? 'pt-5 border-t border-slate-200/70 dark:border-slate-700/70' : ''
+            } space-y-3`}
+          >
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                   <QrCode className="h-4 w-4 text-emerald-700 dark:text-emerald-400 shrink-0" />
-                  <span>QRIS Pembayaran</span>
+                  <span>QRIS Penyaluran Donasi</span>
                 </h3>
                 {config.qrisMerchantName && (
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 safe-wrap">
@@ -931,7 +819,7 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
             >
               <img
                 src={qrisImgSrc}
-                alt="QRIS Pembayaran Resmi"
+                alt="QRIS Resmi"
                 referrerPolicy="no-referrer"
                 onError={() => {
                   const fb = getDriveThumbnailFallback(config.qrisUrl);
@@ -943,17 +831,24 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
           </div>
         )}
 
-        <div className="pt-5 border-t border-slate-200/70 dark:border-slate-700/70 space-y-2.5">
+        <div
+          className={`${
+            showRekeningCard || showQrisCard
+              ? 'pt-5 border-t border-slate-200/70 dark:border-slate-700/70'
+              : ''
+          } space-y-2.5`}
+        >
           <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-            Komitmen Donasi Rutin
+            Komitmen Donatur Tetap
           </h3>
           <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
             <li>
-              Satu nomor WhatsApp berlaku untuk satu profil donatur agar riwayat bulanan tertata
-              rapi.
+              Satu nomor WhatsApp berlaku untuk satu profil donatur tetap agar riwayat bulanan
+              tertata rapi.
             </li>
             <li>
-              Pengingat dikirim secara ramah melalui WhatsApp sesuai tanggal pengingat pilihan Anda.
+              Pengingat dikirim secara ramah melalui WhatsApp sesuai tanggal pengingat pilihan
+              donatur.
             </li>
             <li>
               Status keaktifan dapat dialihkan sementara ke Non Aktif kapan saja bila sedang

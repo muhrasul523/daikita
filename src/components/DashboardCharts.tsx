@@ -242,8 +242,9 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
             <span>Analitik &amp; Grafik Perkembangan Bulanan</span>
           </h2>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 safe-wrap">
-            Pantau perbandingan potensi komitmen, pemasukan terkonfirmasi, donasi lainnya/umum,
-            serta pertambahan donatur dari bulan ke bulan. Ketuk bulan pada grafik untuk rincian.
+            Pantau perbandingan potensi komitmen, pemasukan terkonfirmasi, donasi umum &amp;
+            insidentil, serta pertambahan donatur dari bulan ke bulan. Ketuk bulan pada grafik untuk
+            rincian.
           </p>
         </div>
 
@@ -296,7 +297,7 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
                 </strong>
               </span>
               <span>
-                Lainnya &amp; Umum:{' '}
+                Donasi Umum &amp; Insidentil:{' '}
                 <strong className="text-sky-700 dark:text-sky-300">
                   {formatRupiah(activePoint.danaTambahanValidRp)}
                 </strong>
@@ -338,7 +339,7 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
                 Pemasukan &amp; Potensi Komitmen Bulanan
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Perbandingan potensi komitmen, dana valid, pending, &amp; donasi lainnya/umum
+                Perbandingan potensi komitmen, dana valid, pending, &amp; donasi umum/insidentil
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600 dark:text-slate-300">
@@ -356,7 +357,7 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
               </span>
               <span className="inline-flex items-center gap-1">
                 <span className="h-2.5 w-2.5 rounded-sm bg-sky-500" />
-                Lainnya &amp; Umum
+                Umum &amp; Insidentil
               </span>
             </div>
           </div>
@@ -692,7 +693,7 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
         <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white/75 dark:bg-slate-900/60 p-4 space-y-2.5 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-              Porsi Donasi Lainnya &amp; Umum
+              Porsi Donasi Umum &amp; Insidentil
             </span>
             <span className="text-xs font-bold text-sky-700 dark:text-sky-300 tabular-nums">
               {monthRatioSummary.tambahanPct.toFixed(1)}%
@@ -705,7 +706,7 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({
             />
           </div>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
-            Lainnya: {formatRupiah(monthRatioSummary.sel?.danaLainnyaValidRp || 0)} · Umum:{' '}
+            Donasi Umum: {formatRupiah(monthRatioSummary.sel?.danaLainnyaValidRp || 0)} · Insidentil:{' '}
             {formatRupiah(monthRatioSummary.sel?.danaUmumValidRp || 0)} pada{' '}
             {formatBulanLabel(selectedMonth)}.
           </p>

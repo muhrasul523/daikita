@@ -6,12 +6,12 @@ import {
   DonorLookupResult,
   LembagaConfig,
   NotifDeliveryResult,
-  Panitia,
   PublicPageKey,
   RegisterDonaturPayload,
   SubmitPembayaranPayload,
   ThemeMode,
   TransaksiDonasi,
+  UpdateDonaturMandiriPayload,
 } from '../types';
 import { getDriveThumbnailFallback, normalizeDriveImageUrl } from '../utils/formatters';
 import { PublicPendaftaran } from './PublicPendaftaran';
@@ -21,8 +21,6 @@ interface PublicPortalProps {
   page: PublicPageKey;
   onChangePage: (next: PublicPageKey) => void;
   config: LembagaConfig;
-  panitia: Panitia[];
-  referralCode: string | null;
   themeMode: ThemeMode;
   onToggleTheme: () => void;
   onLookupWa: (noWa: string) => Promise<{
@@ -38,6 +36,13 @@ interface PublicPortalProps {
     donatur?: Donatur;
     existingDonatur?: Partial<Donatur>;
     notifStatus?: NotifDeliveryResult;
+  }>;
+  onUpdateDonaturMandiri: (
+    payload: UpdateDonaturMandiriPayload
+  ) => Promise<{
+    ok: boolean;
+    message: string;
+    donatur?: Donatur;
   }>;
   onSubmitPembayaran: (
     payload: SubmitPembayaranPayload
@@ -55,12 +60,11 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
   page,
   onChangePage,
   config,
-  panitia,
-  referralCode,
   themeMode,
   onToggleTheme,
   onLookupWa,
   onSubmitDonatur,
+  onUpdateDonaturMandiri,
   onSubmitPembayaran,
   onNotify,
 }) => {
@@ -163,7 +167,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               }`}
             >
               <UserPlus className="h-3.5 w-3.5 shrink-0" />
-              <span>Pendaftaran Donatur</span>
+              <span>Pendaftaran Donatur Tetap</span>
             </button>
             <button
               type="button"
@@ -175,7 +179,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               }`}
             >
               <ReceiptText className="h-3.5 w-3.5 shrink-0" />
-              <span>Konfirmasi Pembayaran</span>
+              <span>Penyaluran Donasi</span>
             </button>
           </nav>
 
@@ -201,12 +205,11 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
         {page === 'daftar' ? (
           <PublicPendaftaran
             config={config}
-            panitia={panitia}
-            referralCode={referralCode}
             initialWa={prefillDaftarWa}
             onClearInitialWa={() => setPrefillDaftarWa('')}
             onLookupWa={onLookupWa}
             onSubmitDonatur={onSubmitDonatur}
+            onUpdateDonaturMandiri={onUpdateDonaturMandiri}
             onSwitchToBayar={handleSwitchToBayar}
             onNotify={onNotify}
           />
@@ -247,7 +250,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             }`}
           >
             <UserPlus className="h-5 w-5 shrink-0" />
-            <span className="text-[11px] font-bold tracking-tight">Daftar Donatur</span>
+            <span className="text-[11px] font-bold tracking-tight">Daftar Tetap</span>
           </button>
           <button
             type="button"
@@ -259,7 +262,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             }`}
           >
             <ReceiptText className="h-5 w-5 shrink-0" />
-            <span className="text-[11px] font-bold tracking-tight">Bayar &amp; Riwayat</span>
+            <span className="text-[11px] font-bold tracking-tight">Salur &amp; Riwayat</span>
           </button>
         </div>
       </nav>

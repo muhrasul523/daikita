@@ -49,15 +49,15 @@ type KategoriDanaFilter = 'Semua' | 'Komitmen' | 'Lainnya' | 'Umum';
 
 const MUTASI_JENIS_OPTIONS: SearchableOption[] = [
   { value: 'Semua', label: 'Sumber: Semua Donatur', keywords: 'semua' },
-  { value: 'Rutin', label: 'Donatur Rutin', keywords: 'rutin terdaftar' },
-  { value: 'Umum', label: 'Donatur Umum', keywords: 'umum non terdaftar hamba allah' },
+  { value: 'Rutin', label: 'Donatur Tetap', keywords: 'tetap rutin terdaftar' },
+  { value: 'Umum', label: 'Donatur Insidentil', keywords: 'insidentil umum non terdaftar hamba allah' },
 ];
 
 const MUTASI_KATEGORI_OPTIONS: SearchableOption[] = [
   { value: 'Semua', label: 'Kategori Dana: Semua', keywords: 'semua' },
-  { value: 'Lainnya', label: 'Ada Donasi Lainnya (Kelebihan)', keywords: 'lainnya kelebihan lebih' },
-  { value: 'Komitmen', label: 'Komitmen Rutin Saja', keywords: 'komitmen rutin' },
-  { value: 'Umum', label: 'Khusus Donatur Umum', keywords: 'umum non terdaftar' },
+  { value: 'Lainnya', label: 'Ada Donasi Umum (Kelebihan)', keywords: 'donasi umum lainnya kelebihan lebih' },
+  { value: 'Komitmen', label: 'Komitmen Tetap Saja', keywords: 'komitmen tetap rutin' },
+  { value: 'Umum', label: 'Khusus Donatur Insidentil', keywords: 'insidentil umum non terdaftar' },
 ];
 
 const MUTASI_SORT_OPTIONS: SearchableOption[] = [
@@ -66,7 +66,7 @@ const MUTASI_SORT_OPTIONS: SearchableOption[] = [
   { value: 'bulanTagihan', label: 'Urut: Periode Bulan', keywords: 'bulan periode' },
   { value: 'namaDonatur', label: 'Urut: Nama Donatur', keywords: 'nama donatur' },
   { value: 'nominalTransfer', label: 'Urut: Total Transfer', keywords: 'total nominal transfer' },
-  { value: 'donasiLainnya', label: 'Urut: Donasi Lainnya', keywords: 'donasi lainnya kelebihan' },
+  { value: 'donasiLainnya', label: 'Urut: Donasi Umum', keywords: 'donasi umum lainnya kelebihan' },
   { value: 'statusVerifikasi', label: 'Urut: Status Verifikasi', keywords: 'status verifikasi' },
 ];
 
@@ -239,8 +239,8 @@ export const TabMutasi: React.FC<TabMutasiProps> = ({ transaksiList, isLoading }
           Mutasi Dana Masuk
         </h1>
         <p className="mt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300 safe-wrap">
-          Daftar seluruh dana masuk dari donatur rutin, donasi lainnya (kelebihan komitmen), dan
-          donatur umum dengan filter periode bulan atau keseluruhan.
+          Daftar seluruh dana masuk dari donatur tetap, donasi umum (kelebihan komitmen), dan
+          donatur insidentil dengan filter periode bulan atau keseluruhan.
         </p>
       </div>
 
@@ -261,19 +261,19 @@ export const TabMutasi: React.FC<TabMutasiProps> = ({ transaksiList, isLoading }
 
         <div className="glass-surface rounded-3xl p-5 min-w-0">
           <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-            Donasi Komitmen Rutin
+            Donasi Komitmen Tetap
           </p>
           <p className="mt-2 text-2xl font-bold tracking-tight text-teal-800 dark:text-teal-300 tabular-nums safe-wrap">
             {formatRupiah(mutasiTotals.totalKomitmenRp)}
           </p>
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
-            Porsi komitmen bulanan donatur terdaftar
+            Porsi komitmen bulanan donatur tetap terdaftar
           </p>
         </div>
 
         <div className="glass-surface rounded-3xl p-5 min-w-0">
           <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-            Donasi Lainnya (Kelebihan)
+            Donasi Umum (Kelebihan)
           </p>
           <p className="mt-2 text-2xl font-bold tracking-tight text-sky-800 dark:text-sky-300 tabular-nums safe-wrap">
             {formatRupiah(mutasiTotals.totalLainnyaRp)}
@@ -285,13 +285,13 @@ export const TabMutasi: React.FC<TabMutasiProps> = ({ transaksiList, isLoading }
 
         <div className="glass-surface rounded-3xl p-5 min-w-0">
           <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-            Donatur Umum (Non-Terdaftar)
+            Donatur Insidentil (Non-Tetap)
           </p>
           <p className="mt-2 text-2xl font-bold tracking-tight text-indigo-700 dark:text-indigo-300 tabular-nums safe-wrap">
             {formatRupiah(mutasiTotals.totalUmumRp)}
           </p>
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums safe-wrap">
-            {mutasiTotals.umumCount} transaksi dari donatur umum / insidental
+            {mutasiTotals.umumCount} transaksi dari donatur insidentil (non-terdaftar)
           </p>
         </div>
       </section>
@@ -489,7 +489,7 @@ export const TabMutasi: React.FC<TabMutasiProps> = ({ transaksiList, isLoading }
                       onClick={() => handleMutasiSort('donasiLainnya')}
                       className="inline-flex items-center justify-end gap-1 hover:text-emerald-200 cursor-pointer ml-auto"
                     >
-                      <span>Donasi Lainnya</span>
+                      <span>Donasi Umum</span>
                       {renderSortIcon(mutasiSortField === 'donasiLainnya', mutasiSortDir)}
                     </button>
                   </th>
@@ -564,7 +564,7 @@ export const TabMutasi: React.FC<TabMutasiProps> = ({ transaksiList, isLoading }
                                 : 'text-emerald-700 dark:text-emerald-300'
                             }`}
                           >
-                            · {isUmum ? 'Donatur Umum' : 'Donatur Rutin'}
+                            · {isUmum ? 'Donatur Insidentil' : 'Donatur Tetap'}
                           </span>
                         </div>
                         <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 tabular-nums safe-wrap">
@@ -596,7 +596,7 @@ export const TabMutasi: React.FC<TabMutasiProps> = ({ transaksiList, isLoading }
                       <td className="py-3.5 px-4 text-right whitespace-nowrap tabular-nums">
                         {isUmum ? (
                           <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">
-                            Umum
+                            Insidentil
                           </span>
                         ) : extraRp > 0 ? (
                           <span className="text-xs font-bold text-sky-700 dark:text-sky-300">

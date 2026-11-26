@@ -39,6 +39,7 @@ import {
   SubmitPembayaranPayload,
   TestNotificationPayload,
   TransaksiDonasi,
+  UpdateDonaturMandiriPayload,
 } from '../types';
 import {
   extractIsoDateFromDateStr,
@@ -190,6 +191,10 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
         qrisUrl: rawCfg.qrisUrl || '',
         qrisMerchantName: rawCfg.qrisMerchantName || DEFAULT_CONFIG.qrisMerchantName,
         showQris: typeof rawCfg.showQris === 'boolean' ? rawCfg.showQris : DEFAULT_CONFIG.showQris,
+        showRekening:
+          typeof rawCfg.showRekening === 'boolean'
+            ? rawCfg.showRekening
+            : DEFAULT_CONFIG.showRekening,
         defaultNominal:
           Number(rawCfg.defaultNominal) > 0
             ? Number(rawCfg.defaultNominal)
@@ -228,6 +233,13 @@ function normalizeLoadedState(raw?: Partial<AppDataState>): AppDataState {
         waGroupName: rawCfg.waGroupName || DEFAULT_CONFIG.waGroupName,
         waGroupLink: rawCfg.waGroupLink || '',
         waGroupId: rawCfg.waGroupId || '',
+        enableAdminWaGroupNotif:
+          typeof rawCfg.enableAdminWaGroupNotif === 'boolean'
+            ? rawCfg.enableAdminWaGroupNotif
+            : DEFAULT_CONFIG.enableAdminWaGroupNotif,
+        adminWaGroupName: rawCfg.adminWaGroupName || DEFAULT_CONFIG.adminWaGroupName,
+        adminWaGroupLink: rawCfg.adminWaGroupLink || '',
+        adminWaGroupId: rawCfg.adminWaGroupId || '',
         enableEmailNotif:
           typeof rawCfg.enableEmailNotif === 'boolean'
             ? rawCfg.enableEmailNotif
@@ -688,7 +700,7 @@ export async function registerDonatur(
 
   return {
     status: 'success',
-    message: `Donatur ${newDonatur.namaLengkap} berhasil disimpan (Mode Lokal).`,
+    message: `Donatur Tetap ${newDonatur.namaLengkap} berhasil disimpan (Mode Lokal).`,
     data: {
       donatur: newDonatur,
       notifStatus: {
@@ -709,6 +721,76 @@ export async function registerDonatur(
         },
       },
     },
+  };
+}
+
+export async function updateDonaturMandiri(
+  gasUrl: string,
+  payload: UpdateDonaturMandiriPayload
+): Promise<ApiResult<{ donatur?: Donatur }>> {
+  const url = gasUrl.trim();
+  if (url) {
+    try {
+      return await callGasPost<{ donatur?: Donatur }>(url, {
+        action: 'updateDonaturMandiri',
+        ...payload,
+      });
+    } catch (err) {
+      return {
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Gagal memperbarui data donatur.',
+      };
+    }
+  }
+
+  const state = getLocalState();
+  const origCheck = validateAndNormalizeWA(payload.originalNoWa);
+  const newCheck = validateAndNormalizeWA(payload.noWa);
+  if (!origCheck.valid || !newCheck.valid) {
+    return { status: 'error', message: newCheck.error || origCheck.error || 'Nomor WA tidak valid.' };
+  }
+  const origWa = origCheck.normalized;
+  const newWa = newCheck.normalized;
+
+  const idx = state.donatur.findIndex(
+    (d) =>
+      d.idDonatur === payload.idDonatur &&
+      (validateAndNormalizeWA(d.noWa).normalized || d.noWa) === origWa
+  );
+  if (idx === -1) {
+    return { status: 'error', message: 'Data donatur tidak ditemukan atau tidak sesuai.' };
+  }
+
+  if (newWa !== origWa) {
+    const clash = state.donatur.some(
+      (d, i) => i !== idx && (validateAndNormalizeWA(d.noWa).normalized || d.noWa) === newWa
+    );
+    if (clash) {
+      return { status: 'error', message: `Nomor WA ${newWa} sudah digunakan oleh donatur lain.` };
+    }
+  }
+
+  const updated: Donatur = {
+    ...state.donatur[idx],
+    namaLengkap: payload.namaLengkap.trim(),
+    jenisKelamin: normalizeJenisKelamin(payload.jenisKelamin),
+    noWa: newWa,
+    email: (payload.email || '').trim(),
+    kabId: (payload.kabId || '').trim(),
+    domisili: (payload.domisili || '').trim(),
+    provinsi: (payload.provinsi || '').trim(),
+    pulau: (payload.pulau || '').trim(),
+    nominalKomitmen: payload.nominalKomitmen,
+    tglJatuhTempo: payload.tglJatuhTempo,
+    minatGrupWa: normalizeMinatGrup(payload.minatGrupWa),
+  };
+  state.donatur[idx] = updated;
+  saveLocalState(state);
+
+  return {
+    status: 'success',
+    message: `Data Donatur Tetap ${updated.namaLengkap} berhasil diperbarui (Mode Lokal).`,
+    data: { donatur: updated },
   };
 }
 
@@ -753,7 +835,7 @@ export async function submitPembayaran(
     }
     normalizedWa = waCheck.normalized;
   } else if (!isUmum) {
-    return { status: 'error', message: 'Nomor WhatsApp donatur rutin wajib diisi.' };
+    return { status: 'error', message: 'Nomor WhatsApp donatur tetap wajib diisi.' };
   }
 
   const finalNamaDonatur = payload.namaDonatur.trim() || (isUmum ? 'Hamba Allah' : '');
@@ -823,7 +905,7 @@ export async function submitPembayaran(
       : '';
   const excessNote =
     totalDonasiLainnya > 0
-      ? `Termasuk Donasi Lainnya Rp ${totalDonasiLainnya.toLocaleString('id-ID')}`
+      ? `Termasuk Donasi Umum Rp ${totalDonasiLainnya.toLocaleString('id-ID')}`
       : '';
   const finalKeterangan = [userNote, batchNote, excessNote].filter(Boolean).join(' · ');
 
@@ -1264,6 +1346,7 @@ export async function savePengaturan(
     qrisUrl: payload.qrisBase64 || payload.qrisUrl || '',
     qrisMerchantName: payload.qrisMerchantName.trim(),
     showQris: payload.showQris,
+    showRekening: payload.showRekening,
     defaultNominal: payload.defaultNominal > 0 ? payload.defaultNominal : 50000,
     defaultTglPengingat:
       payload.defaultTglPengingat >= 1 && payload.defaultTglPengingat <= 31
@@ -1291,6 +1374,10 @@ export async function savePengaturan(
     waGroupName: payload.waGroupName.trim() || DEFAULT_CONFIG.waGroupName,
     waGroupLink: payload.waGroupLink.trim(),
     waGroupId: payload.waGroupId.trim(),
+    enableAdminWaGroupNotif: payload.enableAdminWaGroupNotif,
+    adminWaGroupName: payload.adminWaGroupName.trim() || DEFAULT_CONFIG.adminWaGroupName,
+    adminWaGroupLink: payload.adminWaGroupLink.trim(),
+    adminWaGroupId: payload.adminWaGroupId.trim(),
     enableEmailNotif: payload.enableEmailNotif,
     emailSenderAlias: payload.emailSenderAlias.trim() || DEFAULT_CONFIG.emailSenderAlias,
     emailSenderName: payload.emailSenderName.trim() || DEFAULT_CONFIG.emailSenderName,

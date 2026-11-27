@@ -23,9 +23,9 @@ const DRIVE_FOLDER_ID = '1KqfNK8yLOpb-7Ew6KXkfJoNU6XKmzK73';
 
 const NAMA_LEMBAGA = 'DAIKITA — Dakwah Pelosok';
 const TAGLINE_LEMBAGA = 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
-const APP_PUBLIC_URL = 'https://daikita.duwd.web.id/';
-const APP_BAYAR_URL = 'https://daikita.duwd.web.id/#/bayar';
-const APP_ADMIN_URL = 'https://daikita.duwd.web.id/#/admin';
+const APP_PUBLIC_URL = 'https://dakwahpelosok.web.id/';
+const APP_BAYAR_URL = 'https://dakwahpelosok.web.id/#/bayar';
+const APP_ADMIN_URL = 'https://dakwahpelosok.web.id/#/admin';
 const DEFAULT_LOGO_URL = 'https://lh3.googleusercontent.com/d/1OOSQydygv0K9SNcQUXQTqQyduW57mv4Y';
 
 const ADMIN_SESSION_TTL_SEC = 21600; // 6 jam

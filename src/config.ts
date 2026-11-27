@@ -9,9 +9,9 @@ export const DEFAULT_GAS_URL =
 export const APP_BRAND_NAME = 'DAIKITA — Dakwah Pelosok';
 export const APP_PROGRAM_FOCUS = 'Dakwah Pelosok';
 export const APP_TAGLINE = 'Dukungan Amal Infak, Kuatkan Ikhtiar, Teguhkan Amanah.';
-export const APP_PUBLIC_URL = 'https://daikita.duwd.web.id/';
-export const APP_BAYAR_URL = 'https://daikita.duwd.web.id/#/bayar';
-export const APP_ADMIN_URL = 'https://daikita.duwd.web.id/#/admin';
+export const APP_PUBLIC_URL = 'https://dakwahpelosok.web.id/';
+export const APP_BAYAR_URL = 'https://dakwahpelosok.web.id/#/bayar';
+export const APP_ADMIN_URL = 'https://dakwahpelosok.web.id/#/admin';
 export const DEFAULT_LOGO_URL = 'https://lh3.googleusercontent.com/d/1OOSQydygv0K9SNcQUXQTqQyduW57mv4Y';
 
 /** Bulan awal pencatatan pembayaran donasi */

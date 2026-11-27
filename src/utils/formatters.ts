@@ -666,3 +666,127 @@ export function extractPhoneNumbersFromText(rawText: string): string[] {
 
   return results;
 }
+
+const PERSON_NAME_TITLES: Record<string, string> = {
+  's.pd': 'S.Pd',
+  's.pd.i': 'S.Pd.I',
+  'm.pd': 'M.Pd',
+  'm.pd.i': 'M.Pd.I',
+  's.ag': 'S.Ag',
+  'm.ag': 'M.Ag',
+  's.h': 'S.H',
+  'm.h': 'M.H',
+  's.h.i': 'S.H.I',
+  'm.h.i': 'M.H.I',
+  's.e': 'S.E',
+  'm.e': 'M.E',
+  's.e.i': 'S.E.I',
+  's.t': 'S.T',
+  'm.t': 'M.T',
+  's.si': 'S.Si',
+  'm.si': 'M.Si',
+  's.sos': 'S.Sos',
+  'm.sos': 'M.Sos',
+  's.kom': 'S.Kom',
+  'm.kom': 'M.Kom',
+  's.farm': 'S.Farm',
+  's.kep': 'S.Kep',
+  's.ked': 'S.Ked',
+  's.gz': 'S.Gz',
+  's.psi': 'S.Psi',
+  's.ip': 'S.IP',
+  's.pt': 'S.Pt',
+  's.pi': 'S.Pi',
+  's.p': 'S.P',
+  's.hut': 'S.Hut',
+  's.ak': 'S.Ak',
+  's.km': 'S.KM',
+  skm: 'SKM',
+  's.tr.keb': 'S.Tr.Keb',
+  's.tr.kep': 'S.Tr.Kep',
+  'a.md': 'A.Md',
+  'a.md.keb': 'A.Md.Keb',
+  'a.md.kep': 'A.Md.Kep',
+  'a.md.ak': 'A.Md.Ak',
+  'a.md.farm': 'A.Md.Farm',
+  'a.md.gz': 'A.Md.Gz',
+  'a.ma': 'A.Ma',
+  'a.ma.pd': 'A.Ma.Pd',
+  'm.m': 'M.M',
+  'm.a': 'M.A',
+  'm.b.a': 'M.B.A',
+  'm.kes': 'M.Kes',
+  'm.sc': 'M.Sc',
+  'm.hum': 'M.Hum',
+  'm.kn': 'M.Kn',
+  'm.fil.i': 'M.Fil.I',
+  'ph.d': 'Ph.D',
+  dr: 'Dr',
+  drs: 'Drs',
+  dra: 'Dra',
+  drg: 'drg',
+  prof: 'Prof',
+  ir: 'Ir',
+  lc: 'Lc',
+  apt: 'Apt',
+  ns: 'Ns',
+  bdn: 'Bdn',
+  h: 'H',
+  hj: 'Hj',
+  'sp.a': 'Sp.A',
+  'sp.pd': 'Sp.PD',
+  'sp.og': 'Sp.OG',
+  'sp.b': 'Sp.B',
+};
+
+function capitalizeNameSegment(seg: string): string {
+  if (!seg) return '';
+  const match = seg.match(/^([^A-Za-z]*)([A-Za-z])(.*)$/);
+  if (!match) return seg;
+  return match[1] + match[2].toUpperCase() + match[3].toLowerCase();
+}
+
+/**
+ * Merapikan huruf kapital nama lengkap dengan aturan apostrof yang benar:
+ * huruf setelah tanda petik tunggal di tengah kata tetap huruf kecil
+ * (contoh: "Amar Ma'Ruf" -> "Amar Ma'ruf", "Mu'Adz" -> "Mu'adz").
+ */
+export function formatProperPersonName(raw?: string): string {
+  let s = String(raw || '');
+  s = s.replace(/\\u2019|\\U2019|\\u2018|\\U2018/g, "'");
+  s = s.replace(/[’‘`´]/g, "'");
+  s = s.replace(/\\\//g, '/');
+  s = s.replace(/\s+/g, ' ').trim();
+  if (!s || /\?{2,}/.test(s) || !/[A-Za-z]/.test(s)) return '';
+
+  return s
+    .split(' ')
+    .map((tok, idx) => {
+      const m = tok.match(/^([([]*)(.*?)([.,;:)\]]*)$/);
+      const lead = m ? m[1] : '';
+      const core = m ? m[2] : tok;
+      const trail = m ? m[3] : '';
+      if (!core) return tok;
+
+      const lower = core.toLowerCase();
+      const hasDot = core.includes('.') || trail.includes('.');
+      if (
+        PERSON_NAME_TITLES[lower] &&
+        (hasDot || idx > 0 || ['dr', 'drs', 'dra', 'drg', 'prof', 'ir', 'h', 'hj'].includes(lower))
+      ) {
+        return lead + PERSON_NAME_TITLES[lower] + trail;
+      }
+
+      if (core.includes('.') && !core.includes("'")) {
+        return lead + core.split('.').map(capitalizeNameSegment).join('.') + trail;
+      }
+      if (core.includes('-')) {
+        return lead + core.split('-').map(capitalizeNameSegment).join('-') + trail;
+      }
+      return lead + capitalizeNameSegment(core) + trail;
+    })
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+

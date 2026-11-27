@@ -9,17 +9,19 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Loader2,
   Pencil,
   Phone,
   QrCode,
   Save,
-  Search,
+  Sparkles,
   UserCheck,
   UserPlus,
   Users,
   X,
 } from 'lucide-react';
 import { WILAYAH_KABUPATEN } from '../data/wilayah';
+import { lookupKontakPrefill } from '../services/kontakPrefill';
 import {
   Donatur,
   DonorLookupResult,
@@ -144,6 +146,7 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [prefilledFromKontak, setPrefilledFromKontak] = useState(false);
   const [registeredDonatur, setRegisteredDonatur] = useState<Donatur | null>(null);
   const [registeredNotif, setRegisteredNotif] = useState<NotifDeliveryResult | null>(null);
 
@@ -180,6 +183,15 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
         setVerifiedWa(check.normalized);
         setStep('form');
         setCheckError(null);
+        void lookupKontakPrefill(check.normalized).then((match) => {
+          if (match) {
+            setNamaLengkap((prev) => (prev.trim() ? prev : match.namaLengkap));
+            setJenisKelamin((prev) => (prev ? prev : match.jenisKelamin));
+            setPrefilledFromKontak(true);
+          } else {
+            setPrefilledFromKontak(false);
+          }
+        });
       }
       onClearInitialWa?.();
     }
@@ -303,7 +315,10 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
     }
 
     setIsCheckingWa(true);
-    const res = await onLookupWa(waValidation.normalized);
+    const [res, prefillMatch] = await Promise.all([
+      onLookupWa(waValidation.normalized),
+      lookupKontakPrefill(waValidation.normalized),
+    ]);
     setIsCheckingWa(false);
 
     if (!res.ok || !res.result) {
@@ -316,6 +331,7 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
         donatur: res.result.donatur,
         transaksi: res.result.transaksi || [],
       });
+      setPrefilledFromKontak(false);
       setIsEditingExisting(false);
       setEditSavedNotice(false);
       setEditError(null);
@@ -323,9 +339,22 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
       return;
     }
 
-    setVerifiedWa(res.result.normalizedWa || waValidation.normalized);
+    const nextWa = res.result.normalizedWa || waValidation.normalized;
+    setVerifiedWa(nextWa);
     setExistingMatch(null);
     setFormError(null);
+
+    const effectivePrefill =
+      prefillMatch || (nextWa !== waValidation.normalized ? await lookupKontakPrefill(nextWa) : null);
+    if (effectivePrefill) {
+      setNamaLengkap(effectivePrefill.namaLengkap);
+      setJenisKelamin(effectivePrefill.jenisKelamin);
+      setPrefilledFromKontak(true);
+    } else {
+      setNamaLengkap('');
+      setJenisKelamin('');
+      setPrefilledFromKontak(false);
+    }
     setStep('form');
   };
 
@@ -466,6 +495,7 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
     setNominalInput((config.defaultNominal || 50000).toLocaleString('id-ID'));
     setTglPengingat(config.defaultTglPengingat || 5);
     setMinatGrupWa('Ya');
+    setPrefilledFromKontak(false);
     setRegisteredDonatur(null);
     setRegisteredNotif(null);
     setStep('check_wa');
@@ -660,11 +690,11 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
               <button
                 type="submit"
                 disabled={isCheckingWa}
-                className="w-full min-h-[52px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-[0_10px_24px_-8px_rgba(5,150,105,0.5)] hover:opacity-95 active:scale-[0.99] disabled:opacity-55 transition-all cursor-pointer"
+                className="w-full min-h-[52px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-[0_10px_24px_-8px_rgba(5,150,105,0.5)] hover:opacity-95 active:scale-[0.99] disabled:opacity-65 transition-all cursor-pointer"
               >
                 {isCheckingWa ? (
                   <>
-                    <Search className="h-4 w-4 animate-pulse shrink-0" />
+                    <Loader2 className="h-4 w-4 animate-spin shrink-0" />
                     <span>Memeriksa Nomor WhatsApp...</span>
                   </>
                 ) : (
@@ -1100,10 +1130,14 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
                   <button
                     type="submit"
                     disabled={isSavingEdit}
-                    className="min-h-[46px] inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-55 transition-colors cursor-pointer"
+                    className="min-h-[46px] inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-65 transition-colors cursor-pointer"
                   >
-                    <Save className="h-4 w-4 shrink-0" />
-                    <span>{isSavingEdit ? 'Menyimpan...' : 'Simpan Perubahan Data'}</span>
+                    {isSavingEdit ? (
+                      <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                    ) : (
+                      <Save className="h-4 w-4 shrink-0" />
+                    )}
+                    <span>{isSavingEdit ? 'Menyimpan Perubahan...' : 'Simpan Perubahan Data'}</span>
                   </button>
                   <button
                     type="button"
@@ -1193,6 +1227,16 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
                 <span>Ganti Nomor</span>
               </button>
             </div>
+
+            {prefilledFromKontak && (
+              <div className="mt-5 rounded-2xl border border-teal-200/80 dark:border-teal-800/70 bg-teal-50/75 dark:bg-teal-950/40 px-4 py-3 flex items-start gap-2.5 text-xs text-teal-900 dark:text-teal-200">
+                <Sparkles className="h-4 w-4 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
+                <p className="leading-relaxed safe-wrap">
+                  Nama lengkap dan jenis kelamin telah terisi otomatis. Silakan periksa kembali atau
+                  ubah jika ada yang perlu disesuaikan.
+                </p>
+              </div>
+            )}
 
             {formError && (
               <div className="mt-5 rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50/90 dark:bg-rose-950/50 p-4 flex items-start gap-3 text-xs text-rose-800 dark:text-rose-200">
@@ -1449,14 +1493,28 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full min-h-[52px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-[0_10px_24px_-8px_rgba(5,150,105,0.5)] hover:opacity-95 active:scale-[0.99] disabled:opacity-55 transition-all cursor-pointer"
-              >
-                <UserPlus className="h-4 w-4 shrink-0" />
-                <span>{isSubmitting ? 'Menyimpan Pendaftaran...' : 'Daftar Jadi Donatur Tetap'}</span>
-              </button>
+              <div className="space-y-2.5">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full min-h-[52px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-[0_10px_24px_-8px_rgba(5,150,105,0.5)] hover:opacity-95 active:scale-[0.99] disabled:opacity-70 transition-all cursor-pointer"
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="h-5 w-5 animate-spin shrink-0" />
+                  ) : (
+                    <UserPlus className="h-4 w-4 shrink-0" />
+                  )}
+                  <span>
+                    {isSubmitting ? 'Menyimpan Pendaftaran...' : 'Daftar Jadi Donatur Tetap'}
+                  </span>
+                </button>
+                {isSubmitting && (
+                  <p className="flex items-center justify-center gap-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                    <span>Mohon tunggu sebentar, sedang menyimpan data pendaftaran Anda...</span>
+                  </p>
+                )}
+              </div>
             </form>
           </section>
 
@@ -1522,34 +1580,22 @@ export const PublicPendaftaran: React.FC<PublicPendaftaranProps> = ({
               </div>
             </div>
 
-            {registeredNotif && (
-              <div className="rounded-2xl bg-white/75 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-700/80 p-3.5 text-xs space-y-1">
-                <p
-                  className={
-                    registeredNotif.wa.ok
-                      ? 'text-emerald-800 dark:text-emerald-300 font-semibold'
-                      : 'text-slate-600 dark:text-slate-300'
-                  }
-                >
-                  Notifikasi WhatsApp:{' '}
-                  {registeredNotif.wa.ok
-                    ? 'Terkirim ke nomor WhatsApp Anda.'
-                    : registeredNotif.wa.detail}
-                </p>
-                {registeredDonatur.email && (
-                  <p
-                    className={
-                      registeredNotif.email.ok
-                        ? 'text-emerald-800 dark:text-emerald-300 font-semibold'
-                        : 'text-slate-600 dark:text-slate-300'
-                    }
-                  >
-                    Notifikasi Email:{' '}
-                    {registeredNotif.email.ok ? 'Terkirim.' : registeredNotif.email.detail}
-                  </p>
-                )}
-              </div>
-            )}
+            {registeredNotif &&
+              (registeredNotif.wa.ok ||
+                (Boolean(registeredDonatur.email) && registeredNotif.email.ok)) && (
+                <div className="rounded-2xl bg-white/75 dark:bg-slate-900/60 border border-emerald-200/70 dark:border-emerald-800/70 p-3.5 text-xs space-y-1">
+                  {registeredNotif.wa.ok && (
+                    <p className="text-emerald-800 dark:text-emerald-300 font-semibold">
+                      Notifikasi WhatsApp telah dikirim ke nomor Anda.
+                    </p>
+                  )}
+                  {registeredDonatur.email && registeredNotif.email.ok && (
+                    <p className="text-emerald-800 dark:text-emerald-300 font-semibold">
+                      Konfirmasi pendaftaran juga telah dikirim ke alamat email Anda.
+                    </p>
+                  )}
+                </div>
+              )}
 
             <div className="flex flex-col sm:flex-row flex-wrap gap-3 pt-1">
               <button

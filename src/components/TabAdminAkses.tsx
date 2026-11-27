@@ -4,6 +4,7 @@ import {
   Copy,
   Edit3,
   Link2,
+  Loader2,
   Plus,
   Shield,
   ShieldCheck,
@@ -320,9 +321,13 @@ export const TabAdminAkses: React.FC<TabAdminAksesProps> = ({
             <button
               type="submit"
               disabled={isSaving}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-5 py-3 text-sm font-bold text-white shadow-sm hover:opacity-95 disabled:opacity-55 transition-all cursor-pointer"
+              className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-5 py-3 text-sm font-bold text-white shadow-sm hover:opacity-95 disabled:opacity-65 transition-all cursor-pointer"
             >
-              <Plus className="h-4 w-4 shrink-0" />
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              ) : (
+                <Plus className="h-4 w-4 shrink-0" />
+              )}
               <span>
                 {isSaving
                   ? 'Menyimpan...'
@@ -482,10 +487,14 @@ export const TabAdminAkses: React.FC<TabAdminAksesProps> = ({
                                 type="button"
                                 disabled={isDeleting}
                                 onClick={() => void handleDelete(item)}
-                                className="inline-flex items-center gap-1 rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50/70 dark:bg-rose-950/40 px-2.5 py-1.5 text-xs font-semibold text-rose-700 dark:text-rose-300 hover:bg-rose-100 disabled:opacity-50 cursor-pointer"
+                                className="inline-flex items-center gap-1 rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50/70 dark:bg-rose-950/40 px-2.5 py-1.5 text-xs font-semibold text-rose-700 dark:text-rose-300 hover:bg-rose-100 disabled:opacity-60 cursor-pointer"
                               >
-                                <Trash2 className="h-3.5 w-3.5 shrink-0" />
-                                <span>{isDeleting ? '...' : 'Hapus'}</span>
+                                {isDeleting ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                                )}
+                                <span>{isDeleting ? 'Menghapus...' : 'Hapus'}</span>
                               </button>
                             </div>
                           </td>

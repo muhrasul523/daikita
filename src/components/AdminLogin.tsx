@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
+  Loader2,
   LogIn,
   Moon,
   Phone,
@@ -94,7 +95,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
                 {config.namaLembaga || APP_BRAND_NAME} · Portal Pengurus
               </p>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                Admin &amp; Super Admin
+                Masuk Admin
               </p>
             </div>
           </div>
@@ -131,7 +132,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
               <ShieldCheck className="h-7 w-7" />
             </div>
             <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
-              Masuk Admin &amp; Super Admin
+              Masuk Admin
             </h1>
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed safe-wrap">
               Masukkan nomor HP / WhatsApp yang telah didaftarkan sebagai pengelola{' '}
@@ -189,10 +190,14 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full min-h-[50px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3 text-sm font-bold text-white shadow-[0_10px_24px_-8px_rgba(5,150,105,0.5)] hover:opacity-95 disabled:opacity-55 transition-all cursor-pointer"
+              className="w-full min-h-[50px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3 text-sm font-bold text-white shadow-[0_10px_24px_-8px_rgba(5,150,105,0.5)] hover:opacity-95 disabled:opacity-65 transition-all cursor-pointer"
             >
-              <LogIn className="h-4 w-4 shrink-0" />
-              <span>{isSubmitting ? 'Memverifikasi Akses...' : 'Masuk ke Portal Admin'}</span>
+              {isSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              ) : (
+                <LogIn className="h-4 w-4 shrink-0" />
+              )}
+              <span>{isSubmitting ? 'Memverifikasi Akses...' : 'Masuk Admin'}</span>
             </button>
           </form>
 
@@ -200,15 +205,15 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
             <div className="rounded-2xl border border-sky-200 dark:border-sky-800/70 bg-sky-50/75 dark:bg-sky-950/40 p-3.5 text-xs text-sky-900 dark:text-sky-200 space-y-1">
               <p className="font-bold">Mode Lokal Aktif (Uji Coba)</p>
               <p className="safe-wrap">
-                Super Admin: <strong className="font-mono">{DEFAULT_ADMIN_AKSES[0].noWa}</strong> ·
-                Admin: <strong className="font-mono">{DEFAULT_ADMIN_AKSES[1].noWa}</strong>
+                Admin 1: <strong className="font-mono">{DEFAULT_ADMIN_AKSES[0].noWa}</strong> ·
+                Admin 2: <strong className="font-mono">{DEFAULT_ADMIN_AKSES[1].noWa}</strong>
               </p>
             </div>
           )}
 
           <p className="text-[11px] text-center text-slate-500 dark:text-slate-400 leading-relaxed safe-wrap">
-            Nomor HP yang terdaftar sebagai Admin atau Super Admin tetap dapat digunakan sebagai
-            donatur di halaman utama secara terpisah.
+            Nomor HP yang terdaftar sebagai Admin tetap dapat digunakan sebagai donatur di halaman
+            utama secara terpisah.
           </p>
         </section>
       </main>

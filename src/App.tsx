@@ -236,6 +236,30 @@ export default function App() {
     }
   }, [isSuperAdmin, activeTab, isModalOpen]);
 
+  // Sinkronkan judul tab browser secara ringkas per halaman & menu aktif
+  useEffect(() => {
+    if (route.mode === 'public') {
+      document.title =
+        route.page === 'bayar' ? 'Dakwah Pelosok - Konfirmasi' : 'Dakwah Pelosok - Daftar';
+      return;
+    }
+    if (!adminSession) {
+      document.title = 'Dakwah Pelosok - Admin';
+      return;
+    }
+    const adminTitleMap: Record<AdminTabKey, string> = {
+      dashboard: 'Dakwah Pelosok - Dashboard',
+      donatur: 'Dakwah Pelosok - Donatur',
+      konfirmasi: 'Dakwah Pelosok - Konfirmasi',
+      verifikasi: 'Dakwah Pelosok - Verifikasi',
+      mutasi: 'Dakwah Pelosok - Mutasi',
+      grup_wa: 'Dakwah Pelosok - Grup WA',
+      broadcast: 'Dakwah Pelosok - Broadcast',
+      akses_admin: 'Dakwah Pelosok - Akses Admin',
+    };
+    document.title = adminTitleMap[activeTab] || 'Dakwah Pelosok - Admin';
+  }, [route, adminSession, activeTab]);
+
   const navigateToPublic = useCallback((nextPage: PublicPageKey) => {
     try {
       const url = new URL(window.location.href);
@@ -945,7 +969,7 @@ export default function App() {
       </div>
     ) : null;
 
-  // === ROUTE 1: PORTAL PUBLIK DONATUR (https://daikita.duwd.web.id/ & #/bayar) ===
+  // === ROUTE 1: PORTAL PUBLIK DONATUR (https://dakwahpelosok.web.id/ & #/bayar) ===
   if (route.mode === 'public') {
     return (
       <>
@@ -966,7 +990,7 @@ export default function App() {
     );
   }
 
-  // === ROUTE 2: LOGIN ADMIN & SUPER ADMIN (https://daikita.duwd.web.id/#/admin) ===
+  // === ROUTE 2: LOGIN ADMIN (https://dakwahpelosok.web.id/#/admin) ===
   if (!adminSession) {
     return (
       <>

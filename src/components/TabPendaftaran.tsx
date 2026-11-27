@@ -8,6 +8,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Loader2,
   QrCode,
   UserPlus,
   Users,
@@ -720,9 +721,13 @@ export const TabPendaftaran: React.FC<TabPendaftaranProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_20px_-6px_rgba(5,150,105,0.45)] hover:opacity-95 disabled:opacity-55 transition-all whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_20px_-6px_rgba(5,150,105,0.45)] hover:opacity-95 disabled:opacity-65 transition-all whitespace-nowrap shrink-0 cursor-pointer"
             >
-              <UserPlus className="h-4 w-4 shrink-0" />
+              {isSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              ) : (
+                <UserPlus className="h-4 w-4 shrink-0" />
+              )}
               <span>{isSubmitting ? 'Menyimpan Data...' : 'Daftarkan Donatur Tetap'}</span>
             </button>
           </div>

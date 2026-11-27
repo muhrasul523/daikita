@@ -8,6 +8,7 @@ import {
   Copy,
   ExternalLink,
   FileSpreadsheet,
+  Loader2,
   MessageCircle,
   RefreshCw,
   Search,
@@ -605,9 +606,13 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
                 type="button"
                 disabled={isSyncingScrab || extractedScrabPhones.length === 0}
                 onClick={() => void handleSyncFromScrab()}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-60 whitespace-nowrap shrink-0 cursor-pointer"
               >
-                <UserCheck className="h-3.5 w-3.5 shrink-0" />
+                {isSyncingScrab ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                ) : (
+                  <UserCheck className="h-3.5 w-3.5 shrink-0" />
+                )}
                 <span>
                   {isSyncingScrab
                     ? 'Mencocokkan...'
@@ -995,10 +1000,14 @@ export const TabGrupWa: React.FC<TabGrupWaProps> = ({
                               type="button"
                               disabled={isSending}
                               onClick={() => void handleSendAutoInvite(d)}
-                              className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 whitespace-nowrap cursor-pointer"
+                              className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 whitespace-nowrap cursor-pointer"
                               title="Kirim undangan otomatis via WhatsApp Broadcast"
                             >
-                              <Send className="h-3.5 w-3.5 shrink-0" />
+                              {isSending ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                              ) : (
+                                <Send className="h-3.5 w-3.5 shrink-0" />
+                              )}
                               <span>{isSending ? 'Mengirim...' : 'Kirim WA'}</span>
                             </button>
                           )}

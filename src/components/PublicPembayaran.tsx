@@ -15,6 +15,7 @@ import {
   Eye,
   FileText,
   History,
+  Loader2,
   MessageCircle,
   Phone,
   QrCode,
@@ -736,11 +737,11 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
             <button
               type="submit"
               disabled={isLookingUp}
-              className="w-full min-h-[52px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-[0_10px_24px_-8px_rgba(5,150,105,0.5)] hover:opacity-95 active:scale-[0.99] disabled:opacity-55 transition-all cursor-pointer"
+              className="w-full min-h-[52px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-[0_10px_24px_-8px_rgba(5,150,105,0.5)] hover:opacity-95 active:scale-[0.99] disabled:opacity-65 transition-all cursor-pointer"
             >
               {isLookingUp ? (
                 <>
-                  <Search className="h-4 w-4 animate-pulse shrink-0" />
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0" />
                   <span>Mencari Data Donatur...</span>
                 </>
               ) : (
@@ -1228,9 +1229,10 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
                     className="hidden"
                   />
                   {isCompressing ? (
-                    <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                      Memproses dan mengompres gambar bukti transfer...
-                    </p>
+                    <div className="inline-flex items-center justify-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                      <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                      <span>Memproses dan mengompres gambar bukti transfer...</span>
+                    </div>
                   ) : uploadFile ? (
                     <div
                       className="flex flex-col sm:flex-row items-center gap-3 text-left"
@@ -1290,13 +1292,23 @@ export const PublicPembayaran: React.FC<PublicPembayaranProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmitting || isCompressing}
-                  className="w-full min-h-[52px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-[0_10px_24px_-8px_rgba(5,150,105,0.5)] hover:opacity-95 active:scale-[0.99] disabled:opacity-55 transition-all cursor-pointer"
+                  className="w-full min-h-[52px] inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-[0_10px_24px_-8px_rgba(5,150,105,0.5)] hover:opacity-95 active:scale-[0.99] disabled:opacity-70 transition-all cursor-pointer"
                 >
-                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  {isSubmitting ? (
+                    <Loader2 className="h-5 w-5 animate-spin shrink-0" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  )}
                   <span>
                     {isSubmitting ? 'Mengirim Konfirmasi...' : 'Kirim Konfirmasi Pembayaran'}
                   </span>
                 </button>
+                {isSubmitting && (
+                  <p className="flex items-center justify-center gap-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                    <span>Mohon tunggu sebentar, sedang mengunggah dan menyimpan konfirmasi...</span>
+                  </p>
+                )}
 
                 {hasCallCenter && manualConfirmFormWaUrl && (
                   <a
